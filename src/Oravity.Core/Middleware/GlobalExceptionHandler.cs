@@ -31,6 +31,20 @@ public class GlobalExceptionHandler : IExceptionHandler
             return true;
         }
 
+        // Geçersiz durum geçişi (entity doğrulama) → 400
+        if (exception is InvalidOperationException invEx)
+        {
+            httpContext.Response.StatusCode = 400;
+            var problem = new ProblemDetails
+            {
+                Status = 400,
+                Title = "Geçersiz İşlem",
+                Detail = invEx.Message
+            };
+            await httpContext.Response.WriteAsJsonAsync(problem, cancellationToken);
+            return true;
+        }
+
         _logger.LogError(exception, "Beklenmeyen hata: {Message}", exception.Message);
         return false;
     }
@@ -41,6 +55,8 @@ public class GlobalExceptionHandler : IExceptionHandler
         401 => "Yetkisiz Erişim",
         403 => "Erişim Engellendi",
         404 => "Bulunamadı",
+        409 => "Çakışma",
+        422 => "İşlenemeyen Varlık",
         429 => "Çok Fazla İstek",
         _ => "Sunucu Hatası"
     };

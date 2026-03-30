@@ -1,5 +1,7 @@
 using Microsoft.OpenApi.Models;
 using Oravity.Core.Middleware;
+using Oravity.Core.Modules.Appointment.Application;
+using Oravity.Core.Modules.Appointment.Infrastructure.Hubs;
 using Oravity.Infrastructure;
 using Oravity.Infrastructure.Database;
 using Oravity.Infrastructure.Tenancy;
@@ -65,6 +67,10 @@ try
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
 
+    // SignalR — real-time takvim
+    builder.Services.AddSignalR();
+    builder.Services.AddScoped<ICalendarBroadcastService, CalendarBroadcastService>();
+
     builder.Services.AddInfrastructure(builder.Configuration);
 
     var app = builder.Build();
@@ -84,6 +90,7 @@ try
     app.UseMiddleware<TenantMiddleware>();
     app.UseAuthorization();
     app.MapControllers();
+    app.MapHub<CalendarHub>("/hubs/calendar");
 
     app.Run();
 }

@@ -38,6 +38,12 @@ public class AppDbContext : DbContext
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<LoginAttempt> LoginAttempts => Set<LoginAttempt>();
 
+    // ─── Patients ──────────────────────────────────────────────────────────
+    public DbSet<Patient> Patients => Set<Patient>();
+
+    // ─── Appointments ──────────────────────────────────────────────────────
+    public DbSet<Appointment> Appointments => Set<Appointment>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -301,6 +307,94 @@ public class AppDbContext : DbContext
             e.Property(x => x.IpAddress).HasMaxLength(45);
             e.Property(x => x.CreatedAt).IsRequired();
         });
+
+        // ── Patient ───────────────────────────────────────────────────────
+        m.Entity<Patient>(e =>
+        {
+            e.ToTable("patients");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_patients_public_id");
+
+            e.Property(x => x.FirstName).HasMaxLength(100).IsRequired();
+            e.Property(x => x.LastName).HasMaxLength(100).IsRequired();
+
+            // Ad + Soyad composite index (arama)
+            e.HasIndex(x => new { x.BranchId, x.LastName, x.FirstName })
+             .HasDatabaseName("ix_patients_branch_name");
+
+            e.Property(x => x.Gender).HasMaxLength(10);
+            e.Property(x => x.TcNumberEncrypted).HasMaxLength(500);
+            e.Property(x => x.TcNumberHash).HasMaxLength(64);
+            e.HasIndex(x => x.TcNumberHash).HasDatabaseName("ix_patients_tc_hash");
+
+            e.Property(x => x.Phone).HasMaxLength(20);
+            e.HasIndex(x => new { x.BranchId, x.Phone }).HasDatabaseName("ix_patients_branch_phone");
+
+            e.Property(x => x.Email).HasMaxLength(200);
+            e.Property(x => x.Address).HasColumnType("text");
+            e.Property(x => x.BloodType).HasMaxLength(5);
+            e.Property(x => x.PreferredLanguageCode).HasMaxLength(5).HasDefaultValue("tr");
+            e.Property(x => x.IsActive).HasDefaultValue(true);
+
+            // Audit fields
+            e.Property(x => x.TenantId).IsRequired();
+            e.Property(x => x.CreatedByUserId);
+            e.Property(x => x.UpdatedByUserId);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── Appointment ───────────────────────────────────────────────────
+        m.Entity<Appointment>(e =>
+        {
+            e.ToTable("appointments");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_appointments_public_id");
+
+            e.Property(x => x.Status).IsRequired();
+            e.Property(x => x.StartTime).IsRequired();
+            e.Property(x => x.EndTime).IsRequired();
+            e.Property(x => x.Notes).HasColumnType("text");
+            e.Property(x => x.RowVersion).HasDefaultValue(1).IsConcurrencyToken();
+
+            // Optimistic lock: doctor+branch+start_time unique (aktif randevular)
+            // Status 6=İptal, 7=Gelmedi hariç tutulur
+            e.HasIndex(x => new { x.DoctorId, x.BranchId, x.StartTime })
+             .IsUnique()
+             .HasFilter("\"Status\" NOT IN (6, 7)")
+             .HasDatabaseName("ix_appointments_slot_unique");
+
+            // Sorgu index'leri
+            e.HasIndex(x => new { x.BranchId, x.StartTime })
+             .HasDatabaseName("ix_appointments_branch_start");
+            e.HasIndex(x => new { x.DoctorId, x.StartTime })
+             .HasDatabaseName("ix_appointments_doctor_start");
+
+            // Audit fields
+            e.Property(x => x.TenantId).IsRequired();
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Doctor)
+             .WithMany()
+             .HasForeignKey(x => x.DoctorId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
     }
 
     // ─── Global Soft-Delete Filters ───────────────────────────────────────
@@ -321,7 +415,9 @@ public class AppDbContext : DbContext
                 typeof(RoleTemplatePermission),
                 typeof(UserPermissionOverride),
                 typeof(UserRoleAssignment),
-                typeof(OutboxMessage)
+                typeof(OutboxMessage),
+                typeof(LoginAttempt),
+                typeof(RefreshToken)
             };
 
             if (Array.Exists(ignored, t => t == entityType.ClrType)) continue;

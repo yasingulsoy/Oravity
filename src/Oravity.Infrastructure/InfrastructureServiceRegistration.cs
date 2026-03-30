@@ -2,6 +2,7 @@ using System.Text;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,6 +48,15 @@ public static class InfrastructureServiceRegistration
 
         // JWT Service
         services.AddScoped<IJwtService, JwtService>();
+
+        // Encryption Service
+        services.AddSingleton<IEncryptionService, EncryptionService>();
+
+        // HttpContextAccessor (CurrentUserService için)
+        services.AddHttpContextAccessor();
+
+        // CurrentUser Service
+        services.AddScoped<ICurrentUser, CurrentUserService>();
 
         // JWT Authentication
         var jwtSecret = configuration["Jwt:Secret"]
