@@ -1,7 +1,10 @@
+using Hangfire;
 using Microsoft.OpenApi.Models;
 using Oravity.Core.Middleware;
 using Oravity.Core.Modules.Appointment.Application;
 using Oravity.Core.Modules.Appointment.Infrastructure.Hubs;
+using Oravity.Core.Modules.Notification.Infrastructure.Hubs;
+using Oravity.Core.Modules.Notification.Infrastructure.Services;
 using Oravity.Infrastructure;
 using Oravity.Infrastructure.Database;
 using Oravity.Infrastructure.Tenancy;
@@ -67,9 +70,14 @@ try
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
 
-    // SignalR — real-time takvim
+    // SignalR — real-time takvim + bildirimler
     builder.Services.AddSignalR();
     builder.Services.AddScoped<ICalendarBroadcastService, CalendarBroadcastService>();
+    builder.Services.AddScoped<INotificationHubService, NotificationHubService>();
+
+    // SMS Dispatch — Hangfire job için bağımlılıklar
+    builder.Services.AddScoped<ISmsAdapter, StubSmsAdapter>();
+    builder.Services.AddScoped<SmsDispatchService>();
 
     builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -91,6 +99,13 @@ try
     app.UseAuthorization();
     app.MapControllers();
     app.MapHub<CalendarHub>("/hubs/calendar");
+    app.MapHub<NotificationHub>("/hubs/notifications");
+
+    // Hangfire — SMS dispatch job (her dakika)
+    RecurringJob.AddOrUpdate<SmsDispatchService>(
+        "sms-dispatch",
+        x => x.Execute(),
+        Cron.Minutely());
 
     app.Run();
 }

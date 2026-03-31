@@ -44,6 +44,19 @@ public class AppDbContext : DbContext
     // ─── Appointments ──────────────────────────────────────────────────────
     public DbSet<Appointment> Appointments => Set<Appointment>();
 
+    // ─── Treatment Plans ───────────────────────────────────────────────────
+    public DbSet<TreatmentPlan> TreatmentPlans => Set<TreatmentPlan>();
+    public DbSet<TreatmentPlanItem> TreatmentPlanItems => Set<TreatmentPlanItem>();
+
+    // ─── Finance ───────────────────────────────────────────────────────────
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<PaymentAllocation> PaymentAllocations => Set<PaymentAllocation>();
+    public DbSet<DoctorCommission> DoctorCommissions => Set<DoctorCommission>();
+
+    // ─── Notifications ─────────────────────────────────────────────────────
+    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<SmsQueue> SmsQueues => Set<SmsQueue>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -395,6 +408,213 @@ public class AppDbContext : DbContext
              .HasForeignKey(x => x.DoctorId)
              .OnDelete(DeleteBehavior.Restrict);
         });
+
+        // ── TreatmentPlan ──────────────────────────────────────────────────
+        m.Entity<TreatmentPlan>(e =>
+        {
+            e.ToTable("treatment_plans");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_treatment_plans_public_id");
+
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Notes).HasColumnType("text");
+            e.Property(x => x.Status).IsRequired();
+            e.Property(x => x.TenantId).IsRequired();
+
+            e.HasIndex(x => x.PatientId).HasDatabaseName("ix_treatment_plans_patient");
+            e.HasIndex(x => x.DoctorId).HasDatabaseName("ix_treatment_plans_doctor");
+            e.HasIndex(x => x.Status).HasDatabaseName("ix_treatment_plans_status");
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Doctor)
+             .WithMany()
+             .HasForeignKey(x => x.DoctorId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasMany(x => x.Items)
+             .WithOne(x => x.Plan)
+             .HasForeignKey(x => x.PlanId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── TreatmentPlanItem ──────────────────────────────────────────────
+        m.Entity<TreatmentPlanItem>(e =>
+        {
+            e.ToTable("treatment_plan_items");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_treatment_plan_items_public_id");
+
+            e.Property(x => x.TreatmentId).IsRequired();
+            e.Property(x => x.ToothNumber).HasMaxLength(10);
+            e.Property(x => x.ToothSurfaces).HasMaxLength(20);
+            e.Property(x => x.BodyRegionCode).HasMaxLength(50);
+            e.Property(x => x.Status).IsRequired();
+            e.Property(x => x.UnitPrice).HasColumnType("numeric(12,2)").IsRequired();
+            e.Property(x => x.DiscountRate).HasColumnType("numeric(5,2)").HasDefaultValue(0m);
+            e.Property(x => x.FinalPrice).HasColumnType("numeric(12,2)").IsRequired();
+            e.Property(x => x.Notes).HasColumnType("text");
+
+            // TreatmentId: treatments tablosu henüz implement edilmedi — FK constraint yok
+            e.HasIndex(x => x.PlanId).HasDatabaseName("ix_treatment_plan_items_plan");
+            e.HasIndex(x => x.TreatmentId).HasDatabaseName("ix_treatment_plan_items_treatment");
+            e.HasIndex(x => x.Status).HasDatabaseName("ix_treatment_plan_items_status");
+
+            e.HasOne(x => x.Doctor)
+             .WithMany()
+             .HasForeignKey(x => x.DoctorId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── Payment ────────────────────────────────────────────────────────
+        m.Entity<Payment>(e =>
+        {
+            e.ToTable("payments");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_payments_public_id");
+
+            e.Property(x => x.Amount).HasColumnType("numeric(12,2)").IsRequired();
+            e.Property(x => x.Currency).HasMaxLength(3).HasDefaultValue("TRY");
+            e.Property(x => x.Method).IsRequired();
+            e.Property(x => x.PaymentDate).IsRequired();
+            e.Property(x => x.Notes).HasColumnType("text");
+            e.Property(x => x.TenantId).IsRequired();
+
+            e.HasIndex(x => x.PatientId).HasDatabaseName("ix_payments_patient");
+            e.HasIndex(x => new { x.BranchId, x.PaymentDate }).HasDatabaseName("ix_payments_branch_date");
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasMany(x => x.Allocations)
+             .WithOne(x => x.Payment)
+             .HasForeignKey(x => x.PaymentId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── PaymentAllocation ──────────────────────────────────────────────
+        m.Entity<PaymentAllocation>(e =>
+        {
+            e.ToTable("payment_allocations");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.AllocatedAmount).HasColumnType("numeric(12,2)").IsRequired();
+
+            e.HasIndex(x => x.PaymentId).HasDatabaseName("ix_payment_alloc_payment");
+            e.HasIndex(x => x.TreatmentPlanItemId).HasDatabaseName("ix_payment_alloc_item");
+
+            e.HasOne(x => x.TreatmentPlanItem)
+             .WithMany()
+             .HasForeignKey(x => x.TreatmentPlanItemId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── DoctorCommission ───────────────────────────────────────────────
+        m.Entity<DoctorCommission>(e =>
+        {
+            e.ToTable("doctor_commissions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.GrossAmount).HasColumnType("numeric(12,2)").IsRequired();
+            e.Property(x => x.CommissionRate).HasColumnType("numeric(5,2)").IsRequired();
+            e.Property(x => x.CommissionAmount).HasColumnType("numeric(12,2)").IsRequired();
+            e.Property(x => x.Status).IsRequired();
+
+            e.HasIndex(x => x.DoctorId).HasDatabaseName("ix_doctor_commission_doctor");
+            e.HasIndex(x => x.TreatmentPlanItemId).HasDatabaseName("ix_doctor_commission_item");
+            e.HasIndex(x => new { x.BranchId, x.Status }).HasDatabaseName("ix_doctor_commission_branch_status");
+
+            e.HasOne(x => x.Doctor)
+             .WithMany()
+             .HasForeignKey(x => x.DoctorId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.TreatmentPlanItem)
+             .WithMany()
+             .HasForeignKey(x => x.TreatmentPlanItemId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── Notification ───────────────────────────────────────────────────
+        m.Entity<Notification>(e =>
+        {
+            e.ToTable("notifications");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_notifications_public_id");
+
+            e.Property(x => x.Title).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Message).HasColumnType("text").IsRequired();
+            e.Property(x => x.RelatedEntityType).HasMaxLength(50);
+
+            // Okunmamış + kullanıcıya / role göre listeleme index'leri
+            e.HasIndex(x => new { x.ToUserId, x.IsRead, x.CreatedAt })
+             .HasDatabaseName("ix_notifications_to_user_read");
+            e.HasIndex(x => new { x.BranchId, x.ToRole, x.IsRead, x.CreatedAt })
+             .HasDatabaseName("ix_notifications_branch_role_read");
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.ToUser)
+             .WithMany()
+             .HasForeignKey(x => x.ToUserId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── SmsQueue ───────────────────────────────────────────────────────
+        m.Entity<SmsQueue>(e =>
+        {
+            e.ToTable("sms_queue");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.ToPhone).HasMaxLength(20).IsRequired();
+            e.Property(x => x.Message).HasColumnType("text").IsRequired();
+            e.Property(x => x.SourceType).HasMaxLength(50);
+            e.Property(x => x.ErrorMessage).HasColumnType("text");
+            e.Property(x => x.ProviderMessageId).HasMaxLength(200);
+
+            e.HasIndex(x => new { x.Status, x.NextRetryAt })
+             .HasDatabaseName("ix_sms_queue_pending")
+             .HasFilter("\"Status\" = 1");
+            e.HasIndex(x => x.CompanyId).HasDatabaseName("ix_sms_queue_company");
+
+            e.HasOne(x => x.Company)
+             .WithMany()
+             .HasForeignKey(x => x.CompanyId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
     }
 
     // ─── Global Soft-Delete Filters ───────────────────────────────────────
@@ -417,7 +637,11 @@ public class AppDbContext : DbContext
                 typeof(UserRoleAssignment),
                 typeof(OutboxMessage),
                 typeof(LoginAttempt),
-                typeof(RefreshToken)
+                typeof(RefreshToken),
+                // Notification: bildirim arşivi kalıcıdır, soft-delete uygulanmaz
+                typeof(Notification)
+                // PaymentAllocation, DoctorCommission, SmsQueue BaseEntity türemediğinden
+                // bu döngüde zaten işlenmez.
             };
 
             if (Array.Exists(ignored, t => t == entityType.ClrType)) continue;
