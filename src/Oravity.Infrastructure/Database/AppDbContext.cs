@@ -61,6 +61,12 @@ public class AppDbContext : DbContext
     public DbSet<ToothRecord> ToothRecords => Set<ToothRecord>();
     public DbSet<ToothConditionHistory> ToothConditionHistories => Set<ToothConditionHistory>();
 
+    // ─── Patient Records (Anamnesis, Medications, Notes, Files) ───────────
+    public DbSet<PatientAnamnesis> PatientAnamneses => Set<PatientAnamnesis>();
+    public DbSet<PatientMedication> PatientMedications => Set<PatientMedication>();
+    public DbSet<PatientNote> PatientNotes => Set<PatientNote>();
+    public DbSet<PatientFile> PatientFiles => Set<PatientFile>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -679,6 +685,146 @@ public class AppDbContext : DbContext
              .HasForeignKey(x => x.ChangedBy)
              .OnDelete(DeleteBehavior.Restrict);
         });
+
+        // ── PatientAnamnesis ───────────────────────────────────────────────
+        m.Entity<PatientAnamnesis>(e =>
+        {
+            e.ToTable("patient_anamnesis");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_patient_anamnesis_public_id");
+
+            // Hasta başına tek kayıt
+            e.HasIndex(x => x.PatientId).IsUnique()
+             .HasDatabaseName("ix_patient_anamnesis_patient_unique");
+
+            e.Property(x => x.BloodType).HasMaxLength(5);
+            e.Property(x => x.AnticoagulantDrug).HasMaxLength(200);
+            e.Property(x => x.SmokingAmount).HasMaxLength(50);
+            e.Property(x => x.OtherSystemicDiseases).HasColumnType("text");
+            e.Property(x => x.LocalAnesthesiaAllergyNote).HasColumnType("text");
+            e.Property(x => x.OtherAllergies).HasColumnType("text");
+            e.Property(x => x.PreviousSurgeries).HasColumnType("text");
+            e.Property(x => x.AdditionalNotes).HasColumnType("text");
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.FilledByUser)
+             .WithMany()
+             .HasForeignKey(x => x.FilledBy)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.UpdatedByUser)
+             .WithMany()
+             .HasForeignKey(x => x.UpdatedBy)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── PatientMedication ──────────────────────────────────────────────
+        m.Entity<PatientMedication>(e =>
+        {
+            e.ToTable("patient_medications");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.DrugName).HasMaxLength(300).IsRequired();
+            e.Property(x => x.Dose).HasMaxLength(100);
+            e.Property(x => x.Frequency).HasMaxLength(100);
+            e.Property(x => x.Reason).HasMaxLength(300);
+
+            e.HasIndex(x => x.PatientId).HasDatabaseName("ix_patient_medications_patient");
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.AddedByUser)
+             .WithMany()
+             .HasForeignKey(x => x.AddedBy)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── PatientNote ────────────────────────────────────────────────────
+        m.Entity<PatientNote>(e =>
+        {
+            e.ToTable("patient_notes");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_patient_notes_public_id");
+
+            e.Property(x => x.Title).HasMaxLength(300);
+            e.Property(x => x.Content).HasColumnType("text").IsRequired();
+
+            // Pinlenmiş önce, sonra oluşturma tarihi azalan
+            e.HasIndex(x => new { x.PatientId, x.IsPinned, x.CreatedAt })
+             .HasDatabaseName("ix_patient_notes_patient_pinned");
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.CreatedByUser)
+             .WithMany()
+             .HasForeignKey(x => x.CreatedBy)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.UpdatedByUser)
+             .WithMany()
+             .HasForeignKey(x => x.UpdatedBy)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── PatientFile ────────────────────────────────────────────────────
+        m.Entity<PatientFile>(e =>
+        {
+            e.ToTable("patient_files");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_patient_files_public_id");
+
+            e.Property(x => x.FilePath).HasMaxLength(500).IsRequired();
+            e.Property(x => x.Category).HasMaxLength(100);
+            e.Property(x => x.Title).HasMaxLength(300);
+            e.Property(x => x.FileExt).HasMaxLength(10);
+            e.Property(x => x.Note).HasColumnType("text");
+
+            e.HasIndex(x => new { x.PatientId, x.FileType })
+             .HasDatabaseName("ix_patient_files_patient_type");
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.UploadedByUser)
+             .WithMany()
+             .HasForeignKey(x => x.UploadedBy)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
     }
 
     // ─── Global Soft-Delete Filters ───────────────────────────────────────
@@ -703,9 +849,13 @@ public class AppDbContext : DbContext
                 typeof(LoginAttempt),
                 typeof(RefreshToken),
                 // Notification: bildirim arşivi kalıcıdır, soft-delete uygulanmaz
-                typeof(Notification)
-                // PaymentAllocation, DoctorCommission, SmsQueue, ToothConditionHistory
-                // BaseEntity türemediğinden bu döngüde zaten işlenmez.
+                typeof(Notification),
+                // PatientAnamnesis/Note/File: kendi deleted_at / UpdatedByAt mantığını kullanır
+                typeof(PatientAnamnesis),
+                typeof(PatientNote),
+                typeof(PatientFile)
+                // PatientMedication, PaymentAllocation, DoctorCommission, SmsQueue,
+                // ToothConditionHistory BaseEntity türemediğinden bu döngüde zaten işlenmez.
             };
 
             if (Array.Exists(ignored, t => t == entityType.ClrType)) continue;
