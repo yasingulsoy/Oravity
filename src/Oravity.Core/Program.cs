@@ -3,6 +3,7 @@ using Microsoft.OpenApi.Models;
 using Oravity.Core.Middleware;
 using Oravity.Core.Modules.Appointment.Application;
 using Oravity.Core.Modules.Appointment.Infrastructure.Hubs;
+using Oravity.Core.Modules.Core.DentalChart.Domain.Services;
 using Oravity.Core.Modules.Notification.Infrastructure.Hubs;
 using Oravity.Core.Modules.Notification.Infrastructure.Services;
 using Oravity.Infrastructure;
@@ -78,6 +79,9 @@ try
     // SMS Dispatch — Hangfire job için bağımlılıklar
     builder.Services.AddScoped<ISmsAdapter, StubSmsAdapter>();
     builder.Services.AddScoped<SmsDispatchService>();
+
+    // FDI diş şeması servisi (stateless, singleton uygundur)
+    builder.Services.AddSingleton<IFdiChartService, FdiChartService>();
 
     builder.Services.AddInfrastructure(builder.Configuration);
 

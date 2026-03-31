@@ -57,6 +57,10 @@ public class AppDbContext : DbContext
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<SmsQueue> SmsQueues => Set<SmsQueue>();
 
+    // ─── Dental Chart ──────────────────────────────────────────────────────
+    public DbSet<ToothRecord> ToothRecords => Set<ToothRecord>();
+    public DbSet<ToothConditionHistory> ToothConditionHistories => Set<ToothConditionHistory>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -615,6 +619,66 @@ public class AppDbContext : DbContext
              .HasForeignKey(x => x.CompanyId)
              .OnDelete(DeleteBehavior.Restrict);
         });
+
+        // ── ToothRecord ────────────────────────────────────────────────────
+        m.Entity<ToothRecord>(e =>
+        {
+            e.ToTable("tooth_records");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_tooth_records_public_id");
+
+            // Bir hasta için aynı diş numarası benzersiz olmalı (partial: is_deleted = false)
+            e.HasIndex(x => new { x.PatientId, x.ToothNumber })
+             .IsUnique()
+             .HasFilter("\"IsDeleted\" = false")
+             .HasDatabaseName("ix_tooth_records_patient_tooth_unique");
+
+            e.HasIndex(x => x.PatientId).HasDatabaseName("ix_tooth_records_patient");
+
+            e.Property(x => x.ToothNumber).HasMaxLength(5).IsRequired();
+            e.Property(x => x.Surfaces).HasMaxLength(20);
+            e.Property(x => x.Notes).HasColumnType("text");
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Recorder)
+             .WithMany()
+             .HasForeignKey(x => x.RecordedBy)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── ToothConditionHistory ──────────────────────────────────────────
+        m.Entity<ToothConditionHistory>(e =>
+        {
+            e.ToTable("tooth_condition_history");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.ToothNumber).HasMaxLength(5).IsRequired();
+            e.Property(x => x.Reason).HasColumnType("text");
+
+            e.HasIndex(x => new { x.PatientId, x.ToothNumber, x.ChangedAt })
+             .HasDatabaseName("ix_tooth_history_patient_tooth");
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Changer)
+             .WithMany()
+             .HasForeignKey(x => x.ChangedBy)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
     }
 
     // ─── Global Soft-Delete Filters ───────────────────────────────────────
@@ -640,8 +704,8 @@ public class AppDbContext : DbContext
                 typeof(RefreshToken),
                 // Notification: bildirim arşivi kalıcıdır, soft-delete uygulanmaz
                 typeof(Notification)
-                // PaymentAllocation, DoctorCommission, SmsQueue BaseEntity türemediğinden
-                // bu döngüde zaten işlenmez.
+                // PaymentAllocation, DoctorCommission, SmsQueue, ToothConditionHistory
+                // BaseEntity türemediğinden bu döngüde zaten işlenmez.
             };
 
             if (Array.Exists(ignored, t => t == entityType.ClrType)) continue;
