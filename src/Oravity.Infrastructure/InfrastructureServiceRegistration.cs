@@ -62,13 +62,32 @@ public static class InfrastructureServiceRegistration
         var jwtSecret = configuration["Jwt:Secret"]
             ?? throw new InvalidOperationException("Jwt:Secret ayarı eksik. appsettings.json dosyasını kontrol edin.");
 
+        var portalSecret = configuration["Jwt:PortalSecret"]
+            ?? throw new InvalidOperationException("Jwt:PortalSecret ayarı eksik.");
+
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            // Klinik personel JWT — varsayılan scheme
             .AddJwtBearer(options =>
             {
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+                    ValidateIssuer = true,
+                    ValidIssuer = configuration["Jwt:Issuer"],
+                    ValidateAudience = true,
+                    ValidAudience = configuration["Jwt:Audience"],
+                    ValidateLifetime = true,
+                    ClockSkew = TimeSpan.Zero
+                };
+            })
+            // Hasta portalı JWT — ayrı scheme + ayrı secret
+            .AddJwtBearer("PatientPortal", options =>
+            {
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(portalSecret)),
                     ValidateIssuer = true,
                     ValidIssuer = configuration["Jwt:Issuer"],
                     ValidateAudience = true,

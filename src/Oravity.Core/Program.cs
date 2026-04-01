@@ -3,7 +3,12 @@ using Microsoft.OpenApi.Models;
 using Oravity.Core.Middleware;
 using Oravity.Core.Modules.Appointment.Application;
 using Oravity.Core.Modules.Appointment.Infrastructure.Hubs;
+using Oravity.Core.Modules.Appointment.OnlineBooking.Application.Services;
 using Oravity.Core.Modules.Core.DentalChart.Domain.Services;
+using Oravity.Core.Modules.Core.PatientPortal.Infrastructure.Services;
+using Oravity.Core.Modules.Survey.Application.Commands;
+using Oravity.Core.Modules.Survey.Jobs;
+using Oravity.SharedKernel.Interfaces;
 using Oravity.Core.Modules.Notification.Infrastructure.Hubs;
 using Oravity.Core.Modules.Notification.Infrastructure.Services;
 using Oravity.Infrastructure;
@@ -46,7 +51,17 @@ try
             Scheme = "bearer",
             BearerFormat = "JWT",
             In = ParameterLocation.Header,
-            Description = "JWT token girin. Örnek: eyJhbGci..."
+            Description = "Klinik personel JWT. Örnek: eyJhbGci..."
+        });
+
+        options.AddSecurityDefinition("PatientPortal", new OpenApiSecurityScheme
+        {
+            Name = "Authorization",
+            Type = SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            In = ParameterLocation.Header,
+            Description = "Hasta portalı JWT (ayrı secret). Örnek: eyJhbGci..."
         });
 
         options.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -83,6 +98,19 @@ try
     // FDI diş şeması servisi (stateless, singleton uygundur)
     builder.Services.AddSingleton<IFdiChartService, FdiChartService>();
 
+    // Online randevu servisleri
+    builder.Services.AddScoped<IOnlineAvailabilityService, OnlineAvailabilityService>();
+    builder.Services.AddScoped<IOnlineBookingFilterService, OnlineBookingFilterService>();
+
+    // Hasta portalı servisleri
+    builder.Services.AddScoped<IPatientPortalJwtService, PatientPortalJwtService>();
+    builder.Services.AddScoped<ICurrentPortalUser, CurrentPortalUserService>();
+
+    // Survey & Complaint Hangfire jobs
+    builder.Services.AddScoped<SurveySchedulerJob>();
+    builder.Services.AddScoped<SlaMonitorJob>();
+    builder.Services.AddScoped<ISendSurveyJob, SendSurveyJob>();
+
     builder.Services.AddInfrastructure(builder.Configuration);
 
     var app = builder.Build();
@@ -110,6 +138,18 @@ try
         "sms-dispatch",
         x => x.Execute(),
         Cron.Minutely());
+
+    // Hangfire — Survey scheduler job (her 5 dakika)
+    RecurringJob.AddOrUpdate<SurveySchedulerJob>(
+        "survey-scheduler",
+        x => x.Execute(),
+        "*/5 * * * *");
+
+    // Hangfire — SLA monitor job (her 30 dakika)
+    RecurringJob.AddOrUpdate<SlaMonitorJob>(
+        "sla-monitor",
+        x => x.Execute(),
+        "*/30 * * * *");
 
     app.Run();
 }

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Oravity.Infrastructure.Database;
@@ -11,9 +12,11 @@ using Oravity.Infrastructure.Database;
 namespace Oravity.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260401205939_AddPatientPortalTables")]
+    partial class AddPatientPortalTables
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -250,129 +253,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.HasIndex("VerticalId");
 
                     b.ToTable("companies", (string)null);
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.Complaint", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<long?>("AssignedTo")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("BranchId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("CompanyId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("CreatedBy")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<long?>("PatientId")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("Priority")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("PublicId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<string>("Resolution")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("ResolvedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("SlaDueAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Source")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Subject")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<long?>("SurveyResponseId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AssignedTo");
-
-                    b.HasIndex("BranchId");
-
-                    b.HasIndex("CreatedBy");
-
-                    b.HasIndex("PatientId");
-
-                    b.HasIndex("PublicId")
-                        .IsUnique()
-                        .HasDatabaseName("ix_complaints_public_id");
-
-                    b.HasIndex("SlaDueAt")
-                        .HasDatabaseName("ix_complaints_sla_due");
-
-                    b.HasIndex("CompanyId", "Status")
-                        .HasDatabaseName("ix_complaints_company_status");
-
-                    b.ToTable("complaints", (string)null);
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.ComplaintNote", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<long>("ComplaintId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("CreatedBy")
-                        .HasColumnType("bigint");
-
-                    b.Property<bool>("IsInternal")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Note")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ComplaintId");
-
-                    b.HasIndex("CreatedBy");
-
-                    b.ToTable("complaint_notes", (string)null);
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.DoctorCommission", b =>
@@ -1981,223 +1861,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.ToTable("sms_queue", (string)null);
                 });
 
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.SurveyAnswer", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<bool?>("AnswerBoolean")
-                        .HasColumnType("boolean");
-
-                    b.Property<int?>("AnswerScore")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("AnswerText")
-                        .HasColumnType("text");
-
-                    b.Property<long>("QuestionId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("ResponseId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("SelectedOption")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("QuestionId");
-
-                    b.HasIndex("ResponseId");
-
-                    b.ToTable("survey_answers", (string)null);
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.SurveyQuestion", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<bool>("IsRequired")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Options")
-                        .HasColumnType("jsonb");
-
-                    b.Property<string>("QuestionText")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("QuestionType")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("TemplateId")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TemplateId", "SortOrder")
-                        .HasDatabaseName("ix_survey_questions_template_sort");
-
-                    b.ToTable("survey_questions", (string)null);
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.SurveyResponse", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<long?>("AppointmentId")
-                        .HasColumnType("bigint");
-
-                    b.Property<decimal?>("AverageScore")
-                        .HasColumnType("numeric(3,1)");
-
-                    b.Property<long>("BranchId")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("Channel")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("CompanyId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<int?>("NpsScore")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("PatientId")
-                        .HasColumnType("bigint");
-
-                    b.Property<Guid>("PublicId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<DateTime>("SentAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("TemplateId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Token")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<DateTime>("TokenExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AppointmentId");
-
-                    b.HasIndex("BranchId");
-
-                    b.HasIndex("CompanyId");
-
-                    b.HasIndex("PublicId")
-                        .IsUnique()
-                        .HasDatabaseName("ix_survey_responses_public_id");
-
-                    b.HasIndex("TemplateId");
-
-                    b.HasIndex("Token")
-                        .IsUnique()
-                        .HasDatabaseName("ix_survey_responses_token");
-
-                    b.HasIndex("PatientId", "TemplateId")
-                        .HasDatabaseName("ix_survey_responses_patient_template");
-
-                    b.ToTable("survey_responses", (string)null);
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.SurveyTemplate", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<long>("CompanyId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("CreatedBy")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<Guid>("PublicId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<int>("TriggerDelayHours")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("TriggerType")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedBy");
-
-                    b.HasIndex("PublicId")
-                        .IsUnique()
-                        .HasDatabaseName("ix_survey_templates_public_id");
-
-                    b.HasIndex("CompanyId", "IsActive")
-                        .HasDatabaseName("ix_survey_templates_company_active");
-
-                    b.ToTable("survey_templates", (string)null);
-                });
-
             modelBuilder.Entity("Oravity.SharedKernel.Entities.ToothConditionHistory", b =>
                 {
                     b.Property<long>("Id")
@@ -2949,66 +2612,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("Vertical");
                 });
 
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.Complaint", b =>
-                {
-                    b.HasOne("Oravity.SharedKernel.Entities.User", "AssignedUser")
-                        .WithMany()
-                        .HasForeignKey("AssignedTo")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("Oravity.SharedKernel.Entities.Branch", "Branch")
-                        .WithMany()
-                        .HasForeignKey("BranchId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Oravity.SharedKernel.Entities.Company", "Company")
-                        .WithMany()
-                        .HasForeignKey("CompanyId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Oravity.SharedKernel.Entities.User", "Creator")
-                        .WithMany()
-                        .HasForeignKey("CreatedBy")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Oravity.SharedKernel.Entities.Patient", "Patient")
-                        .WithMany()
-                        .HasForeignKey("PatientId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("AssignedUser");
-
-                    b.Navigation("Branch");
-
-                    b.Navigation("Company");
-
-                    b.Navigation("Creator");
-
-                    b.Navigation("Patient");
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.ComplaintNote", b =>
-                {
-                    b.HasOne("Oravity.SharedKernel.Entities.Complaint", "Complaint")
-                        .WithMany("Notes")
-                        .HasForeignKey("ComplaintId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Oravity.SharedKernel.Entities.User", "Creator")
-                        .WithMany()
-                        .HasForeignKey("CreatedBy")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Complaint");
-
-                    b.Navigation("Creator");
-                });
-
             modelBuilder.Entity("Oravity.SharedKernel.Entities.DoctorCommission", b =>
                 {
                     b.HasOne("Oravity.SharedKernel.Entities.Branch", "Branch")
@@ -3377,97 +2980,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("Company");
                 });
 
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.SurveyAnswer", b =>
-                {
-                    b.HasOne("Oravity.SharedKernel.Entities.SurveyQuestion", "Question")
-                        .WithMany()
-                        .HasForeignKey("QuestionId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Oravity.SharedKernel.Entities.SurveyResponse", "Response")
-                        .WithMany("Answers")
-                        .HasForeignKey("ResponseId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Question");
-
-                    b.Navigation("Response");
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.SurveyQuestion", b =>
-                {
-                    b.HasOne("Oravity.SharedKernel.Entities.SurveyTemplate", "Template")
-                        .WithMany("Questions")
-                        .HasForeignKey("TemplateId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Template");
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.SurveyResponse", b =>
-                {
-                    b.HasOne("Oravity.SharedKernel.Entities.Appointment", "Appointment")
-                        .WithMany()
-                        .HasForeignKey("AppointmentId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("Oravity.SharedKernel.Entities.Branch", "Branch")
-                        .WithMany()
-                        .HasForeignKey("BranchId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Oravity.SharedKernel.Entities.Company", "Company")
-                        .WithMany()
-                        .HasForeignKey("CompanyId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Oravity.SharedKernel.Entities.Patient", "Patient")
-                        .WithMany()
-                        .HasForeignKey("PatientId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Oravity.SharedKernel.Entities.SurveyTemplate", "Template")
-                        .WithMany()
-                        .HasForeignKey("TemplateId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Appointment");
-
-                    b.Navigation("Branch");
-
-                    b.Navigation("Company");
-
-                    b.Navigation("Patient");
-
-                    b.Navigation("Template");
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.SurveyTemplate", b =>
-                {
-                    b.HasOne("Oravity.SharedKernel.Entities.Company", "Company")
-                        .WithMany()
-                        .HasForeignKey("CompanyId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Oravity.SharedKernel.Entities.User", "Creator")
-                        .WithMany()
-                        .HasForeignKey("CreatedBy")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Company");
-
-                    b.Navigation("Creator");
-                });
-
             modelBuilder.Entity("Oravity.SharedKernel.Entities.ToothConditionHistory", b =>
                 {
                     b.HasOne("Oravity.SharedKernel.Entities.User", "Changer")
@@ -3637,11 +3149,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("UserRoleAssignments");
                 });
 
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.Complaint", b =>
-                {
-                    b.Navigation("Notes");
-                });
-
             modelBuilder.Entity("Oravity.SharedKernel.Entities.Payment", b =>
                 {
                     b.Navigation("Allocations");
@@ -3659,16 +3166,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("RoleTemplatePermissions");
 
                     b.Navigation("UserRoleAssignments");
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.SurveyResponse", b =>
-                {
-                    b.Navigation("Answers");
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.SurveyTemplate", b =>
-                {
-                    b.Navigation("Questions");
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.TreatmentPlan", b =>

@@ -67,6 +67,25 @@ public class AppDbContext : DbContext
     public DbSet<PatientNote> PatientNotes => Set<PatientNote>();
     public DbSet<PatientFile> PatientFiles => Set<PatientFile>();
 
+    // ─── Online Booking ────────────────────────────────────────────────────
+    public DbSet<DoctorOnlineBookingSettings> DoctorOnlineBookingSettings => Set<DoctorOnlineBookingSettings>();
+    public DbSet<DoctorOnlineSchedule> DoctorOnlineSchedules => Set<DoctorOnlineSchedule>();
+    public DbSet<DoctorOnlineBlock> DoctorOnlineBlocks => Set<DoctorOnlineBlock>();
+    public DbSet<BranchOnlineBookingSettings> BranchOnlineBookingSettings => Set<BranchOnlineBookingSettings>();
+    public DbSet<OnlineBookingRequest> OnlineBookingRequests => Set<OnlineBookingRequest>();
+
+    // ─── Patient Portal ────────────────────────────────────────────────────
+    public DbSet<PatientPortalAccount> PatientPortalAccounts => Set<PatientPortalAccount>();
+    public DbSet<PatientPortalSession> PatientPortalSessions => Set<PatientPortalSession>();
+
+    // ─── Survey & Complaint ────────────────────────────────────────────────
+    public DbSet<SurveyTemplate> SurveyTemplates => Set<SurveyTemplate>();
+    public DbSet<SurveyQuestion> SurveyQuestions => Set<SurveyQuestion>();
+    public DbSet<SurveyResponse> SurveyResponses => Set<SurveyResponse>();
+    public DbSet<SurveyAnswer> SurveyAnswers => Set<SurveyAnswer>();
+    public DbSet<Complaint> Complaints => Set<Complaint>();
+    public DbSet<ComplaintNote> ComplaintNotes => Set<ComplaintNote>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -825,6 +844,371 @@ public class AppDbContext : DbContext
              .HasForeignKey(x => x.UploadedBy)
              .OnDelete(DeleteBehavior.Restrict);
         });
+
+        // ── DoctorOnlineBookingSettings ────────────────────────────────────
+        m.Entity<DoctorOnlineBookingSettings>(e =>
+        {
+            e.ToTable("doctor_online_booking_settings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.BookingNote).HasColumnType("text");
+
+            e.HasIndex(x => new { x.DoctorId, x.BranchId }).IsUnique()
+             .HasDatabaseName("ix_doctor_online_settings_unique");
+
+            e.HasOne(x => x.Doctor)
+             .WithMany()
+             .HasForeignKey(x => x.DoctorId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── DoctorOnlineSchedule ───────────────────────────────────────────
+        m.Entity<DoctorOnlineSchedule>(e =>
+        {
+            e.ToTable("doctor_online_schedule");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+
+            e.HasIndex(x => new { x.DoctorId, x.BranchId, x.DayOfWeek }).IsUnique()
+             .HasDatabaseName("ix_doctor_online_schedule_unique");
+
+            e.HasOne(x => x.Doctor)
+             .WithMany()
+             .HasForeignKey(x => x.DoctorId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── DoctorOnlineBlock ──────────────────────────────────────────────
+        m.Entity<DoctorOnlineBlock>(e =>
+        {
+            e.ToTable("doctor_online_blocks");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.Reason).HasMaxLength(200);
+
+            e.HasIndex(x => new { x.DoctorId, x.BranchId, x.StartDatetime })
+             .HasDatabaseName("ix_doctor_online_blocks_doctor_date");
+
+            e.HasOne(x => x.Doctor)
+             .WithMany()
+             .HasForeignKey(x => x.DoctorId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Creator)
+             .WithMany()
+             .HasForeignKey(x => x.CreatedBy)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── BranchOnlineBookingSettings ────────────────────────────────────
+        m.Entity<BranchOnlineBookingSettings>(e =>
+        {
+            e.ToTable("branch_online_booking_settings");
+            e.HasKey(x => x.BranchId);
+
+            e.Property(x => x.WidgetSlug).HasMaxLength(100).IsRequired();
+            e.HasIndex(x => x.WidgetSlug).IsUnique()
+             .HasDatabaseName("ix_branch_online_settings_slug");
+
+            e.Property(x => x.PrimaryColor).HasMaxLength(7).HasDefaultValue("#2563eb");
+            e.Property(x => x.LogoUrl).HasMaxLength(500);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── OnlineBookingRequest ───────────────────────────────────────────
+        m.Entity<OnlineBookingRequest>(e =>
+        {
+            e.ToTable("online_booking_requests");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique()
+             .HasDatabaseName("ix_online_booking_requests_public_id");
+
+            e.Property(x => x.FirstName).HasMaxLength(100);
+            e.Property(x => x.LastName).HasMaxLength(100);
+            e.Property(x => x.Phone).HasMaxLength(20);
+            e.Property(x => x.Email).HasMaxLength(200);
+            e.Property(x => x.VerificationCode).HasMaxLength(6);
+            e.Property(x => x.PatientNote).HasColumnType("text");
+            e.Property(x => x.RejectionReason).HasColumnType("text");
+
+            e.HasIndex(x => new { x.BranchId, x.Status })
+             .HasDatabaseName("ix_online_booking_requests_branch_status");
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Doctor)
+             .WithMany()
+             .HasForeignKey(x => x.DoctorId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Reviewer)
+             .WithMany()
+             .HasForeignKey(x => x.ReviewedBy)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── PatientPortalAccount ───────────────────────────────────────────
+        m.Entity<PatientPortalAccount>(e =>
+        {
+            e.ToTable("patient_portal_accounts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique()
+             .HasDatabaseName("ix_patient_portal_accounts_public_id");
+
+            e.Property(x => x.Email).HasMaxLength(200).IsRequired();
+            e.HasIndex(x => x.Email).IsUnique()
+             .HasDatabaseName("ix_patient_portal_accounts_email");
+
+            e.Property(x => x.Phone).HasMaxLength(20);
+            e.Property(x => x.PasswordHash).HasMaxLength(500).IsRequired();
+            e.Property(x => x.EmailVerificationToken).HasMaxLength(200);
+            e.Property(x => x.PhoneVerificationCode).HasMaxLength(6);
+            e.Property(x => x.PreferredLanguageCode).HasMaxLength(5).HasDefaultValue("tr");
+
+            // patient_id UNIQUE — her hastanın tek portal hesabı olabilir
+            e.HasIndex(x => x.PatientId).IsUnique()
+             .HasDatabaseName("ix_patient_portal_accounts_patient")
+             .HasFilter("patient_id IS NOT NULL");
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── PatientPortalSession ───────────────────────────────────────────
+        m.Entity<PatientPortalSession>(e =>
+        {
+            e.ToTable("patient_portal_sessions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.TokenHash).HasMaxLength(500).IsRequired();
+            e.Property(x => x.IpAddress).HasMaxLength(45);
+            e.Property(x => x.UserAgent).HasMaxLength(500);
+
+            e.HasIndex(x => x.TokenHash)
+             .HasDatabaseName("ix_patient_portal_sessions_token");
+
+            e.HasIndex(x => new { x.AccountId, x.IsRevoked })
+             .HasDatabaseName("ix_patient_portal_sessions_account_active");
+
+            e.HasOne(x => x.Account)
+             .WithMany()
+             .HasForeignKey(x => x.AccountId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── SurveyTemplate ─────────────────────────────────────────────────
+        m.Entity<SurveyTemplate>(e =>
+        {
+            e.ToTable("survey_templates");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique()
+             .HasDatabaseName("ix_survey_templates_public_id");
+
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Description).HasColumnType("text");
+
+            e.HasIndex(x => new { x.CompanyId, x.IsActive })
+             .HasDatabaseName("ix_survey_templates_company_active");
+
+            e.HasOne(x => x.Company)
+             .WithMany()
+             .HasForeignKey(x => x.CompanyId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Creator)
+             .WithMany()
+             .HasForeignKey(x => x.CreatedBy)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── SurveyQuestion ────────────────────────────────────────────────
+        m.Entity<SurveyQuestion>(e =>
+        {
+            e.ToTable("survey_questions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.QuestionText).HasColumnType("text").IsRequired();
+            e.Property(x => x.Options).HasColumnType("jsonb");
+
+            e.HasIndex(x => new { x.TemplateId, x.SortOrder })
+             .HasDatabaseName("ix_survey_questions_template_sort");
+
+            e.HasOne(x => x.Template)
+             .WithMany(t => t.Questions)
+             .HasForeignKey(x => x.TemplateId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── SurveyResponse ────────────────────────────────────────────────
+        m.Entity<SurveyResponse>(e =>
+        {
+            e.ToTable("survey_responses");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique()
+             .HasDatabaseName("ix_survey_responses_public_id");
+
+            e.Property(x => x.Token).HasMaxLength(200).IsRequired();
+            e.HasIndex(x => x.Token).IsUnique()
+             .HasDatabaseName("ix_survey_responses_token");
+
+            e.Property(x => x.AverageScore).HasColumnType("numeric(3,1)");
+
+            e.HasIndex(x => new { x.PatientId, x.TemplateId })
+             .HasDatabaseName("ix_survey_responses_patient_template");
+
+            e.HasOne(x => x.Template)
+             .WithMany()
+             .HasForeignKey(x => x.TemplateId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Company)
+             .WithMany()
+             .HasForeignKey(x => x.CompanyId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Appointment)
+             .WithMany()
+             .HasForeignKey(x => x.AppointmentId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── SurveyAnswer ──────────────────────────────────────────────────
+        m.Entity<SurveyAnswer>(e =>
+        {
+            e.ToTable("survey_answers");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.AnswerText).HasColumnType("text");
+            e.Property(x => x.SelectedOption).HasMaxLength(200);
+
+            e.HasOne(x => x.Response)
+             .WithMany(r => r.Answers)
+             .HasForeignKey(x => x.ResponseId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.Question)
+             .WithMany()
+             .HasForeignKey(x => x.QuestionId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── Complaint ─────────────────────────────────────────────────────
+        m.Entity<Complaint>(e =>
+        {
+            e.ToTable("complaints");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique()
+             .HasDatabaseName("ix_complaints_public_id");
+
+            e.Property(x => x.Subject).HasMaxLength(300).IsRequired();
+            e.Property(x => x.Description).HasColumnType("text").IsRequired();
+            e.Property(x => x.Resolution).HasColumnType("text");
+
+            e.HasIndex(x => new { x.CompanyId, x.Status })
+             .HasDatabaseName("ix_complaints_company_status");
+
+            e.HasIndex(x => x.SlaDueAt)
+             .HasDatabaseName("ix_complaints_sla_due");
+
+            e.HasOne(x => x.Company)
+             .WithMany()
+             .HasForeignKey(x => x.CompanyId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.AssignedUser)
+             .WithMany()
+             .HasForeignKey(x => x.AssignedTo)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Creator)
+             .WithMany()
+             .HasForeignKey(x => x.CreatedBy)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── ComplaintNote ─────────────────────────────────────────────────
+        m.Entity<ComplaintNote>(e =>
+        {
+            e.ToTable("complaint_notes");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.Note).HasColumnType("text").IsRequired();
+
+            e.HasOne(x => x.Complaint)
+             .WithMany(c => c.Notes)
+             .HasForeignKey(x => x.ComplaintId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.Creator)
+             .WithMany()
+             .HasForeignKey(x => x.CreatedBy)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
     }
 
     // ─── Global Soft-Delete Filters ───────────────────────────────────────
@@ -850,12 +1234,18 @@ public class AppDbContext : DbContext
                 typeof(RefreshToken),
                 // Notification: bildirim arşivi kalıcıdır, soft-delete uygulanmaz
                 typeof(Notification),
-                // PatientAnamnesis/Note/File: kendi deleted_at / UpdatedByAt mantığını kullanır
+                // PatientAnamnesis/Note/File: kendi deleted_at mantığını kullanır
                 typeof(PatientAnamnesis),
                 typeof(PatientNote),
-                typeof(PatientFile)
+                typeof(PatientFile),
+                // OnlineBookingRequest: kendi status akışını yönetir (cancelled ile)
+                typeof(OnlineBookingRequest),
+                // PatientPortalAccount: portal hesabı is_active ile yönetilir
+                typeof(PatientPortalAccount)
                 // PatientMedication, PaymentAllocation, DoctorCommission, SmsQueue,
-                // ToothConditionHistory BaseEntity türemediğinden bu döngüde zaten işlenmez.
+                // ToothConditionHistory, DoctorOnlineBookingSettings, DoctorOnlineSchedule,
+                // DoctorOnlineBlock, BranchOnlineBookingSettings BaseEntity türemediğinden
+                // bu döngüde zaten işlenmez.
             };
 
             if (Array.Exists(ignored, t => t == entityType.ClrType)) continue;
