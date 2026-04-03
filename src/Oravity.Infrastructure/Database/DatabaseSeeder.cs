@@ -28,6 +28,7 @@ public class DatabaseSeeder
         await SeedVerticalsAsync(ct);
         await SeedRoleTemplatesAsync(ct);
         await SeedPermissionsAsync(ct);
+        await SeedTranslationsAsync(ct);
 
         if (_env.IsDevelopment())
             await SeedPlatformAdminAsync(ct);
@@ -158,6 +159,39 @@ public class DatabaseSeeder
             // Settings
             ("settings",         "view",             false),
             ("settings",         "edit_general",     false),
+
+            // E-Fatura
+            ("invoice",          "view",             false),
+            ("invoice",          "create",           false),
+            ("invoice",          "cancel",           true),
+
+            // Lokalizasyon
+            ("translations",     "manage",           false),
+
+            // Audit
+            ("audit",            "view",             false),
+
+            // Survey & Complaint
+            ("survey",           "manage",           false),
+            ("survey",           "view_results",     false),
+            ("complaint",        "view",             false),
+            ("complaint",        "create",           false),
+            ("complaint",        "manage",           false),
+
+            // Commission
+            ("commission",       "view",             false),
+            ("commission",       "distribute",       true),
+
+            // Report
+            ("report",           "view_daily",       false),
+
+            // Notes
+            ("note",             "write_patient",    false),
+            ("note",             "delete_patient",   false),
+            ("patient",          "write_hidden_note",false),
+            ("patient",          "upload_document",  false),
+            ("patient",          "edit_basic",       false),
+            ("anamnesis",        "edit",             false),
         };
 
         var existingCodes = await _db.Permissions
@@ -178,6 +212,66 @@ public class DatabaseSeeder
         await _db.Permissions.AddRangeAsync(toAdd, ct);
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation("{Count} izin eklendi.", toAdd.Count);
+    }
+
+    // ─── Translations Seed ───────────────────────────────────────────────────
+    private async Task SeedTranslationsAsync(CancellationToken ct)
+    {
+        if (await _db.TranslationKeys.AnyAsync(ct))
+        {
+            _logger.LogDebug("Çeviri anahtarları zaten mevcut, atlanıyor.");
+            return;
+        }
+
+        // (key, category, description, tr, en)
+        var definitions = new (string Key, string Cat, string Desc, string Tr, string En)[]
+        {
+            // common
+            ("common.save",                         "common",       "Kaydet butonu",                    "Kaydet",       "Save"),
+            ("common.cancel",                       "common",       "İptal butonu",                     "İptal",        "Cancel"),
+            ("common.delete",                       "common",       "Sil butonu",                       "Sil",          "Delete"),
+            ("common.loading",                      "common",       "Yükleniyor göstergesi",            "Yükleniyor...", "Loading..."),
+            ("common.error",                        "common",       "Hata mesajı",                      "Hata",         "Error"),
+            ("common.success",                      "common",       "Başarı mesajı",                    "Başarılı",     "Success"),
+            // patient
+            ("patient.title",                       "patient",      "Hasta listesi başlığı",            "Hastalar",     "Patients"),
+            ("patient.new",                         "patient",      "Yeni hasta butonu",                "Yeni Hasta",   "New Patient"),
+            ("patient.search",                      "patient",      "Hasta arama placeholder",          "Hasta Ara...", "Search Patient..."),
+            // appointment
+            ("appointment.title",                   "appointment",  "Randevu listesi başlığı",          "Randevular",   "Appointments"),
+            ("appointment.status.confirmed",        "appointment",  "Onaylandı durumu",                 "Onaylandı",    "Confirmed"),
+            ("appointment.status.cancelled",        "appointment",  "İptal durumu",                     "İptal",        "Cancelled"),
+            ("appointment.status.completed",        "appointment",  "Tamamlandı durumu",                "Tamamlandı",   "Completed"),
+            // payment
+            ("payment.title",                       "payment",      "Ödeme listesi başlığı",            "Ödemeler",     "Payments"),
+            ("payment.balance",                     "payment",      "Hasta bakiyesi etiketi",           "Bakiye",       "Balance"),
+            // treatment_plan
+            ("treatment_plan.title",                "treatment",    "Tedavi planı listesi başlığı",     "Tedavi Planları","Treatment Plans"),
+            ("treatment_plan.status.planned",       "treatment",    "Planlandı durumu",                 "Planlandı",    "Planned"),
+        };
+
+        // Dil ID'lerini al (tr + en)
+        var trLang = await _db.Languages.FirstOrDefaultAsync(l => l.Code == "tr", ct);
+        var enLang = await _db.Languages.FirstOrDefaultAsync(l => l.Code == "en", ct);
+
+        if (trLang is null || enLang is null)
+        {
+            _logger.LogWarning("TR/EN dilleri bulunamadı, çeviri seed atlanıyor.");
+            return;
+        }
+
+        foreach (var (key, cat, desc, tr, en) in definitions)
+        {
+            var tKey = TranslationKey.Create(key, cat, desc);
+            _db.TranslationKeys.Add(tKey);
+            await _db.SaveChangesAsync(ct); // ID alıyoruz
+
+            _db.Translations.Add(Translation.Create(tKey.Id, trLang.Id, tr, isReviewed: true));
+            _db.Translations.Add(Translation.Create(tKey.Id, enLang.Id, en, isReviewed: true));
+            await _db.SaveChangesAsync(ct);
+        }
+
+        _logger.LogInformation("{Count} çeviri anahtarı eklendi (TR+EN).", definitions.Length);
     }
 
     // ─── Platform Admin (sadece Development) ──────────────────────────────

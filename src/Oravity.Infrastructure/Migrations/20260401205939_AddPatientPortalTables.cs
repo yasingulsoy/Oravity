@@ -82,7 +82,7 @@ namespace Oravity.Infrastructure.Migrations
                 table: "patient_portal_accounts",
                 column: "PatientId",
                 unique: true,
-                filter: "patient_id IS NOT NULL");
+                filter: "\"PatientId\" IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "ix_patient_portal_accounts_public_id",

@@ -1,6 +1,8 @@
 using Hangfire;
 using Microsoft.OpenApi.Models;
 using Oravity.Core.Middleware;
+using Oravity.Core.Modules.Core.Localization.Application.Services;
+using Oravity.Core.Modules.Finance.EInvoice.Infrastructure.Adapters;
 using Oravity.Core.Modules.Appointment.Application;
 using Oravity.Core.Modules.Appointment.Infrastructure.Hubs;
 using Oravity.Core.Modules.Appointment.OnlineBooking.Application.Services;
@@ -8,6 +10,7 @@ using Oravity.Core.Modules.Core.DentalChart.Domain.Services;
 using Oravity.Core.Modules.Core.PatientPortal.Infrastructure.Services;
 using Oravity.Core.Modules.Survey.Application.Commands;
 using Oravity.Core.Modules.Survey.Jobs;
+using Oravity.Infrastructure.Jobs;
 using Oravity.SharedKernel.Interfaces;
 using Oravity.Core.Modules.Notification.Infrastructure.Hubs;
 using Oravity.Core.Modules.Notification.Infrastructure.Services;
@@ -111,11 +114,33 @@ try
     builder.Services.AddScoped<SlaMonitorJob>();
     builder.Services.AddScoped<ISendSurveyJob, SendSurveyJob>();
 
+    // Outbox Processor
+    builder.Services.AddScoped<OutboxProcessorJob>();
+    builder.Services.AddScoped<OutboxEventDispatcher>();
+
+    // Localization
+    builder.Services.AddMemoryCache();
+    builder.Services.AddScoped<TranslationService>();
+
+    // E-Fatura adapters
+    builder.Services.AddScoped<XmlExportAdapter>();
+    builder.Services.AddScoped<ParasutAdapter>();
+    builder.Services.AddScoped<LogoAdapter>();
+    builder.Services.AddScoped<EInvoiceAdapterFactory>();
+
+    // Health checks
+    builder.Services.AddHealthChecks()
+        .AddCheck<OutboxHealthCheck>(
+            "outbox",
+            tags: ["ready", "outbox"]);
+
     builder.Services.AddInfrastructure(builder.Configuration);
 
     var app = builder.Build();
 
-    await app.Services.SeedDatabaseAsync();
+    // Testing ortamında migration + seed factory tarafından ayrıca çalıştırılır
+    if (!app.Environment.IsEnvironment("Testing"))
+        await app.Services.SeedDatabaseAsync();
 
     if (app.Environment.IsDevelopment())
     {
@@ -130,31 +155,41 @@ try
     app.UseMiddleware<TenantMiddleware>();
     app.UseAuthorization();
     app.MapControllers();
+    app.MapHealthChecks("/api/health/live");
     app.MapHub<CalendarHub>("/hubs/calendar");
     app.MapHub<NotificationHub>("/hubs/notifications");
 
-    // Hangfire — SMS dispatch job (her dakika)
-    RecurringJob.AddOrUpdate<SmsDispatchService>(
-        "sms-dispatch",
-        x => x.Execute(),
-        Cron.Minutely());
+    // Hangfire recurring jobs — test ortamında schema henüz yok, atla
+    if (!app.Environment.IsEnvironment("Testing"))
+    {
+        RecurringJob.AddOrUpdate<SmsDispatchService>(
+            "sms-dispatch",
+            x => x.Execute(),
+            Cron.Minutely());
 
-    // Hangfire — Survey scheduler job (her 5 dakika)
-    RecurringJob.AddOrUpdate<SurveySchedulerJob>(
-        "survey-scheduler",
-        x => x.Execute(),
-        "*/5 * * * *");
+        RecurringJob.AddOrUpdate<SurveySchedulerJob>(
+            "survey-scheduler",
+            x => x.Execute(),
+            "*/5 * * * *");
 
-    // Hangfire — SLA monitor job (her 30 dakika)
-    RecurringJob.AddOrUpdate<SlaMonitorJob>(
-        "sla-monitor",
-        x => x.Execute(),
-        "*/30 * * * *");
+        RecurringJob.AddOrUpdate<SlaMonitorJob>(
+            "sla-monitor",
+            x => x.Execute(),
+            "*/30 * * * *");
+
+        RecurringJob.AddOrUpdate<OutboxProcessorJob>(
+            "outbox-processor",
+            x => x.Execute(),
+            "* * * * *");
+    }
 
     app.Run();
 }
-catch (Exception ex)
+// HostAbortedException: WebApplicationFactory (integration testler) tarafından
+// kasıtlı olarak fırlatılır — yakalanmamalı, propagate olmalı.
+catch (Exception ex) when (ex is not HostAbortedException)
 {
+    Console.Error.WriteLine($"[STARTUP FATAL] {ex.GetType().Name}: {ex.Message}");
     Log.Fatal(ex, "Oravity.Core terminated unexpectedly");
 }
 finally

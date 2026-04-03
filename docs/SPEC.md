@@ -31621,3 +31621,40 @@ Güncel karar:
   Tüm ekranlar (takvim, bekleme odası, hekim, yönetici)
   aynı anda güncellenir
 ```
+
+---
+
+# ⚙️ ERTELENMIŞ KARARLAR — NETLEŞTI
+
+## Tüm Kararlar
+
+```
+1. Oravity.Backend rolü:
+   → Platform Admin API (Oravity ekibi kullanır)
+   → Yeni firma/klinik ekleme
+   → Lisans aktivasyonu ve yönetimi
+   → Tüm firmaların istatistikleri
+   → Sistem geneli duyuru
+   → Hangfire dashboard (/hangfire)
+   → Outbox, SMS, Backup background job'ları
+   → Port: 5003
+   → Müşteri klinikler bu porta erişemez
+
+2. Frontend:
+   → React + TypeScript (zaten karar verilmişti)
+
+3. Dosya depolama:
+   → Local disk (sunucuda /app/uploads)
+   → IFileStorageService adapter hazır
+   → İleride MinIO'ya geçiş: sadece adapter değişir
+
+4. SMS provider:
+   → Adapter pattern — Netgsm + Asist
+   → Her ikisi aktif olabilir
+   → Şube bazında hangi provider seçilir ayarlanır
+
+5. Döviz kuru:
+   → TCMB API varsayılan (her gün otomatik güncellenir)
+   → Manuel override mümkün
+   → İnternet yoksa son bilinen kur kullanılır
+```

@@ -3,9 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Oravity.Core.Modules.Appointment.OnlineBooking.Application.Commands;
 using Oravity.Core.Modules.Appointment.OnlineBooking.Application.Queries;
 using Oravity.Core.Modules.Appointment.OnlineBooking.Application.Services;
-using Oravity.Infrastructure.Database;
 using Oravity.SharedKernel.Entities;
-using Microsoft.EntityFrameworkCore;
 
 namespace Oravity.Core.Controllers;
 
@@ -20,16 +18,11 @@ public class PublicBookingController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly IOnlineBookingFilterService _filterService;
-    private readonly AppDbContext _db;
 
-    public PublicBookingController(
-        IMediator mediator,
-        IOnlineBookingFilterService filterService,
-        AppDbContext db)
+    public PublicBookingController(IMediator mediator, IOnlineBookingFilterService filterService)
     {
         _mediator      = mediator;
         _filterService = filterService;
-        _db            = db;
     }
 
     /// <summary>
@@ -48,10 +41,8 @@ public class PublicBookingController : ControllerBase
         [FromQuery] string? tc = null,
         CancellationToken ct = default)
     {
-        // Slug → BranchId
-        var settings = await _db.BranchOnlineBookingSettings
-            .AsNoTracking()
-            .FirstOrDefaultAsync(b => b.WidgetSlug == slug, ct);
+        // Slug → BranchId (Application query ile)
+        var settings = await _mediator.Send(new GetBranchBySlugQuery(slug), ct);
 
         if (settings is null || !settings.IsEnabled)
             return NotFound(new { message = "Bu slug ile etkin bir şube bulunamadı." });

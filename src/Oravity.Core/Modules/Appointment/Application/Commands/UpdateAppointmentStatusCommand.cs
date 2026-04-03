@@ -1,3 +1,4 @@
+using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Oravity.Core.Modules.Appointment.Application;
@@ -35,6 +36,7 @@ public class UpdateAppointmentStatusCommandHandler
         CancellationToken cancellationToken)
     {
         var appointment = await _db.Appointments
+            .Include(a => a.Branch)
             .FirstOrDefaultAsync(a => a.PublicId == request.PublicId, cancellationToken)
             ?? throw new NotFoundException($"Randevu bulunamadı: {request.PublicId}");
 
@@ -42,6 +44,22 @@ public class UpdateAppointmentStatusCommandHandler
 
         // Geçiş kontrolü entity içinde yapılır (InvalidOperationException → 400 dönmeli)
         appointment.UpdateStatus(request.NewStatus);
+
+        // Outbox: AppointmentCompleted → hakediş hesaplama + anket planlaması
+        if (request.NewStatus == AppointmentStatus.Completed)
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                AppointmentId = appointment.Id,
+                appointment.PublicId,
+                appointment.PatientId,
+                appointment.DoctorId,
+                appointment.BranchId,
+                CompanyId   = appointment.Branch?.CompanyId ?? 0L,
+                CompletedAt = DateTime.UtcNow
+            });
+            _db.OutboxMessages.Add(OutboxMessage.Create("AppointmentCompleted", payload));
+        }
 
         await _db.SaveChangesAsync(cancellationToken);
 

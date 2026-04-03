@@ -86,6 +86,20 @@ public class AppDbContext : DbContext
     public DbSet<Complaint> Complaints => Set<Complaint>();
     public DbSet<ComplaintNote> ComplaintNotes => Set<ComplaintNote>();
 
+    // ─── E-Fatura ─────────────────────────────────────────────────────────
+    public DbSet<EInvoice> EInvoices => Set<EInvoice>();
+    public DbSet<EInvoiceItem> EInvoiceItems => Set<EInvoiceItem>();
+    public DbSet<EInvoiceIntegration> EInvoiceIntegrations => Set<EInvoiceIntegration>();
+
+    // ─── Localization ──────────────────────────────────────────────────────
+    public DbSet<TranslationKey> TranslationKeys => Set<TranslationKey>();
+    public DbSet<Translation> Translations => Set<Translation>();
+
+    // ─── Audit & KVKK ──────────────────────────────────────────────────────
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<KvkkConsentLog> KvkkConsentLogs => Set<KvkkConsentLog>();
+    public DbSet<DataExportRequest> DataExportRequests => Set<DataExportRequest>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -1001,7 +1015,7 @@ public class AppDbContext : DbContext
             // patient_id UNIQUE — her hastanın tek portal hesabı olabilir
             e.HasIndex(x => x.PatientId).IsUnique()
              .HasDatabaseName("ix_patient_portal_accounts_patient")
-             .HasFilter("patient_id IS NOT NULL");
+             .HasFilter("\"PatientId\" IS NOT NULL");
 
             e.HasOne(x => x.Patient)
              .WithMany()
@@ -1209,6 +1223,227 @@ public class AppDbContext : DbContext
              .HasForeignKey(x => x.CreatedBy)
              .OnDelete(DeleteBehavior.Restrict);
         });
+
+        // ── AuditLog ──────────────────────────────────────────────────────
+        m.Entity<AuditLog>(e =>
+        {
+            e.ToTable("audit_logs");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+
+            e.Property(x => x.Action).HasMaxLength(100).IsRequired();
+            e.Property(x => x.EntityType).HasMaxLength(100);
+            e.Property(x => x.EntityId).HasMaxLength(100);
+            e.Property(x => x.UserEmail).HasMaxLength(200);
+            e.Property(x => x.IpAddress).HasMaxLength(45);
+            e.Property(x => x.UserAgent).HasMaxLength(500);
+            e.Property(x => x.OldValues).HasColumnType("jsonb");
+            e.Property(x => x.NewValues).HasColumnType("jsonb");
+
+            e.HasIndex(x => new { x.CompanyId, x.CreatedAt })
+             .HasDatabaseName("ix_audit_logs_company_created");
+            e.HasIndex(x => new { x.EntityType, x.EntityId, x.CreatedAt })
+             .HasDatabaseName("ix_audit_logs_entity");
+            e.HasIndex(x => new { x.UserId, x.CreatedAt })
+             .HasDatabaseName("ix_audit_logs_user");
+
+            // AuditLog hiç silinmez — FK restrict + no cascades
+            e.HasOne<Company>()
+             .WithMany()
+             .HasForeignKey(x => x.CompanyId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne<Branch>()
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne<User>()
+             .WithMany()
+             .HasForeignKey(x => x.UserId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── KvkkConsentLog ─────────────────────────────────────────────────
+        m.Entity<KvkkConsentLog>(e =>
+        {
+            e.ToTable("kvkk_consent_logs");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.ConsentType).HasMaxLength(100).IsRequired();
+            e.Property(x => x.IpAddress).HasMaxLength(45);
+
+            e.HasIndex(x => new { x.PatientId, x.ConsentType, x.GivenAt })
+             .HasDatabaseName("ix_kvkk_consent_patient_type");
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── DataExportRequest ─────────────────────────────────────────────
+        m.Entity<DataExportRequest>(e =>
+        {
+            e.ToTable("data_export_requests");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.FilePath).HasMaxLength(500);
+
+            e.HasIndex(x => new { x.PatientId, x.Status })
+             .HasDatabaseName("ix_data_export_requests_patient_status");
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Requester)
+             .WithMany()
+             .HasForeignKey(x => x.RequestedBy)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── EInvoice ─────────────────────────────────────────────────────
+        m.Entity<EInvoice>(e =>
+        {
+            e.ToTable("einvoices");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+
+            e.Property(x => x.Series).HasMaxLength(3).HasDefaultValue("GBS");
+            e.Property(x => x.EInvoiceNo).HasMaxLength(50);
+            e.HasIndex(x => x.EInvoiceNo).IsUnique().HasFilter("\"EInvoiceNo\" IS NOT NULL")
+             .HasDatabaseName("ix_einvoices_einvoice_no");
+
+            e.Property(x => x.ReceiverName).HasMaxLength(300).IsRequired();
+            e.Property(x => x.ReceiverTc).HasMaxLength(11);
+            e.Property(x => x.ReceiverVkn).HasMaxLength(10);
+            e.Property(x => x.ReceiverTaxOffice).HasMaxLength(100);
+            e.Property(x => x.ReceiverEmail).HasMaxLength(200);
+
+            e.Property(x => x.Subtotal).HasColumnType("numeric(12,2)");
+            e.Property(x => x.DiscountAmount).HasColumnType("numeric(12,2)").HasDefaultValue(0m);
+            e.Property(x => x.TaxableAmount).HasColumnType("numeric(12,2)");
+            e.Property(x => x.TaxRate).HasColumnType("numeric(5,2)").HasDefaultValue(10m);
+            e.Property(x => x.TaxAmount).HasColumnType("numeric(12,2)");
+            e.Property(x => x.Total).HasColumnType("numeric(12,2)");
+            e.Property(x => x.Currency).HasMaxLength(3).HasDefaultValue("TRY");
+            e.Property(x => x.LanguageCode).HasMaxLength(5).HasDefaultValue("tr");
+
+            e.Property(x => x.GibUuid).HasMaxLength(100);
+            e.HasIndex(x => x.GibUuid).IsUnique().HasFilter("\"GibUuid\" IS NOT NULL")
+             .HasDatabaseName("ix_einvoices_gib_uuid");
+            e.Property(x => x.GibStatus).HasMaxLength(50);
+            e.Property(x => x.GibResponse).HasColumnType("jsonb");
+
+            e.Property(x => x.PdfPath).HasMaxLength(500);
+
+            e.Property(x => x.InvoiceType)
+             .HasConversion<int>();
+            e.Property(x => x.ReceiverType)
+             .HasConversion<int>();
+
+            e.HasIndex(x => new { x.CompanyId, x.InvoiceDate })
+             .HasDatabaseName("ix_einvoices_company_date");
+
+            e.HasOne(x => x.Payment).WithMany()
+             .HasForeignKey(x => x.PaymentId)
+             .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasOne(x => x.Creator).WithMany()
+             .HasForeignKey(x => x.CreatedBy)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── EInvoiceItem ──────────────────────────────────────────────────
+        m.Entity<EInvoiceItem>(e =>
+        {
+            e.ToTable("einvoice_items");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+
+            e.Property(x => x.Description).HasMaxLength(500).IsRequired();
+            e.Property(x => x.Unit).HasMaxLength(20).HasDefaultValue("Adet");
+            e.Property(x => x.Quantity).HasColumnType("numeric(10,3)").HasDefaultValue(1m);
+            e.Property(x => x.UnitPrice).HasColumnType("numeric(12,2)");
+            e.Property(x => x.DiscountRate).HasColumnType("numeric(5,2)").HasDefaultValue(0m);
+            e.Property(x => x.DiscountAmount).HasColumnType("numeric(12,2)").HasDefaultValue(0m);
+            e.Property(x => x.TaxRate).HasColumnType("numeric(5,2)").HasDefaultValue(10m);
+            e.Property(x => x.TaxAmount).HasColumnType("numeric(12,2)");
+            e.Property(x => x.Total).HasColumnType("numeric(12,2)");
+
+            e.HasOne(x => x.EInvoice).WithMany(i => i.Items)
+             .HasForeignKey(x => x.EInvoiceId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── EInvoiceIntegration ───────────────────────────────────────────
+        m.Entity<EInvoiceIntegration>(e =>
+        {
+            e.ToTable("einvoice_integrations");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+
+            e.Property(x => x.Provider).HasMaxLength(50).IsRequired();
+            e.Property(x => x.Vkn).HasMaxLength(10).IsRequired();
+            e.Property(x => x.TaxOffice).HasMaxLength(100).IsRequired();
+            e.Property(x => x.CompanyTitle).HasMaxLength(300).IsRequired();
+            e.Property(x => x.Config).HasColumnType("jsonb").HasDefaultValue("{}");
+
+            e.HasIndex(x => x.CompanyId)
+             .HasDatabaseName("ix_einvoice_integrations_company");
+        });
+
+        // ── TranslationKey ────────────────────────────────────────────────
+        m.Entity<TranslationKey>(e =>
+        {
+            e.ToTable("translation_keys");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+
+            e.Property(x => x.Key).HasMaxLength(300).IsRequired();
+            e.HasIndex(x => x.Key).IsUnique()
+             .HasDatabaseName("ix_translation_keys_key");
+
+            e.Property(x => x.Category).HasMaxLength(100).IsRequired();
+            e.HasIndex(x => x.Category)
+             .HasDatabaseName("ix_translation_keys_category");
+
+            e.Property(x => x.Description).HasColumnType("text");
+        });
+
+        // ── Translation ───────────────────────────────────────────────────
+        m.Entity<Translation>(e =>
+        {
+            e.ToTable("translations");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+
+            e.Property(x => x.Value).HasColumnType("text").IsRequired();
+
+            // UNIQUE(key_id, language_id)
+            e.HasIndex(x => new { x.KeyId, x.LanguageId }).IsUnique()
+             .HasDatabaseName("ix_translations_key_language");
+
+            // Dil kodu üzerinden hızlı filtreleme
+            e.HasIndex(x => x.LanguageId)
+             .HasDatabaseName("ix_translations_language");
+
+            e.HasOne(x => x.TranslationKey)
+             .WithMany(k => k.Translations)
+             .HasForeignKey(x => x.KeyId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.Language)
+             .WithMany()
+             .HasForeignKey(x => x.LanguageId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
     }
 
     // ─── Global Soft-Delete Filters ───────────────────────────────────────
@@ -1241,11 +1476,16 @@ public class AppDbContext : DbContext
                 // OnlineBookingRequest: kendi status akışını yönetir (cancelled ile)
                 typeof(OnlineBookingRequest),
                 // PatientPortalAccount: portal hesabı is_active ile yönetilir
-                typeof(PatientPortalAccount)
+                typeof(PatientPortalAccount),
+                // Audit / KVKK: bu tablolar hiçbir zaman soft-delete almaz
+                typeof(AuditLog),
+                typeof(KvkkConsentLog),
+                typeof(DataExportRequest)
                 // PatientMedication, PaymentAllocation, DoctorCommission, SmsQueue,
                 // ToothConditionHistory, DoctorOnlineBookingSettings, DoctorOnlineSchedule,
-                // DoctorOnlineBlock, BranchOnlineBookingSettings BaseEntity türemediğinden
-                // bu döngüde zaten işlenmez.
+                // DoctorOnlineBlock, BranchOnlineBookingSettings, TranslationKey, Translation,
+                // EInvoice, EInvoiceItem, EInvoiceIntegration
+                // BaseEntity türemediğinden bu döngüde zaten işlenmez.
             };
 
             if (Array.Exists(ignored, t => t == entityType.ClrType)) continue;

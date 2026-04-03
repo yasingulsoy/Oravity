@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
+using Oravity.Infrastructure.Audit;
 using Oravity.Infrastructure.Cache;
 using Oravity.Infrastructure.Database;
 using Oravity.Infrastructure.Messaging;
@@ -23,17 +24,28 @@ public static class InfrastructureServiceRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        // PostgreSQL / EF Core
-        services.AddDbContext<AppDbContext>(options =>
+        // AuditInterceptor — DbContext'e eklenecek, scoped olmalı
+        services.AddScoped<AuditInterceptor>();
+        services.AddScoped<AuditLogService>();
+
+        // PostgreSQL / EF Core — AuditInterceptor'ı AddInterceptors ile bağla
+        services.AddDbContext<AppDbContext>((sp, options) =>
+        {
             options.UseNpgsql(
                 configuration.GetConnectionString("DefaultConnection"),
-                npgsql => npgsql.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName)));
+                npgsql => npgsql.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName));
 
-        // Redis
+            var interceptor = sp.GetRequiredService<AuditInterceptor>();
+            options.AddInterceptors(interceptor);
+        });
+
+        // Redis — abortConnect=false: bağlantı yoksa exception fırlatmak yerine yeniden dener
         var redisConnectionString = configuration.GetConnectionString("Redis")
             ?? "localhost:6379";
+        var redisOptions = ConfigurationOptions.Parse(redisConnectionString);
+        redisOptions.AbortOnConnectFail = false;
         services.AddSingleton<IConnectionMultiplexer>(
-            ConnectionMultiplexer.Connect(redisConnectionString));
+            ConnectionMultiplexer.Connect(redisOptions));
         services.AddScoped<ICacheService, RedisCacheService>();
 
         // MediatR Event Bus

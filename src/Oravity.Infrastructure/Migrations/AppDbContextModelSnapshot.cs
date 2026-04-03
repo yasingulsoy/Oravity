@@ -102,6 +102,73 @@ namespace Oravity.Infrastructure.Migrations
                     b.ToTable("appointments", (string)null);
                 });
 
+            modelBuilder.Entity("Oravity.SharedKernel.Entities.AuditLog", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<long?>("BranchId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EntityId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("EntityType")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)");
+
+                    b.Property<string>("NewValues")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("OldValues")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("UserEmail")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<long?>("UserId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BranchId");
+
+                    b.HasIndex("CompanyId", "CreatedAt")
+                        .HasDatabaseName("ix_audit_logs_company_created");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .HasDatabaseName("ix_audit_logs_user");
+
+                    b.HasIndex("EntityType", "EntityId", "CreatedAt")
+                        .HasDatabaseName("ix_audit_logs_entity");
+
+                    b.ToTable("audit_logs", (string)null);
+                });
+
             modelBuilder.Entity("Oravity.SharedKernel.Entities.Branch", b =>
                 {
                     b.Property<long>("Id")
@@ -375,6 +442,46 @@ namespace Oravity.Infrastructure.Migrations
                     b.ToTable("complaint_notes", (string)null);
                 });
 
+            modelBuilder.Entity("Oravity.SharedKernel.Entities.DataExportRequest", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FilePath")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<long>("PatientId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("RequestedBy")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RequestedBy");
+
+                    b.HasIndex("PatientId", "Status")
+                        .HasDatabaseName("ix_data_export_requests_patient_status");
+
+                    b.ToTable("data_export_requests", (string)null);
+                });
+
             modelBuilder.Entity("Oravity.SharedKernel.Entities.DoctorCommission", b =>
                 {
                     b.Property<long>("Id")
@@ -553,6 +660,328 @@ namespace Oravity.Infrastructure.Migrations
                         .HasDatabaseName("ix_doctor_online_schedule_unique");
 
                     b.ToTable("doctor_online_schedule", (string)null);
+                });
+
+            modelBuilder.Entity("Oravity.SharedKernel.Entities.EInvoice", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("BranchId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CancelReason")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("CreatedBy")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("TRY");
+
+                    b.Property<decimal>("DiscountAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(12,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<string>("EInvoiceNo")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("GibResponse")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("GibStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("GibUuid")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateOnly>("InvoiceDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("InvoiceType")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsCancelled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("LanguageCode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)")
+                        .HasDefaultValue("tr");
+
+                    b.Property<long?>("PaymentId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("PdfPath")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("ReceiverAddress")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ReceiverEmail")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ReceiverName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("ReceiverTaxOffice")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ReceiverTc")
+                        .HasMaxLength(11)
+                        .HasColumnType("character varying(11)");
+
+                    b.Property<int>("ReceiverType")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ReceiverVkn")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<DateTime?>("SentToGibAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("SentToReceiverAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("Sequence")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Series")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasDefaultValue("GBS");
+
+                    b.Property<decimal>("Subtotal")
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<decimal>("TaxAmount")
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<decimal>("TaxRate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(5,2)")
+                        .HasDefaultValue(10m);
+
+                    b.Property<decimal>("TaxableAmount")
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<decimal>("Total")
+                        .HasColumnType("numeric(12,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedBy");
+
+                    b.HasIndex("EInvoiceNo")
+                        .IsUnique()
+                        .HasDatabaseName("ix_einvoices_einvoice_no")
+                        .HasFilter("einvoice_no IS NOT NULL");
+
+                    b.HasIndex("GibUuid")
+                        .IsUnique()
+                        .HasDatabaseName("ix_einvoices_gib_uuid")
+                        .HasFilter("gib_uuid IS NOT NULL");
+
+                    b.HasIndex("PaymentId");
+
+                    b.HasIndex("CompanyId", "InvoiceDate")
+                        .HasDatabaseName("ix_einvoices_company_date");
+
+                    b.ToTable("einvoices", (string)null);
+                });
+
+            modelBuilder.Entity("Oravity.SharedKernel.Entities.EInvoiceIntegration", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Address")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("AutoSendEArchive")
+                        .HasColumnType("boolean");
+
+                    b.Property<long>("CompanyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CompanyTitle")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Config")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValue("{}");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsTestMode")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("TaxOffice")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Vkn")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId")
+                        .HasDatabaseName("ix_einvoice_integrations_company");
+
+                    b.ToTable("einvoice_integrations", (string)null);
+                });
+
+            modelBuilder.Entity("Oravity.SharedKernel.Entities.EInvoiceItem", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<decimal>("DiscountAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(12,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<decimal>("DiscountRate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(5,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<long>("EInvoiceId")
+                        .HasColumnType("bigint");
+
+                    b.Property<decimal>("Quantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(10,3)")
+                        .HasDefaultValue(1m);
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("TaxAmount")
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<decimal>("TaxRate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(5,2)")
+                        .HasDefaultValue(10m);
+
+                    b.Property<decimal>("Total")
+                        .HasColumnType("numeric(12,2)");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Adet");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasColumnType("numeric(12,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EInvoiceId");
+
+                    b.ToTable("einvoice_items", (string)null);
+                });
+
+            modelBuilder.Entity("Oravity.SharedKernel.Entities.KvkkConsentLog", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ConsentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("GivenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)");
+
+                    b.Property<bool>("IsGiven")
+                        .HasColumnType("boolean");
+
+                    b.Property<long>("PatientId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientId", "ConsentType", "GivenAt")
+                        .HasDatabaseName("ix_kvkk_consent_patient_type");
+
+                    b.ToTable("kvkk_consent_logs", (string)null);
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.Language", b =>
@@ -2321,6 +2750,78 @@ namespace Oravity.Infrastructure.Migrations
                     b.ToTable("tooth_records", (string)null);
                 });
 
+            modelBuilder.Entity("Oravity.SharedKernel.Entities.Translation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<bool>("IsReviewed")
+                        .HasColumnType("boolean");
+
+                    b.Property<long>("KeyId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("LanguageId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LanguageId")
+                        .HasDatabaseName("ix_translations_language");
+
+                    b.HasIndex("KeyId", "LanguageId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_translations_key_language");
+
+                    b.ToTable("translations", (string)null);
+                });
+
+            modelBuilder.Entity("Oravity.SharedKernel.Entities.TranslationKey", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Category")
+                        .HasDatabaseName("ix_translation_keys_category");
+
+                    b.HasIndex("Key")
+                        .IsUnique()
+                        .HasDatabaseName("ix_translation_keys_key");
+
+                    b.ToTable("translation_keys", (string)null);
+                });
+
             modelBuilder.Entity("Oravity.SharedKernel.Entities.TreatmentPlan", b =>
                 {
                     b.Property<long>("Id")
@@ -2909,6 +3410,24 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("Patient");
                 });
 
+            modelBuilder.Entity("Oravity.SharedKernel.Entities.AuditLog", b =>
+                {
+                    b.HasOne("Oravity.SharedKernel.Entities.Branch", null)
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Oravity.SharedKernel.Entities.Company", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Oravity.SharedKernel.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
             modelBuilder.Entity("Oravity.SharedKernel.Entities.Branch", b =>
                 {
                     b.HasOne("Oravity.SharedKernel.Entities.Company", "Company")
@@ -3009,6 +3528,25 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("Creator");
                 });
 
+            modelBuilder.Entity("Oravity.SharedKernel.Entities.DataExportRequest", b =>
+                {
+                    b.HasOne("Oravity.SharedKernel.Entities.Patient", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Oravity.SharedKernel.Entities.User", "Requester")
+                        .WithMany()
+                        .HasForeignKey("RequestedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Requester");
+                });
+
             modelBuilder.Entity("Oravity.SharedKernel.Entities.DoctorCommission", b =>
                 {
                     b.HasOne("Oravity.SharedKernel.Entities.Branch", "Branch")
@@ -3099,6 +3637,46 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("Branch");
 
                     b.Navigation("Doctor");
+                });
+
+            modelBuilder.Entity("Oravity.SharedKernel.Entities.EInvoice", b =>
+                {
+                    b.HasOne("Oravity.SharedKernel.Entities.User", "Creator")
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Oravity.SharedKernel.Entities.Payment", "Payment")
+                        .WithMany()
+                        .HasForeignKey("PaymentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Creator");
+
+                    b.Navigation("Payment");
+                });
+
+            modelBuilder.Entity("Oravity.SharedKernel.Entities.EInvoiceItem", b =>
+                {
+                    b.HasOne("Oravity.SharedKernel.Entities.EInvoice", "EInvoice")
+                        .WithMany("Items")
+                        .HasForeignKey("EInvoiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("EInvoice");
+                });
+
+            modelBuilder.Entity("Oravity.SharedKernel.Entities.KvkkConsentLog", b =>
+                {
+                    b.HasOne("Oravity.SharedKernel.Entities.Patient", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Patient");
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.Notification", b =>
@@ -3514,6 +4092,25 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("Recorder");
                 });
 
+            modelBuilder.Entity("Oravity.SharedKernel.Entities.Translation", b =>
+                {
+                    b.HasOne("Oravity.SharedKernel.Entities.TranslationKey", "TranslationKey")
+                        .WithMany("Translations")
+                        .HasForeignKey("KeyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Oravity.SharedKernel.Entities.Language", "Language")
+                        .WithMany()
+                        .HasForeignKey("LanguageId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Language");
+
+                    b.Navigation("TranslationKey");
+                });
+
             modelBuilder.Entity("Oravity.SharedKernel.Entities.TreatmentPlan", b =>
                 {
                     b.HasOne("Oravity.SharedKernel.Entities.Branch", "Branch")
@@ -3642,6 +4239,11 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("Notes");
                 });
 
+            modelBuilder.Entity("Oravity.SharedKernel.Entities.EInvoice", b =>
+                {
+                    b.Navigation("Items");
+                });
+
             modelBuilder.Entity("Oravity.SharedKernel.Entities.Payment", b =>
                 {
                     b.Navigation("Allocations");
@@ -3669,6 +4271,11 @@ namespace Oravity.Infrastructure.Migrations
             modelBuilder.Entity("Oravity.SharedKernel.Entities.SurveyTemplate", b =>
                 {
                     b.Navigation("Questions");
+                });
+
+            modelBuilder.Entity("Oravity.SharedKernel.Entities.TranslationKey", b =>
+                {
+                    b.Navigation("Translations");
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.TreatmentPlan", b =>
