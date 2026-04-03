@@ -66,7 +66,7 @@ public class OravityWebAppFactory : WebApplicationFactory<Program>, IAsyncLifeti
                 ["Jwt:PortalSecret"]    = TestConstants.JwtPortalSecret,
                 ["Jwt:Issuer"]          = "Oravity.Core",
                 ["Jwt:Audience"]        = "Oravity",
-                ["Encryption:Key"]      = "T3JhdkRldktleTIwMjYhIVNlY3VyZUtleVRoaXMzMg=="
+                ["Encryption:Key"]      = "T3Jhdml0eVRlc3RFbmNyeXB0S2V5MzJDaGFycyExMjM="
             });
         });
 

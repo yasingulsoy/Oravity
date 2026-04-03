@@ -162,22 +162,24 @@ try
     // Hangfire recurring jobs — test ortamında schema henüz yok, atla
     if (!app.Environment.IsEnvironment("Testing"))
     {
-        RecurringJob.AddOrUpdate<SmsDispatchService>(
+        var jobManager = app.Services.GetRequiredService<IRecurringJobManager>();
+
+        jobManager.AddOrUpdate<SmsDispatchService>(
             "sms-dispatch",
             x => x.Execute(),
             Cron.Minutely());
 
-        RecurringJob.AddOrUpdate<SurveySchedulerJob>(
+        jobManager.AddOrUpdate<SurveySchedulerJob>(
             "survey-scheduler",
             x => x.Execute(),
             "*/5 * * * *");
 
-        RecurringJob.AddOrUpdate<SlaMonitorJob>(
+        jobManager.AddOrUpdate<SlaMonitorJob>(
             "sla-monitor",
             x => x.Execute(),
             "*/30 * * * *");
 
-        RecurringJob.AddOrUpdate<OutboxProcessorJob>(
+        jobManager.AddOrUpdate<OutboxProcessorJob>(
             "outbox-processor",
             x => x.Execute(),
             "* * * * *");
