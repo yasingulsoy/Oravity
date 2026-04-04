@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Oravity.Infrastructure.Database;
@@ -11,9 +12,11 @@ using Oravity.Infrastructure.Database;
 namespace Oravity.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260404091121_AddCurrencySupport")]
+    partial class AddCurrencySupport
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3249,18 +3252,6 @@ namespace Oravity.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasDefaultValueSql("gen_random_uuid()");
 
-                    b.Property<string>("SsoEmail")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("SsoProvider")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("SsoSubject")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -3271,11 +3262,6 @@ namespace Oravity.Infrastructure.Migrations
 
                     b.HasIndex("PublicId")
                         .IsUnique();
-
-                    b.HasIndex("SsoProvider", "SsoSubject")
-                        .IsUnique()
-                        .HasDatabaseName("idx_users_sso")
-                        .HasFilter("\"SsoProvider\" IS NOT NULL");
 
                     b.ToTable("users", (string)null);
                 });

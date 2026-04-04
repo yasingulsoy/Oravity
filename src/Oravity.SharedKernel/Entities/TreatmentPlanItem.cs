@@ -41,6 +41,20 @@ public class TreatmentPlanItem : BaseEntity
     /// <summary>Hesaplanan nihai fiyat: UnitPrice * (1 − DiscountRate / 100)</summary>
     public decimal FinalPrice { get; private set; }
 
+    // ── Döviz ─────────────────────────────────────────────────────────────
+    /// <summary>Fiyat para birimi (örn. "EUR", "USD", "TRY").</summary>
+    public string PriceCurrency { get; private set; } = "TRY";
+    /// <summary>Fiyat oluşturulurken kullanılan döviz kuru.</summary>
+    public decimal PriceExchangeRate { get; private set; } = 1m;
+    /// <summary>TRY bazında birim fiyat = UnitPrice × PriceExchangeRate.</summary>
+    public decimal PriceBaseAmount { get; private set; }
+    /// <summary>Kur kilitleme tipi: 1=Güncel Kur, 2=Onay Anı Kilidi, 3=Manuel Kilit.</summary>
+    public int RateLockType { get; private set; } = 1;
+    /// <summary>Kur kilitlendiği an (RateLockType=2/3 ise dolu).</summary>
+    public DateTime? RateLockedAt { get; private set; }
+    /// <summary>Kilitlenmiş döviz kuru değeri.</summary>
+    public decimal? RateLockedValue { get; private set; }
+
     // ── Hekim ─────────────────────────────────────────────────────────────
     /// <summary>Bu kalemi yapan hekim (null ise plan'ın DoctorId'si kullanılır).</summary>
     public long? DoctorId { get; private set; }
@@ -60,27 +74,50 @@ public class TreatmentPlanItem : BaseEntity
         string? toothSurfaces = null,
         string? bodyRegionCode = null,
         long? doctorId = null,
-        string? notes = null)
+        string? notes = null,
+        string priceCurrency = "TRY",
+        decimal priceExchangeRate = 1m)
     {
         if (discountRate < 0 || discountRate > 100)
             throw new ArgumentOutOfRangeException(nameof(discountRate), "İndirim oranı 0–100 arasında olmalıdır.");
+        if (priceExchangeRate <= 0)
+            throw new ArgumentOutOfRangeException(nameof(priceExchangeRate), "Döviz kuru sıfırdan büyük olmalıdır.");
 
-        var finalPrice = ComputeFinalPrice(unitPrice, discountRate);
+        var finalPrice    = ComputeFinalPrice(unitPrice, discountRate);
+        var priceBaseAmt  = priceCurrency == "TRY"
+            ? finalPrice
+            : Math.Round(finalPrice * priceExchangeRate, 4);
 
         return new TreatmentPlanItem
         {
-            PlanId         = planId,
-            TreatmentId    = treatmentId,
-            ToothNumber    = toothNumber,
-            ToothSurfaces  = toothSurfaces,
-            BodyRegionCode = bodyRegionCode,
-            Status         = TreatmentItemStatus.Planned,
-            UnitPrice      = unitPrice,
-            DiscountRate   = discountRate,
-            FinalPrice     = finalPrice,
-            DoctorId       = doctorId,
-            Notes          = notes
+            PlanId            = planId,
+            TreatmentId       = treatmentId,
+            ToothNumber       = toothNumber,
+            ToothSurfaces     = toothSurfaces,
+            BodyRegionCode    = bodyRegionCode,
+            Status            = TreatmentItemStatus.Planned,
+            UnitPrice         = unitPrice,
+            DiscountRate      = discountRate,
+            FinalPrice        = finalPrice,
+            DoctorId          = doctorId,
+            Notes             = notes,
+            PriceCurrency     = priceCurrency,
+            PriceExchangeRate = priceCurrency == "TRY" ? 1m : priceExchangeRate,
+            PriceBaseAmount   = priceBaseAmt,
+            RateLockType      = 1
         };
+    }
+
+    /// <summary>Kuru kilitle (plan onayı veya manuel kilit).</summary>
+    public void LockRate(int lockType, decimal lockedValue)
+    {
+        if (lockType < 1 || lockType > 3)
+            throw new ArgumentOutOfRangeException(nameof(lockType), "Kilit tipi 1-3 arasında olmalıdır.");
+
+        RateLockType   = lockType;
+        RateLockedAt   = DateTime.UtcNow;
+        RateLockedValue = lockedValue;
+        MarkUpdated();
     }
 
     /// <summary>Hekim tarafından tamamlandı işareti.</summary>

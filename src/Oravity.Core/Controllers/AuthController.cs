@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Oravity.Core.Modules.Core.Auth.Application.Commands;
@@ -48,6 +49,23 @@ public class AuthController : ControllerBase
     {
         await _mediator.Send(new LogoutCommand(request.RefreshToken));
         return NoContent();
+    }
+
+    /// <summary>
+    /// Microsoft hesabı ile SSO başlatır (tarayıcı). Dönüş yolu: <c>/api/auth/sso/callback/microsoft</c>
+    /// — yanıtı OpenIdConnect middleware üretir (access + refresh token JSON).
+    /// </summary>
+    [HttpGet("sso/microsoft")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status302Found)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public IActionResult SsoMicrosoft([FromServices] IConfiguration configuration)
+    {
+        if (string.IsNullOrWhiteSpace(configuration["Sso:Microsoft:Authority"]) ||
+            string.IsNullOrWhiteSpace(configuration["Sso:Microsoft:ClientId"]))
+            return NotFound();
+
+        return Challenge(new AuthenticationProperties(), "Microsoft");
     }
 
     /// <summary>Mevcut kullanıcı bilgisi (JWT claim'leri)</summary>

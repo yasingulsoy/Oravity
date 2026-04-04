@@ -100,6 +100,11 @@ public class AppDbContext : DbContext
     public DbSet<KvkkConsentLog> KvkkConsentLogs => Set<KvkkConsentLog>();
     public DbSet<DataExportRequest> DataExportRequests => Set<DataExportRequest>();
 
+    // ─── Döviz ────────────────────────────────────────────────────────────
+    public DbSet<ExchangeRate>           ExchangeRates           => Set<ExchangeRate>();
+    public DbSet<ExchangeRateOverride>   ExchangeRateOverrides   => Set<ExchangeRateOverride>();
+    public DbSet<ExchangeRateDifference> ExchangeRateDifferences => Set<ExchangeRateDifference>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -219,6 +224,13 @@ public class AppDbContext : DbContext
             e.Property(x => x.PasswordHash).IsRequired();
             e.Property(x => x.PreferredLanguageCode).HasMaxLength(5);
             e.Property(x => x.LastLoginAt);
+            e.Property(x => x.SsoProvider).HasMaxLength(50);
+            e.Property(x => x.SsoSubject).HasMaxLength(200);
+            e.Property(x => x.SsoEmail).HasMaxLength(200);
+            e.HasIndex(x => new { x.SsoProvider, x.SsoSubject })
+                .IsUnique()
+                .HasDatabaseName("idx_users_sso")
+                .HasFilter("\"SsoProvider\" IS NOT NULL");
         });
 
         // ── Permission ────────────────────────────────────────────────────
@@ -1505,6 +1517,97 @@ public class AppDbContext : DbContext
         // RefreshToken: silinmiş kullanıcıya ait token'ları gizle
         modelBuilder.Entity<RefreshToken>()
             .HasQueryFilter(x => !x.User.IsDeleted);
+
+        // ── Döviz tabloları ───────────────────────────────────────────────
+        ConfigureExchangeRates(modelBuilder);
+    }
+
+    private static void ConfigureExchangeRates(ModelBuilder m)
+    {
+        // ExchangeRate
+        m.Entity<ExchangeRate>(e =>
+        {
+            e.ToTable("exchange_rates");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.FromCurrency).HasMaxLength(3).IsRequired();
+            e.Property(x => x.ToCurrency).HasMaxLength(3).IsRequired();
+            e.Property(x => x.Rate).HasColumnType("numeric(18,6)").IsRequired();
+            e.Property(x => x.Source).HasMaxLength(20).IsRequired();
+            e.HasIndex(x => new { x.FromCurrency, x.ToCurrency, x.RateDate })
+             .IsUnique()
+             .HasDatabaseName("IX_exchange_rates_from_to_date");
+            e.HasIndex(x => x.RateDate)
+             .HasDatabaseName("IX_exchange_rates_date");
+        });
+
+        // ExchangeRateOverride
+        m.Entity<ExchangeRateOverride>(e =>
+        {
+            e.ToTable("exchange_rate_overrides");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Currency).HasMaxLength(3).IsRequired();
+            e.Property(x => x.Rate).HasColumnType("numeric(18,6)").IsRequired();
+            e.Property(x => x.Notes).HasMaxLength(500);
+            e.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId)
+             .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.CompanyId, x.BranchId, x.Currency, x.ValidFrom })
+             .HasDatabaseName("IX_exchange_rate_overrides_lookup");
+        });
+
+        // ExchangeRateDifference
+        m.Entity<ExchangeRateDifference>(e =>
+        {
+            e.ToTable("exchange_rate_differences");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.SourceType).HasMaxLength(50).IsRequired();
+            e.Property(x => x.Currency).HasMaxLength(3).IsRequired();
+            e.Property(x => x.OriginalRate).HasColumnType("numeric(18,6)").IsRequired();
+            e.Property(x => x.ActualRate).HasColumnType("numeric(18,6)").IsRequired();
+            e.Property(x => x.ForeignAmount).HasColumnType("numeric(18,4)").IsRequired();
+            e.Property(x => x.DifferenceAmount).HasColumnType("numeric(18,4)").IsRequired();
+            e.Property(x => x.Notes).HasMaxLength(500);
+            e.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId)
+             .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.SourceType, x.SourceId })
+             .HasDatabaseName("IX_exchange_rate_diffs_source");
+            e.HasIndex(x => x.RecordedAt)
+             .HasDatabaseName("IX_exchange_rate_diffs_recorded");
+        });
+
+        // Payment: yeni sütunlar
+        m.Entity<Payment>(e =>
+        {
+            e.Property(x => x.ExchangeRate).HasColumnType("numeric(18,6)").HasDefaultValue(1m);
+            e.Property(x => x.BaseAmount).HasColumnType("numeric(18,4)").HasDefaultValue(0m);
+        });
+
+        // EInvoice: yeni sütunlar
+        m.Entity<EInvoice>(e =>
+        {
+            e.Property(x => x.ExchangeRate).HasColumnType("numeric(18,6)").HasDefaultValue(1m);
+            e.Property(x => x.BaseAmount).HasColumnType("numeric(18,4)").HasDefaultValue(0m);
+        });
+
+        // DoctorCommission: yeni sütunlar
+        m.Entity<DoctorCommission>(e =>
+        {
+            e.Property(x => x.Currency).HasMaxLength(3).HasDefaultValue("TRY");
+            e.Property(x => x.ExchangeRate).HasColumnType("numeric(18,6)").HasDefaultValue(1m);
+            e.Property(x => x.BaseAmount).HasColumnType("numeric(18,4)").HasDefaultValue(0m);
+        });
+
+        // TreatmentPlanItem: yeni sütunlar
+        m.Entity<TreatmentPlanItem>(e =>
+        {
+            e.Property(x => x.PriceCurrency).HasMaxLength(3).HasDefaultValue("TRY");
+            e.Property(x => x.PriceExchangeRate).HasColumnType("numeric(18,6)").HasDefaultValue(1m);
+            e.Property(x => x.PriceBaseAmount).HasColumnType("numeric(18,4)").HasDefaultValue(0m);
+            e.Property(x => x.RateLockType).HasDefaultValue(1);
+        });
     }
 
     // ─── Seed Data ────────────────────────────────────────────────────────

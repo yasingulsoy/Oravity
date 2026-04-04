@@ -16,6 +16,13 @@ public class User : BaseEntity
     public bool IsPlatformAdmin { get; private set; }
     public DateTime? LastLoginAt { get; private set; }
 
+    /// <summary>SSO sağlayıcısı: 'microsoft', 'google', 'okta' vb.</summary>
+    public string? SsoProvider { get; private set; }
+    /// <summary>Sağlayıcıdaki benzersiz kullanıcı kimliği (subject).</summary>
+    public string? SsoSubject { get; private set; }
+    /// <summary>Sağlayıcıdan gelen e-posta (isteğe bağlı, denormalize).</summary>
+    public string? SsoEmail { get; private set; }
+
     public ICollection<UserRoleAssignment> RoleAssignments { get; private set; } = [];
     public ICollection<UserPermissionOverride> PermissionOverrides { get; private set; } = [];
 
@@ -38,4 +45,34 @@ public class User : BaseEntity
     public void UpdatePasswordHash(string hash) => PasswordHash = hash;
     public void SetPlatformAdmin(bool value) => IsPlatformAdmin = value;
     public void SetLastLoginAt() => LastLoginAt = DateTime.UtcNow;
+
+    /// <summary>SSO ile oluşturulan hesap — parola ile giriş kullanılmaz.</summary>
+    public static User CreateForSso(
+        string email,
+        string fullName,
+        string passwordHashPlaceholder,
+        string ssoProvider,
+        string ssoSubject,
+        string? ssoEmail)
+    {
+        return new User
+        {
+            Email       = email.ToLowerInvariant(),
+            FullName    = fullName,
+            PasswordHash = passwordHashPlaceholder,
+            IsActive    = true,
+            SsoProvider = ssoProvider,
+            SsoSubject  = ssoSubject,
+            SsoEmail    = ssoEmail
+        };
+    }
+
+    /// <summary>Mevcut hesaba SSO kimliği bağlar (ör. ilk SSO öncesi yerel hesap).</summary>
+    public void LinkSsoIdentity(string ssoProvider, string ssoSubject, string? ssoEmail)
+    {
+        SsoProvider = ssoProvider;
+        SsoSubject  = ssoSubject;
+        SsoEmail    = ssoEmail;
+        MarkUpdated();
+    }
 }

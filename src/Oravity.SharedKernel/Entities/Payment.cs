@@ -25,6 +25,12 @@ public class Payment : AuditableEntity
 
     public decimal Amount { get; private set; }
     public string Currency { get; private set; } = "TRY";
+
+    /// <summary>İşlem anındaki döviz kuru (Currency != TRY ise). TRY ödemede 1.</summary>
+    public decimal ExchangeRate { get; private set; } = 1m;
+    /// <summary>TRY karşılığı = Amount × ExchangeRate. TRY ödemede Amount ile aynı.</summary>
+    public decimal BaseAmount { get; private set; }
+
     public PaymentMethod Method { get; private set; }
     public DateOnly PaymentDate { get; private set; }
     public string? Notes { get; private set; }
@@ -43,21 +49,28 @@ public class Payment : AuditableEntity
         PaymentMethod method,
         DateOnly paymentDate,
         string currency = "TRY",
+        decimal exchangeRate = 1m,
         string? notes = null)
     {
         if (amount <= 0)
             throw new ArgumentException("Ödeme tutarı sıfırdan büyük olmalıdır.", nameof(amount));
+        if (exchangeRate <= 0)
+            throw new ArgumentException("Döviz kuru sıfırdan büyük olmalıdır.", nameof(exchangeRate));
+
+        var baseAmount = currency == "TRY" ? amount : Math.Round(amount * exchangeRate, 4);
 
         return new Payment
         {
-            PatientId   = patientId,
-            BranchId    = branchId,
-            Amount      = amount,
-            Currency    = currency,
-            Method      = method,
-            PaymentDate = paymentDate,
-            Notes       = notes,
-            IsRefunded  = false
+            PatientId    = patientId,
+            BranchId     = branchId,
+            Amount       = amount,
+            Currency     = currency,
+            ExchangeRate = currency == "TRY" ? 1m : exchangeRate,
+            BaseAmount   = baseAmount,
+            Method       = method,
+            PaymentDate  = paymentDate,
+            Notes        = notes,
+            IsRefunded   = false
         };
     }
 

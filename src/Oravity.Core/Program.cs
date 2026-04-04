@@ -11,6 +11,7 @@ using Oravity.Core.Modules.Core.PatientPortal.Infrastructure.Services;
 using Oravity.Core.Modules.Survey.Application.Commands;
 using Oravity.Core.Modules.Survey.Jobs;
 using Oravity.Infrastructure.Jobs;
+using Oravity.Infrastructure.Services;
 using Oravity.SharedKernel.Interfaces;
 using Oravity.Core.Modules.Notification.Infrastructure.Hubs;
 using Oravity.Core.Modules.Notification.Infrastructure.Services;
@@ -118,8 +119,14 @@ try
     builder.Services.AddScoped<OutboxProcessorJob>();
     builder.Services.AddScoped<OutboxEventDispatcher>();
 
+    // Döviz kuru job
+    builder.Services.AddScoped<TcmbExchangeRateJob>();
+    builder.Services.AddScoped<FinancialTransactionService>();
+
     // Localization
     builder.Services.AddMemoryCache();
+    // ExchangeRateService (IDistributedCache) — üretimde Redis ile değiştirilebilir
+    builder.Services.AddDistributedMemoryCache();
     builder.Services.AddScoped<TranslationService>();
 
     // E-Fatura adapters
@@ -134,6 +141,7 @@ try
             "outbox",
             tags: ["ready", "outbox"]);
 
+    // Altyapı (EF, Redis, JWT "OravityJwt", PatientPortal JWT, MinIO, isteğe bağlı Microsoft OIDC)
     builder.Services.AddInfrastructure(builder.Configuration);
 
     var app = builder.Build();
@@ -183,6 +191,17 @@ try
             "outbox-processor",
             x => x.Execute(),
             "* * * * *");
+
+        // TCMB döviz kuru çekme — her gün 09:30 ve 15:30 (Türkiye saati = UTC+3)
+        jobManager.AddOrUpdate<TcmbExchangeRateJob>(
+            "tcmb-rates-morning",
+            x => x.Execute(),
+            "30 6 * * *");   // 06:30 UTC = 09:30 TR
+
+        jobManager.AddOrUpdate<TcmbExchangeRateJob>(
+            "tcmb-rates-afternoon",
+            x => x.Execute(),
+            "30 12 * * *");  // 12:30 UTC = 15:30 TR
     }
 
     app.Run();

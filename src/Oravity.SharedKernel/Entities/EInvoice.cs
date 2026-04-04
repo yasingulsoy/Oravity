@@ -58,6 +58,10 @@ public class EInvoice
     public decimal TaxAmount { get; private set; }
     public decimal Total { get; private set; }
     public string Currency { get; private set; } = "TRY";
+    /// <summary>Fatura kesildiği andaki döviz kuru (Currency != TRY ise). TRY faturada 1.</summary>
+    public decimal ExchangeRate { get; private set; } = 1m;
+    /// <summary>TRY bazında toplam tutar = Total × ExchangeRate.</summary>
+    public decimal BaseAmount { get; private set; }
     public string LanguageCode { get; private set; } = "tr";
 
     // GİB entegrasyonu
@@ -106,14 +110,19 @@ public class EInvoice
         string? receiverEmail = null,
         decimal discountAmount = 0,
         string currency = "TRY",
+        decimal exchangeRate = 1m,
         string languageCode = "tr",
         DateOnly? invoiceDate = null)
     {
+        if (exchangeRate <= 0)
+            throw new ArgumentException("Döviz kuru sıfırdan büyük olmalıdır.", nameof(exchangeRate));
+
         var taxableAmount = subtotal - discountAmount;
         var taxAmount     = Math.Round(taxableAmount * (taxRate / 100m), 2);
         var total         = taxableAmount + taxAmount;
+        var baseAmount    = currency == "TRY" ? total : Math.Round(total * exchangeRate, 4);
 
-        var now = DateTime.UtcNow;
+        var now  = DateTime.UtcNow;
         var year = now.Year;
 
         return new EInvoice
@@ -140,6 +149,8 @@ public class EInvoice
             TaxAmount         = taxAmount,
             Total             = total,
             Currency          = currency,
+            ExchangeRate      = currency == "TRY" ? 1m : exchangeRate,
+            BaseAmount        = baseAmount,
             LanguageCode      = languageCode,
             InvoiceDate       = invoiceDate ?? DateOnly.FromDateTime(DateTime.Today),
             CreatedBy         = createdBy,

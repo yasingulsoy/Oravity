@@ -27,6 +27,12 @@ public class DoctorCommission
 
     /// <summary>Brüt tedavi tutarı (kesintiler öncesi).</summary>
     public decimal GrossAmount { get; private set; }
+    /// <summary>Hakediş para birimi (tedavi plan kalemiyle aynı).</summary>
+    public string Currency { get; private set; } = "TRY";
+    /// <summary>Hesaplama anındaki döviz kuru. TRY hakedişte 1.</summary>
+    public decimal ExchangeRate { get; private set; } = 1m;
+    /// <summary>TRY bazında brüt tutar = GrossAmount × ExchangeRate.</summary>
+    public decimal BaseAmount { get; private set; }
     /// <summary>Hakediş oranı (0–100).</summary>
     public decimal CommissionRate { get; private set; }
     /// <summary>Hesaplanan hakediş = GrossAmount × (CommissionRate / 100)</summary>
@@ -43,11 +49,16 @@ public class DoctorCommission
         long treatmentPlanItemId,
         long branchId,
         decimal grossAmount,
-        decimal commissionRate)
+        decimal commissionRate,
+        string currency = "TRY",
+        decimal exchangeRate = 1m)
     {
         if (commissionRate < 0 || commissionRate > 100)
             throw new ArgumentOutOfRangeException(nameof(commissionRate), "Oran 0–100 arasında olmalıdır.");
+        if (exchangeRate <= 0)
+            throw new ArgumentOutOfRangeException(nameof(exchangeRate), "Döviz kuru sıfırdan büyük olmalıdır.");
 
+        var baseAmount       = currency == "TRY" ? grossAmount : Math.Round(grossAmount * exchangeRate, 4);
         var commissionAmount = Math.Round(grossAmount * commissionRate / 100, 2);
 
         return new DoctorCommission
@@ -56,6 +67,9 @@ public class DoctorCommission
             TreatmentPlanItemId = treatmentPlanItemId,
             BranchId            = branchId,
             GrossAmount         = grossAmount,
+            Currency            = currency,
+            ExchangeRate        = currency == "TRY" ? 1m : exchangeRate,
+            BaseAmount          = baseAmount,
             CommissionRate      = commissionRate,
             CommissionAmount    = commissionAmount,
             Status              = CommissionStatus.Pending,
