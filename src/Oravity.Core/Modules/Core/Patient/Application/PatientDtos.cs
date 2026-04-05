@@ -5,6 +5,9 @@ namespace Oravity.Core.Modules.Core.Patient.Application;
 public record PatientResponse(
     Guid PublicId,
     long BranchId,
+    // Kimlik (şifreli alanlar: sadece var/yok bilgisi döner)
+    bool HasTcNumber,
+    bool HasPassportNo,
     // Kişisel
     string FirstName,
     string LastName,
@@ -28,7 +31,6 @@ public record PatientResponse(
     string? Country,
     string? City,
     string? District,
-    string? Neighborhood,
     string? Address,
     // Tıbbi
     string? BloodType,
@@ -37,6 +39,7 @@ public record PatientResponse(
     string? ReferralSourceName,
     string? ReferralPerson,
     long? LastInstitutionId,
+    string? LastInstitutionName,
     // Sistem
     string? Notes,
     string PreferredLanguageCode,
@@ -58,16 +61,17 @@ public static class PatientMappings
 {
     public static PatientResponse ToResponse(PatientEntity p) => new(
         p.PublicId, p.BranchId,
+        p.TcNumberEncrypted != null, p.PassportNoEncrypted != null,
         p.FirstName, p.LastName, p.MotherName, p.FatherName,
         p.Gender, p.MaritalStatus, p.Nationality,
         p.CitizenshipTypeId, p.CitizenshipType?.Name,
         p.Occupation, p.SmokingType, p.PregnancyStatus,
         p.BirthDate,
         p.Phone, p.HomePhone, p.WorkPhone, p.Email,
-        p.Country, p.City, p.District, p.Neighborhood, p.Address,
+        p.Country, p.City, p.District, p.Address,
         p.BloodType,
         p.ReferralSourceId, p.ReferralSource?.Name, p.ReferralPerson,
-        p.LastInstitutionId,
+        p.LastInstitutionId, p.LastInstitution?.Name,
         p.Notes, p.PreferredLanguageCode,
         p.SmsOptIn, p.CampaignOptIn, p.IsActive, p.CreatedAt);
 }

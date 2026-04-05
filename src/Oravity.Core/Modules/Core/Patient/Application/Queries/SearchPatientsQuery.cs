@@ -37,7 +37,8 @@ public class SearchPatientsQueryHandler
         IQueryable<SharedKernel.Entities.Patient> q = _db.Patients
             .AsNoTracking()
             .Include(p => p.CitizenshipType)
-            .Include(p => p.ReferralSource);
+            .Include(p => p.ReferralSource)
+            .Include(p => p.LastInstitution);
 
         q = ApplyTenantFilter(q);
 

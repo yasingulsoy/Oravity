@@ -1,6 +1,9 @@
 export interface Patient {
   publicId: string;
   branchId: number;
+  // Kimlik
+  hasTcNumber: boolean;
+  hasPassportNo: boolean;
   // Kişisel
   firstName: string;
   lastName: string;
@@ -24,7 +27,6 @@ export interface Patient {
   country: string | null;
   city: string | null;
   district: string | null;
-  neighborhood: string | null;
   address: string | null;
   // Tıbbi
   bloodType: string | null;
@@ -33,6 +35,7 @@ export interface Patient {
   referralSourceName: string | null;
   referralPerson: string | null;
   lastInstitutionId: number | null;
+  lastInstitutionName: string | null;
   // Sistem
   notes: string | null;
   preferredLanguageCode: string;
@@ -54,6 +57,8 @@ export interface PatientListRequest {
 export interface CreatePatientRequest {
   firstName: string;
   lastName: string;
+  tcNumber?: string;
+  passportNo?: string;
   motherName?: string;
   fatherName?: string;
   phone?: string;
@@ -70,7 +75,6 @@ export interface CreatePatientRequest {
   country?: string;
   city?: string;
   district?: string;
-  neighborhood?: string;
   bloodType?: string;
   referralSourceId?: number;
   referralPerson?: string;
@@ -78,7 +82,38 @@ export interface CreatePatientRequest {
   preferredLanguageCode?: string;
 }
 
-export type UpdatePatientRequest = Partial<CreatePatientRequest>;
+export interface UpdatePatientRequest {
+  firstName: string;
+  lastName: string;
+  tcNumber?: string;
+  passportNo?: string;
+  motherName?: string;
+  fatherName?: string;
+  gender?: string;
+  maritalStatus?: string;
+  nationality?: string;
+  citizenshipTypeId?: number;
+  occupation?: string;
+  smokingType?: string;
+  pregnancyStatus?: number;
+  birthDate?: string;
+  phone?: string;
+  homePhone?: string;
+  workPhone?: string;
+  email?: string;
+  country?: string;
+  city?: string;
+  district?: string;
+  address?: string;
+  bloodType?: string;
+  referralSourceId?: number;
+  referralPerson?: string;
+  lastInstitutionId?: number;
+  notes?: string;
+  preferredLanguageCode?: string;
+  smsOptIn?: boolean;
+  campaignOptIn?: boolean;
+}
 
 export interface LookupItem {
   id: number;

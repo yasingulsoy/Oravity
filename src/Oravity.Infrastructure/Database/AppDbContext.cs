@@ -126,6 +126,15 @@ public class AppDbContext : DbContext
     // ─── Yedekleme ────────────────────────────────────────────────────────
     public DbSet<BackupLog> BackupLogs => Set<BackupLog>();
 
+    // ─── Geo / Coğrafi Referans ───────────────────────────────────────────
+    public DbSet<Country>     Countries    => Set<Country>();
+    public DbSet<City>        Cities       => Set<City>();
+    public DbSet<District>    Districts    => Set<District>();
+    public DbSet<Nationality> Nationalities => Set<Nationality>();
+
+    // ─── Kurumlar ─────────────────────────────────────────────────────────
+    public DbSet<Institution> Institutions => Set<Institution>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -453,6 +462,7 @@ public class AppDbContext : DbContext
             e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.CitizenshipType).WithMany().HasForeignKey(x => x.CitizenshipTypeId).IsRequired(false);
             e.HasOne(x => x.ReferralSource).WithMany().HasForeignKey(x => x.ReferralSourceId).IsRequired(false);
+            e.HasOne(x => x.LastInstitution).WithMany().HasForeignKey(x => x.LastInstitutionId).IsRequired(false);
             e.HasMany(x => x.EmergencyContacts).WithOne(x => x.Patient).HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Cascade);
 
             // Audit fields
@@ -501,6 +511,81 @@ public class AppDbContext : DbContext
             e.Property(x => x.Code).HasMaxLength(50).IsRequired();
             // Code unique per company (null = global)
             e.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique().HasDatabaseName("ix_referral_sources_company_code");
+            e.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).IsRequired(false).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── Country ───────────────────────────────────────────────────────
+        m.Entity<Country>(e =>
+        {
+            e.ToTable("countries");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            e.Property(x => x.IsoCode).HasMaxLength(3).IsRequired();
+            e.HasIndex(x => x.IsoCode).IsUnique().HasDatabaseName("ix_countries_iso_code");
+        });
+
+        // ── City ──────────────────────────────────────────────────────────
+        m.Entity<City>(e =>
+        {
+            e.ToTable("cities");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            e.HasOne(x => x.Country).WithMany(x => x.Cities).HasForeignKey(x => x.CountryId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── District ──────────────────────────────────────────────────────
+        m.Entity<District>(e =>
+        {
+            e.ToTable("districts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            e.HasOne(x => x.City).WithMany(x => x.Districts).HasForeignKey(x => x.CityId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── Nationality ───────────────────────────────────────────────────
+        m.Entity<Nationality>(e =>
+        {
+            e.ToTable("nationalities");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            e.Property(x => x.Code).HasMaxLength(10).IsRequired();
+            e.HasIndex(x => x.Code).IsUnique().HasDatabaseName("ix_nationalities_code");
+        });
+
+        // ── Institution ───────────────────────────────────────────────────
+        m.Entity<Institution>(e =>
+        {
+            e.ToTable("institutions");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Code).HasMaxLength(50);
+            e.HasIndex(x => x.Code).HasDatabaseName("ix_institutions_code");
+            e.Property(x => x.Type).HasMaxLength(50);
+            e.Property(x => x.Phone).HasMaxLength(30);
+            e.Property(x => x.Email).HasMaxLength(200);
+            e.Property(x => x.Website).HasMaxLength(300);
+            e.Property(x => x.Country).HasMaxLength(100);
+            e.Property(x => x.City).HasMaxLength(100);
+            e.Property(x => x.District).HasMaxLength(100);
+            e.Property(x => x.Address).HasColumnType("text");
+            e.Property(x => x.ContactPerson).HasMaxLength(200);
+            e.Property(x => x.ContactPhone).HasMaxLength(30);
+            e.Property(x => x.TaxNumber).HasMaxLength(20);
+            e.Property(x => x.TaxOffice).HasMaxLength(200);
+            e.Property(x => x.DiscountRate).HasColumnType("numeric(5,2)");
+            e.Property(x => x.PaymentDays).HasDefaultValue(30);
+            e.Property(x => x.PaymentTerms).HasColumnType("text");
+            e.Property(x => x.Notes).HasColumnType("text");
             e.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).IsRequired(false).OnDelete(DeleteBehavior.Cascade);
         });
 

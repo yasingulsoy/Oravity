@@ -122,14 +122,15 @@ public class PatientsController : ControllerBase
             request.Country,
             request.City,
             request.District,
-            request.Neighborhood,
             request.ReferralSourceId,
             request.ReferralPerson,
             request.LastInstitutionId,
             request.CitizenshipTypeId,
             request.Notes,
             request.SmsOptIn,
-            request.CampaignOptIn));
+            request.CampaignOptIn,
+            request.TcNumber,
+            request.PassportNo));
 
         return Ok(result);
     }
@@ -165,10 +166,13 @@ public record CreatePatientRequest(
     string? PreferredLanguageCode
 );
 
-/// <summary>Hasta güncelleme isteği (TC dahil değil)</summary>
+/// <summary>Hasta güncelleme isteği</summary>
 public record UpdatePatientRequest(
     string FirstName,
     string LastName,
+    // Kimlik
+    string? TcNumber,
+    string? PassportNo,
     // Kişisel
     string? MotherName,
     string? FatherName,
@@ -189,7 +193,6 @@ public record UpdatePatientRequest(
     string? Country,
     string? City,
     string? District,
-    string? Neighborhood,
     string? Address,
     // Tıbbi
     string? BloodType,

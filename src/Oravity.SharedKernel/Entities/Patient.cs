@@ -61,6 +61,7 @@ public class Patient : AuditableEntity
     public ReferralSource? ReferralSource { get; private set; }
     public string? ReferralPerson { get; private set; }
     public long? LastInstitutionId { get; private set; }
+    public Institution? LastInstitution { get; private set; }
 
     // ── Sistem / İdari ─────────────────────────────────────────────────
     public string? Notes { get; private set; }

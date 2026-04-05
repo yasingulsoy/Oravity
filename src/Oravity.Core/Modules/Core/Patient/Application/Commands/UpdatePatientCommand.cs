@@ -30,25 +30,31 @@ public record UpdatePatientCommand(
     string? Country = null,
     string? City = null,
     string? District = null,
-    string? Neighborhood = null,
     long? ReferralSourceId = null,
     string? ReferralPerson = null,
     long? LastInstitutionId = null,
     long? CitizenshipTypeId = null,
     string? Notes = null,
     bool? SmsOptIn = null,
-    bool? CampaignOptIn = null
+    bool? CampaignOptIn = null,
+    string? TcNumber = null,
+    string? PassportNo = null
 ) : IRequest<PatientResponse>;
 
 public class UpdatePatientCommandHandler : IRequestHandler<UpdatePatientCommand, PatientResponse>
 {
     private readonly AppDbContext _db;
     private readonly ITenantContext _tenantContext;
+    private readonly IEncryptionService _encryption;
 
-    public UpdatePatientCommandHandler(AppDbContext db, ITenantContext tenantContext)
+    public UpdatePatientCommandHandler(
+        AppDbContext db,
+        ITenantContext tenantContext,
+        IEncryptionService encryption)
     {
         _db = db;
         _tenantContext = tenantContext;
+        _encryption = encryption;
     }
 
     public async Task<PatientResponse> Handle(
@@ -83,7 +89,7 @@ public class UpdatePatientCommandHandler : IRequestHandler<UpdatePatientCommand,
             request.Country,
             request.City,
             request.District,
-            request.Neighborhood,
+            null, // neighborhood kaldırıldı
             request.ReferralSourceId,
             request.ReferralPerson,
             request.LastInstitutionId,
@@ -91,6 +97,26 @@ public class UpdatePatientCommandHandler : IRequestHandler<UpdatePatientCommand,
             request.Notes,
             request.SmsOptIn,
             request.CampaignOptIn);
+
+        // TC Kimlik No güncelle (girilmişse)
+        if (!string.IsNullOrWhiteSpace(request.TcNumber))
+        {
+            var tc = request.TcNumber.Trim();
+            var hash = _encryption.HashSha256(tc);
+
+            // Başka bir hastada aynı TC hash var mı?
+            var duplicate = await _db.Patients
+                .AnyAsync(p => p.TcNumberHash == hash && p.PublicId != request.PublicId,
+                    cancellationToken);
+            if (duplicate)
+                throw new ConflictException("Bu TC Kimlik No başka bir hastaya ait.");
+
+            patient.UpdateTcNumber(_encryption.Encrypt(tc), hash);
+        }
+
+        // Pasaport No güncelle (girilmişse)
+        if (!string.IsNullOrWhiteSpace(request.PassportNo))
+            patient.UpdatePassport(_encryption.Encrypt(request.PassportNo.Trim()));
 
         await _db.SaveChangesAsync(cancellationToken);
         return PatientMappings.ToResponse(patient);

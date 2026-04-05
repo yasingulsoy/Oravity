@@ -2,10 +2,15 @@ import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Pencil, X, Check } from 'lucide-react';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, useWatch } from 'react-hook-form';
 import { patientsApi } from '@/api/patients';
 import { lookupsApi } from '@/api/lookups';
+import { geoApi } from '@/api/geo';
+import { institutionsApi } from '@/api/institutions';
 import type { UpdatePatientRequest } from '@/types/patient';
+import { OCCUPATIONS } from '@/data/occupations';
+
+const TC_NATIONALITY_CODE = 'TC';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -21,27 +27,56 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 
-const genderLabel: Record<string, string> = {
-  male: 'Erkek', female: 'Kadın', other: 'Diğer',
-};
-
-const maritalStatusLabel: Record<string, string> = {
+const GENDER_LABELS: Record<string, string> = { male: 'Erkek', female: 'Kadın', other: 'Diğer' };
+const MARITAL_LABELS: Record<string, string> = {
   single: 'Bekar', married: 'Evli', divorced: 'Boşanmış', widowed: 'Dul',
 };
 
-function formatDate(date: string | null | undefined) {
-  if (!date) return '—';
-  return new Date(date).toLocaleDateString('tr-TR');
+function formatDate(d: string | null | undefined) {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString('tr-TR');
 }
 
-function Field({ label, value }: { label: string; value: string | number | null | undefined }) {
+function Field({ label, value }: { label: string; value: string | number | boolean | null | undefined }) {
+  const display = value === true ? 'Evet' : value === false ? 'Hayır' : value;
   return (
     <div>
       <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</dt>
-      <dd className="text-sm mt-0.5">{value ?? '—'}</dd>
+      <dd className="text-sm mt-0.5">{display ?? '—'}</dd>
     </div>
+  );
+}
+
+/** Controlled Select helper — fixes value display bug */
+function FormSelect({
+  control,
+  name,
+  options,
+  placeholder = 'Seçin…',
+}: {
+  control: any;
+  name: keyof UpdatePatientRequest;
+  options: string[] | { value: string; label: string }[];
+  placeholder?: string;
+}) {
+  return (
+    <Controller
+      name={name}
+      control={control}
+      render={({ field }) => (
+        <Select value={(field.value as string) ?? ''} onValueChange={field.onChange}>
+          <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>
+          <SelectContent>
+            {(options as any[]).map((opt) => {
+              const v = typeof opt === 'string' ? opt : opt.value;
+              const l = typeof opt === 'string' ? opt : opt.label;
+              return <SelectItem key={v} value={v}>{l}</SelectItem>;
+            })}
+          </SelectContent>
+        </Select>
+      )}
+    />
   );
 }
 
@@ -66,10 +101,51 @@ export function PatientDetailPage() {
     queryFn: () => lookupsApi.getCitizenshipTypes(),
   });
 
+  const { data: countriesData } = useQuery({
+    queryKey: ['geo', 'countries'],
+    queryFn: () => geoApi.getCountries(),
+  });
+
+  const { data: nationalitiesData } = useQuery({
+    queryKey: ['geo', 'nationalities'],
+    queryFn: () => geoApi.getNationalities(),
+  });
+
+  const { data: institutionsData } = useQuery({
+    queryKey: ['institutions'],
+    queryFn: () => institutionsApi.list(),
+  });
+
   const patient = data?.data;
 
-  const { register, handleSubmit, setValue, reset, control, formState: { errors } } =
+  const { register, handleSubmit, control, reset, formState: { errors } } =
     useForm<UpdatePatientRequest>();
+
+  // Watch alanları (koşullu gösterim için)
+  const watchedNationality = useWatch({ control, name: 'nationality' });
+  const watchedCountry    = useWatch({ control, name: 'country' });
+  const watchedCity       = useWatch({ control, name: 'city' });
+
+  const isTurkishNationality = watchedNationality === 'Türkiye Cumhuriyeti';
+  const isTurkeyCountry      = watchedCountry === 'Türkiye';
+
+  // Türkiye ID'sini bul → kasabaları önceden yükle
+  const turkeyId = countriesData?.data?.find((c) => c.isoCode === 'TR')?.id;
+
+  const { data: citiesData } = useQuery({
+    queryKey: ['geo', 'cities', turkeyId],
+    queryFn: () => geoApi.getCities(turkeyId!),
+    enabled: !!turkeyId,
+  });
+
+  // Seçili ilin ID'sini bul → ilçeleri yükle
+  const selectedCityId = citiesData?.data?.find((c) => c.name === watchedCity)?.id;
+
+  const { data: districtsData } = useQuery({
+    queryKey: ['geo', 'districts', selectedCityId],
+    queryFn: () => geoApi.getDistricts(selectedCityId!),
+    enabled: !!selectedCityId,
+  });
 
   const updateMutation = useMutation({
     mutationFn: (req: UpdatePatientRequest) => patientsApi.update(id!, req),
@@ -84,29 +160,27 @@ export function PatientDetailPage() {
     reset({
       firstName: patient.firstName,
       lastName: patient.lastName,
-      motherName: patient.motherName ?? '',
-      fatherName: patient.fatherName ?? '',
-      gender: patient.gender ?? '',
-      maritalStatus: patient.maritalStatus ?? '',
-      nationality: patient.nationality ?? '',
+      motherName: patient.motherName ?? undefined,
+      fatherName: patient.fatherName ?? undefined,
+      gender: patient.gender ?? undefined,
+      maritalStatus: patient.maritalStatus ?? undefined,
+      nationality: patient.nationality ?? undefined,
       citizenshipTypeId: patient.citizenshipTypeId ?? undefined,
-      occupation: patient.occupation ?? '',
-      smokingType: patient.smokingType ?? '',
-      pregnancyStatus: patient.pregnancyStatus ?? undefined,
-      birthDate: patient.birthDate ?? '',
-      phone: patient.phone ?? '',
-      homePhone: patient.homePhone ?? '',
-      workPhone: patient.workPhone ?? '',
-      email: patient.email ?? '',
-      country: patient.country ?? '',
-      city: patient.city ?? '',
-      district: patient.district ?? '',
-      neighborhood: patient.neighborhood ?? '',
-      address: patient.address ?? '',
-      bloodType: patient.bloodType ?? '',
+      occupation: patient.occupation ?? undefined,
+      birthDate: patient.birthDate ?? undefined,
+      phone: patient.phone ?? undefined,
+      homePhone: patient.homePhone ?? undefined,
+      workPhone: patient.workPhone ?? undefined,
+      email: patient.email ?? undefined,
+      country: patient.country ?? undefined,
+      city: patient.city ?? undefined,
+      district: patient.district ?? undefined,
+      address: patient.address ?? undefined,
+      bloodType: patient.bloodType ?? undefined,
       referralSourceId: patient.referralSourceId ?? undefined,
-      referralPerson: patient.referralPerson ?? '',
-      notes: patient.notes ?? '',
+      referralPerson: patient.referralPerson ?? undefined,
+      lastInstitutionId: patient.lastInstitutionId ?? undefined,
+      notes: patient.notes ?? undefined,
       smsOptIn: patient.smsOptIn,
       campaignOptIn: patient.campaignOptIn,
     });
@@ -140,28 +214,19 @@ export function PatientDetailPage() {
       {/* Başlık */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
-          <Link to="/patients">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
+          <Link to="/patients"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
         <div className="flex-1">
           <h1 className="text-2xl font-bold tracking-tight">{fullName}</h1>
           <div className="flex items-center gap-2 mt-1">
-            {patient.gender && (
-              <Badge variant="secondary">{genderLabel[patient.gender] ?? patient.gender}</Badge>
-            )}
-            {patient.bloodType && (
-              <Badge variant="outline">{patient.bloodType}</Badge>
-            )}
-            {!patient.isActive && (
-              <Badge variant="destructive">Pasif</Badge>
-            )}
+            {patient.gender && <Badge variant="secondary">{GENDER_LABELS[patient.gender] ?? patient.gender}</Badge>}
+            {patient.bloodType && <Badge variant="outline">{patient.bloodType}</Badge>}
+            {!patient.isActive && <Badge variant="destructive">Pasif</Badge>}
           </div>
         </div>
         {!editing && (
           <Button variant="outline" size="sm" onClick={startEdit}>
-            <Pencil className="h-4 w-4 mr-2" />
-            Düzenle
+            <Pencil className="h-4 w-4 mr-2" />Düzenle
           </Button>
         )}
       </div>
@@ -173,11 +238,11 @@ export function PatientDetailPage() {
           <TabsTrigger value="treatments">Tedaviler</TabsTrigger>
         </TabsList>
 
-        {/* ── Bilgiler tab ── */}
         <TabsContent value="info" className="mt-4">
           {editing ? (
             <form onSubmit={handleSubmit((d) => updateMutation.mutate(d))} className="space-y-4">
-              {/* Kişisel */}
+
+              {/* ── Kişisel ── */}
               <Card>
                 <CardHeader><CardTitle className="text-base">Kişisel Bilgiler</CardTitle></CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
@@ -205,46 +270,30 @@ export function PatientDetailPage() {
                   </div>
                   <div className="space-y-1.5">
                     <Label>Cinsiyet</Label>
-                    <Controller
-                      name="gender"
-                      control={control}
-                      render={({ field }) => (
-                        <Select onValueChange={field.onChange} defaultValue={field.value ?? ''}>
-                          <SelectTrigger><SelectValue placeholder="Seçin…" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="male">Erkek</SelectItem>
-                            <SelectItem value="female">Kadın</SelectItem>
-                            <SelectItem value="other">Diğer</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
+                    <FormSelect control={control} name="gender"
+                      options={[{ value: 'male', label: 'Erkek' }, { value: 'female', label: 'Kadın' }, { value: 'other', label: 'Diğer' }]} />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Medeni Durum</Label>
-                    <Controller
-                      name="maritalStatus"
-                      control={control}
-                      render={({ field }) => (
-                        <Select onValueChange={field.onChange} defaultValue={field.value ?? ''}>
-                          <SelectTrigger><SelectValue placeholder="Seçin…" /></SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="single">Bekar</SelectItem>
-                            <SelectItem value="married">Evli</SelectItem>
-                            <SelectItem value="divorced">Boşanmış</SelectItem>
-                            <SelectItem value="widowed">Dul</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
+                    <FormSelect control={control} name="maritalStatus"
+                      options={[
+                        { value: 'single', label: 'Bekar' },
+                        { value: 'married', label: 'Evli' },
+                        { value: 'divorced', label: 'Boşanmış' },
+                        { value: 'widowed', label: 'Dul' },
+                      ]} />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Meslek</Label>
-                    <Input {...register('occupation')} />
+                    <FormSelect control={control} name="occupation" options={OCCUPATIONS} />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Uyruk</Label>
-                    <Input {...register('nationality')} />
+                    <FormSelect
+                      control={control}
+                      name="nationality"
+                      options={(nationalitiesData?.data ?? []).map((n) => n.name)}
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Vatandaşlık Tipi</Label>
@@ -253,8 +302,8 @@ export function PatientDetailPage() {
                       control={control}
                       render={({ field }) => (
                         <Select
+                          value={field.value ? String(field.value) : ''}
                           onValueChange={(v) => field.onChange(Number(v))}
-                          defaultValue={field.value ? String(field.value) : ''}
                         >
                           <SelectTrigger><SelectValue placeholder="Seçin…" /></SelectTrigger>
                           <SelectContent>
@@ -268,25 +317,45 @@ export function PatientDetailPage() {
                   </div>
                   <div className="space-y-1.5">
                     <Label>Kan Grubu</Label>
-                    <Controller
-                      name="bloodType"
-                      control={control}
-                      render={({ field }) => (
-                        <Select onValueChange={field.onChange} defaultValue={field.value ?? ''}>
-                          <SelectTrigger><SelectValue placeholder="Seçin…" /></SelectTrigger>
-                          <SelectContent>
-                            {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', '0+', '0-'].map((bg) => (
-                              <SelectItem key={bg} value={bg}>{bg}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
+                    <FormSelect control={control} name="bloodType"
+                      options={['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', '0+', '0-']} />
                   </div>
                 </CardContent>
               </Card>
 
-              {/* İletişim */}
+              {/* ── Kimlik (TC / Pasaport) ── */}
+              <Card>
+                <CardHeader><CardTitle className="text-base">Kimlik Bilgisi</CardTitle></CardHeader>
+                <CardContent className="grid gap-4 sm:grid-cols-2">
+                  {isTurkishNationality || !watchedNationality ? (
+                    <div className="space-y-1.5">
+                      <Label>TC Kimlik No</Label>
+                      <Input
+                        {...register('tcNumber', {
+                          validate: (v) => {
+                            if (!isTurkishNationality) return true;
+                            if (!v && !patient.hasTcNumber) return 'TC Kimlik No giriniz';
+                            return true;
+                          },
+                        })}
+                        placeholder={patient.hasTcNumber ? '••••••••••• (değiştirmek için girin)' : '11 haneli TC No'}
+                        maxLength={11}
+                      />
+                      {errors.tcNumber && <p className="text-xs text-destructive">{errors.tcNumber.message}</p>}
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <Label>Pasaport No</Label>
+                      <Input
+                        {...register('passportNo')}
+                        placeholder={patient.hasPassportNo ? '••••••• (değiştirmek için girin)' : 'Pasaport numarası'}
+                      />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* ── İletişim ── */}
               <Card>
                 <CardHeader><CardTitle className="text-base">İletişim</CardTitle></CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
@@ -309,34 +378,61 @@ export function PatientDetailPage() {
                 </CardContent>
               </Card>
 
-              {/* Adres */}
+              {/* ── Adres ── */}
               <Card>
                 <CardHeader><CardTitle className="text-base">Adres</CardTitle></CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label>Ülke</Label>
-                    <Input {...register('country')} />
+                    <FormSelect
+                      control={control}
+                      name="country"
+                      options={(countriesData?.data ?? []).map((c) => c.name)}
+                    />
                   </div>
+
+                  {/* İl: Türkiye ise dropdown, değilse text */}
                   <div className="space-y-1.5">
-                    <Label>İl</Label>
-                    <Input {...register('city')} />
+                    <Label>İl / Şehir</Label>
+                    {isTurkeyCountry ? (
+                      <FormSelect
+                        control={control}
+                        name="city"
+                        options={(citiesData?.data ?? []).map((c) => c.name)}
+                        placeholder="İl seçin…"
+                      />
+                    ) : (
+                      <Input {...register('city')} />
+                    )}
                   </div>
+
+                  {/* İlçe: Türkiye + il seçili ise dropdown, değilse text */}
                   <div className="space-y-1.5">
                     <Label>İlçe</Label>
-                    <Input {...register('district')} />
+                    {isTurkeyCountry && selectedCityId ? (
+                      <FormSelect
+                        control={control}
+                        name="district"
+                        options={(districtsData?.data ?? []).map((d) => d.name)}
+                        placeholder="İlçe seçin…"
+                      />
+                    ) : (
+                      <Input
+                        {...register('district')}
+                        disabled={isTurkeyCountry && !watchedCity}
+                        placeholder={isTurkeyCountry && !watchedCity ? 'Önce il seçin' : ''}
+                      />
+                    )}
                   </div>
-                  <div className="space-y-1.5">
-                    <Label>Mahalle</Label>
-                    <Input {...register('neighborhood')} />
-                  </div>
+
                   <div className="space-y-1.5 sm:col-span-2">
                     <Label>Açık Adres</Label>
-                    <Input {...register('address')} />
+                    <Textarea {...register('address')} rows={2} />
                   </div>
                 </CardContent>
               </Card>
 
-              {/* Geliş / Kurum */}
+              {/* ── Geliş Bilgileri ── */}
               <Card>
                 <CardHeader><CardTitle className="text-base">Geliş Bilgileri</CardTitle></CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
@@ -347,8 +443,8 @@ export function PatientDetailPage() {
                       control={control}
                       render={({ field }) => (
                         <Select
+                          value={field.value ? String(field.value) : ''}
                           onValueChange={(v) => field.onChange(Number(v))}
-                          defaultValue={field.value ? String(field.value) : ''}
                         >
                           <SelectTrigger><SelectValue placeholder="Seçin…" /></SelectTrigger>
                           <SelectContent>
@@ -364,10 +460,30 @@ export function PatientDetailPage() {
                     <Label>Referans Kişi</Label>
                     <Input {...register('referralPerson')} />
                   </div>
+                  <div className="space-y-1.5">
+                    <Label>Anlaşmalı Kurum</Label>
+                    <Controller
+                      name="lastInstitutionId"
+                      control={control}
+                      render={({ field }) => (
+                        <Select
+                          value={field.value ? String(field.value) : ''}
+                          onValueChange={(v) => field.onChange(Number(v))}
+                        >
+                          <SelectTrigger><SelectValue placeholder="Seçin…" /></SelectTrigger>
+                          <SelectContent>
+                            {institutionsData?.data?.map((inst) => (
+                              <SelectItem key={inst.id} value={String(inst.id)}>{inst.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </div>
                 </CardContent>
               </Card>
 
-              {/* Notlar & Tercihler */}
+              {/* ── Notlar & Tercihler ── */}
               <Card>
                 <CardHeader><CardTitle className="text-base">Notlar &amp; Tercihler</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
@@ -377,31 +493,15 @@ export function PatientDetailPage() {
                   </div>
                   <div className="flex items-center gap-6">
                     <div className="flex items-center gap-2">
-                      <Controller
-                        name="smsOptIn"
-                        control={control}
-                        render={({ field }) => (
-                          <Checkbox
-                            id="smsOptIn"
-                            checked={field.value ?? false}
-                            onCheckedChange={field.onChange}
-                          />
-                        )}
-                      />
+                      <Controller name="smsOptIn" control={control} render={({ field }) => (
+                        <Checkbox id="smsOptIn" checked={field.value ?? false} onCheckedChange={field.onChange} />
+                      )} />
                       <Label htmlFor="smsOptIn" className="font-normal">SMS bildirimleri</Label>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Controller
-                        name="campaignOptIn"
-                        control={control}
-                        render={({ field }) => (
-                          <Checkbox
-                            id="campaignOptIn"
-                            checked={field.value ?? false}
-                            onCheckedChange={field.onChange}
-                          />
-                        )}
-                      />
+                      <Controller name="campaignOptIn" control={control} render={({ field }) => (
+                        <Checkbox id="campaignOptIn" checked={field.value ?? false} onCheckedChange={field.onChange} />
+                      )} />
                       <Label htmlFor="campaignOptIn" className="font-normal">Kampanya bildirimleri</Label>
                     </div>
                   </div>
@@ -414,7 +514,7 @@ export function PatientDetailPage() {
 
               <div className="flex gap-2 justify-end">
                 <Button type="button" variant="outline" onClick={() => setEditing(false)}>
-                  <X className="h-4 w-4 mr-1" /> İptal
+                  <X className="h-4 w-4 mr-1" />İptal
                 </Button>
                 <Button type="submit" disabled={updateMutation.isPending}>
                   <Check className="h-4 w-4 mr-1" />
@@ -423,8 +523,8 @@ export function PatientDetailPage() {
               </div>
             </form>
           ) : (
+            /* ── Görüntüleme modu ── */
             <div className="space-y-4">
-              {/* Kişisel */}
               <Card>
                 <CardHeader><CardTitle className="text-base">Kişisel Bilgiler</CardTitle></CardHeader>
                 <CardContent>
@@ -433,18 +533,26 @@ export function PatientDetailPage() {
                     <Field label="Ana Adı" value={patient.motherName} />
                     <Field label="Baba Adı" value={patient.fatherName} />
                     <Field label="Doğum Tarihi" value={formatDate(patient.birthDate)} />
-                    <Field label="Cinsiyet" value={patient.gender ? (genderLabel[patient.gender] ?? patient.gender) : null} />
-                    <Field label="Medeni Durum" value={patient.maritalStatus ? (maritalStatusLabel[patient.maritalStatus] ?? patient.maritalStatus) : null} />
+                    <Field label="Cinsiyet" value={patient.gender ? (GENDER_LABELS[patient.gender] ?? patient.gender) : null} />
+                    <Field label="Medeni Durum" value={patient.maritalStatus ? (MARITAL_LABELS[patient.maritalStatus] ?? patient.maritalStatus) : null} />
                     <Field label="Meslek" value={patient.occupation} />
                     <Field label="Uyruk" value={patient.nationality} />
                     <Field label="Vatandaşlık Tipi" value={patient.citizenshipTypeName} />
                     <Field label="Kan Grubu" value={patient.bloodType} />
-                    <Field label="Kayıt Tarihi" value={formatDate(patient.createdAt)} />
                   </dl>
                 </CardContent>
               </Card>
 
-              {/* İletişim */}
+              <Card>
+                <CardHeader><CardTitle className="text-base">Kimlik</CardTitle></CardHeader>
+                <CardContent>
+                  <dl className="grid gap-4 sm:grid-cols-3">
+                    <Field label="TC Kimlik No" value={patient.hasTcNumber ? 'Kayıtlı ✓' : null} />
+                    <Field label="Pasaport No" value={patient.hasPassportNo ? 'Kayıtlı ✓' : null} />
+                  </dl>
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardHeader><CardTitle className="text-base">İletişim</CardTitle></CardHeader>
                 <CardContent>
@@ -457,7 +565,6 @@ export function PatientDetailPage() {
                 </CardContent>
               </Card>
 
-              {/* Adres */}
               <Card>
                 <CardHeader><CardTitle className="text-base">Adres</CardTitle></CardHeader>
                 <CardContent>
@@ -465,7 +572,6 @@ export function PatientDetailPage() {
                     <Field label="Ülke" value={patient.country} />
                     <Field label="İl" value={patient.city} />
                     <Field label="İlçe" value={patient.district} />
-                    <Field label="Mahalle" value={patient.neighborhood} />
                     {patient.address && (
                       <div className="sm:col-span-3">
                         <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Açık Adres</dt>
@@ -476,25 +582,22 @@ export function PatientDetailPage() {
                 </CardContent>
               </Card>
 
-              {/* Geliş / Kurum */}
               <Card>
                 <CardHeader><CardTitle className="text-base">Geliş Bilgileri</CardTitle></CardHeader>
                 <CardContent>
                   <dl className="grid gap-4 sm:grid-cols-3">
                     <Field label="Geliş Şekli" value={patient.referralSourceName} />
                     <Field label="Referans Kişi" value={patient.referralPerson} />
+                    <Field label="Anlaşmalı Kurum" value={patient.lastInstitutionName} />
                   </dl>
                 </CardContent>
               </Card>
 
-              {/* Notlar */}
               {(patient.notes || !patient.smsOptIn || !patient.campaignOptIn) && (
                 <Card>
                   <CardHeader><CardTitle className="text-base">Notlar &amp; Tercihler</CardTitle></CardHeader>
                   <CardContent className="space-y-3">
-                    {patient.notes && (
-                      <p className="text-sm whitespace-pre-wrap">{patient.notes}</p>
-                    )}
+                    {patient.notes && <p className="text-sm whitespace-pre-wrap">{patient.notes}</p>}
                     <div className="flex gap-4 text-sm text-muted-foreground">
                       <span>{patient.smsOptIn ? '✓ SMS izni var' : '✗ SMS izni yok'}</span>
                       <span>{patient.campaignOptIn ? '✓ Kampanya izni var' : '✗ Kampanya izni yok'}</span>
@@ -502,27 +605,25 @@ export function PatientDetailPage() {
                   </CardContent>
                 </Card>
               )}
+
+              <div className="text-xs text-muted-foreground text-right">
+                Kayıt tarihi: {formatDate(patient.createdAt)}
+              </div>
             </div>
           )}
         </TabsContent>
 
-        {/* ── Randevular tab ── */}
         <TabsContent value="appointments" className="mt-4">
           <Card>
             <CardHeader><CardTitle>Randevu Geçmişi</CardTitle></CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">Yakında eklenecek.</p>
-            </CardContent>
+            <CardContent><p className="text-sm text-muted-foreground">Yakında eklenecek.</p></CardContent>
           </Card>
         </TabsContent>
 
-        {/* ── Tedaviler tab ── */}
         <TabsContent value="treatments" className="mt-4">
           <Card>
             <CardHeader><CardTitle>Tedavi Geçmişi</CardTitle></CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">Yakında eklenecek.</p>
-            </CardContent>
+            <CardContent><p className="text-sm text-muted-foreground">Yakında eklenecek.</p></CardContent>
           </Card>
         </TabsContent>
       </Tabs>
