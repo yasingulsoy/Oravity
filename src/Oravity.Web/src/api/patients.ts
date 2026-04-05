@@ -4,7 +4,11 @@ import type { PaginatedResponse } from '@/types/common';
 
 export const patientsApi = {
   list: (params: PatientListRequest) =>
-    apiClient.get<PaginatedResponse<Patient>>('/patients', { params }),
+    apiClient.get<PaginatedResponse<Patient>>('/patients', {
+      params: Object.fromEntries(
+        Object.entries(params).filter(([, v]) => v !== undefined && v !== ''),
+      ),
+    }),
 
   getById: (id: string) =>
     apiClient.get<Patient>(`/patients/${id}`),
