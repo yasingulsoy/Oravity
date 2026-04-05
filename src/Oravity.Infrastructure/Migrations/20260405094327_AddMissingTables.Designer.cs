@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Oravity.Infrastructure.Database;
@@ -11,9 +12,11 @@ using Oravity.Infrastructure.Database;
 namespace Oravity.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260405094327_AddMissingTables")]
+    partial class AddMissingTables
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -383,56 +386,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.HasKey("BranchId");
 
                     b.ToTable("branch_security_policies", (string)null);
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.CitizenshipType", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<long?>("CompanyId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<Guid>("PublicId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CompanyId", "Code")
-                        .IsUnique()
-                        .HasDatabaseName("ix_citizenship_types_company_code");
-
-                    b.ToTable("citizenship_types", (string)null);
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.Company", b =>
@@ -1777,52 +1730,24 @@ namespace Oravity.Infrastructure.Migrations
                     b.Property<long>("BranchId")
                         .HasColumnType("bigint");
 
-                    b.Property<bool>("CampaignOptIn")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true);
-
-                    b.Property<long?>("CitizenshipTypeId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("City")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("Country")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<long?>("CreatedByUserId")
                         .HasColumnType("bigint");
 
-                    b.Property<string>("District")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
                     b.Property<string>("Email")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("FatherName")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
                     b.Property<string>("FirstName")
                         .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<string>("Gender")
                         .HasMaxLength(10)
                         .HasColumnType("character varying(10)");
-
-                    b.Property<string>("HomePhone")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
 
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
@@ -1832,40 +1757,10 @@ namespace Oravity.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
-                    b.Property<long?>("LastInstitutionId")
-                        .HasColumnType("bigint");
-
                     b.Property<string>("LastName")
                         .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("MaritalStatus")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("MotherName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Nationality")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
-
-                    b.Property<string>("Neighborhood")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Occupation")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("PassportNoEncrypted")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
 
                     b.Property<string>("Phone")
                         .HasMaxLength(20)
@@ -1878,29 +1773,10 @@ namespace Oravity.Infrastructure.Migrations
                         .HasColumnType("character varying(5)")
                         .HasDefaultValue("tr");
 
-                    b.Property<int?>("PregnancyStatus")
-                        .HasColumnType("integer");
-
                     b.Property<Guid>("PublicId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<string>("ReferralPerson")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<long?>("ReferralSourceId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("SmokingType")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<bool>("SmsOptIn")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true);
 
                     b.Property<string>("TcNumberEncrypted")
                         .HasMaxLength(500)
@@ -1919,19 +1795,11 @@ namespace Oravity.Infrastructure.Migrations
                     b.Property<long?>("UpdatedByUserId")
                         .HasColumnType("bigint");
 
-                    b.Property<string>("WorkPhone")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
                     b.HasKey("Id");
-
-                    b.HasIndex("CitizenshipTypeId");
 
                     b.HasIndex("PublicId")
                         .IsUnique()
                         .HasDatabaseName("ix_patients_public_id");
-
-                    b.HasIndex("ReferralSourceId");
 
                     b.HasIndex("TcNumberHash")
                         .HasDatabaseName("ix_patients_tc_hash");
@@ -2101,62 +1969,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.HasIndex("UpdatedBy");
 
                     b.ToTable("patient_anamnesis", (string)null);
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.PatientEmergencyContact", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("Address")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Email")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("FullName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<long>("PatientId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Phone")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<Guid>("PublicId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<string>("Relationship")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PatientId", "SortOrder")
-                        .IsUnique()
-                        .HasDatabaseName("ix_patient_emergency_sort");
-
-                    b.ToTable("patient_emergency_contacts", (string)null);
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.PatientFile", b =>
@@ -2882,56 +2694,6 @@ namespace Oravity.Infrastructure.Migrations
                         .HasDatabaseName("ix_reference_price_lists_code_year");
 
                     b.ToTable("reference_price_lists", (string)null);
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.ReferralSource", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<long?>("CompanyId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<Guid>("PublicId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CompanyId", "Code")
-                        .IsUnique()
-                        .HasDatabaseName("ix_referral_sources_company_code");
-
-                    b.ToTable("referral_sources", (string)null);
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.RefreshToken", b =>
@@ -4586,16 +4348,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("Branch");
                 });
 
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.CitizenshipType", b =>
-                {
-                    b.HasOne("Oravity.SharedKernel.Entities.Company", "Company")
-                        .WithMany()
-                        .HasForeignKey("CompanyId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
-                    b.Navigation("Company");
-                });
-
             modelBuilder.Entity("Oravity.SharedKernel.Entities.Company", b =>
                 {
                     b.HasOne("Oravity.SharedKernel.Entities.Vertical", "Vertical")
@@ -4914,19 +4666,7 @@ namespace Oravity.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("Oravity.SharedKernel.Entities.CitizenshipType", "CitizenshipType")
-                        .WithMany()
-                        .HasForeignKey("CitizenshipTypeId");
-
-                    b.HasOne("Oravity.SharedKernel.Entities.ReferralSource", "ReferralSource")
-                        .WithMany()
-                        .HasForeignKey("ReferralSourceId");
-
                     b.Navigation("Branch");
-
-                    b.Navigation("CitizenshipType");
-
-                    b.Navigation("ReferralSource");
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.PatientAnamnesis", b =>
@@ -4961,17 +4701,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("Patient");
 
                     b.Navigation("UpdatedByUser");
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.PatientEmergencyContact", b =>
-                {
-                    b.HasOne("Oravity.SharedKernel.Entities.Patient", "Patient")
-                        .WithMany("EmergencyContacts")
-                        .HasForeignKey("PatientId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Patient");
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.PatientFile", b =>
@@ -5122,16 +4851,6 @@ namespace Oravity.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("List");
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.ReferralSource", b =>
-                {
-                    b.HasOne("Oravity.SharedKernel.Entities.Company", "Company")
-                        .WithMany()
-                        .HasForeignKey("CompanyId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
-                    b.Navigation("Company");
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.RefreshToken", b =>
@@ -5539,11 +5258,6 @@ namespace Oravity.Infrastructure.Migrations
             modelBuilder.Entity("Oravity.SharedKernel.Entities.EInvoice", b =>
                 {
                     b.Navigation("Items");
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.Patient", b =>
-                {
-                    b.Navigation("EmergencyContacts");
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.Payment", b =>

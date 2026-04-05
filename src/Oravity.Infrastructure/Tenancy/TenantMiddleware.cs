@@ -35,8 +35,11 @@ public class TenantMiddleware
                     tenantCtx.UserId = userId;
                 }
 
-                // JWT role claim → numeric role level
-                if (int.TryParse(user.FindFirstValue("role_level"), out var roleLevel))
+                // Platform admin claim → role level 1
+                if (user.FindFirstValue("is_platform_admin") == "true")
+                    tenantCtx.Role = 1;
+                // JWT role claim → numeric role level (regular users)
+                else if (int.TryParse(user.FindFirstValue("role_level"), out var roleLevel))
                     tenantCtx.Role = roleLevel;
 
                 // JWT company_id claim

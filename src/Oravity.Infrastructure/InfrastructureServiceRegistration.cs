@@ -20,6 +20,7 @@ using Oravity.Infrastructure.Storage;
 using Oravity.Infrastructure.Tenancy;
 using Minio;
 using Oravity.SharedKernel.Interfaces;
+using Oravity.SharedKernel.Services;
 using StackExchange.Redis;
 
 namespace Oravity.Infrastructure;
@@ -78,6 +79,10 @@ public static class InfrastructureServiceRegistration
 
         // SSO callback (Microsoft OIDC tamamlandığında)
         services.AddScoped<SsoCallbackHandler>();
+
+        // Fiyatlandırma Motoru
+        services.AddSingleton<FormulaEngine>();
+        services.AddSingleton<PricingEngine>();
 
         // Döviz Kuru Servisi
         services.AddScoped<IExchangeRateService, ExchangeRateService>();

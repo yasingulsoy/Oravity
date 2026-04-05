@@ -6123,6 +6123,8 @@ CREATE TABLE patients (
     -- Kişisel Bilgiler
     first_name VARCHAR(200) NOT NULL,
     last_name VARCHAR(200) NOT NULL,
+    mother_name VARCHAR(200),          -- Ana adı
+    father_name VARCHAR(200),          -- Baba adı
     birth_date DATE,
     
     -- İletişim Bilgileri
@@ -14551,6 +14553,8 @@ BORÇ
 Ad                    → first_name
 Hata Numarası         → patient_no (otomatik, readonly)
 Soyad                 → last_name
+Ana Adı               → mother_name
+Baba Adı              → father_name
 Uyruk                 → nationality
 Vatandaşlık Türü      → citizenship_type_id   (Yurt İçi Türk Hasta, vb.)
 TC Kimlik No          → tc_identity_no        [✔ Doğrula] butonu
@@ -15221,7 +15225,7 @@ Eski İnley B
 Kalsifiye Kanal
 Endodontik Fistül
 Eski Kanal Tedavisi
-S�t Dişi Kron
+S�t Dişi Kron
 Eski İnley OL
 Eski İnley OP
 Eski İnley OB
@@ -24517,7 +24521,7 @@ DisinePlus'ın satış sürecine entegrasyonu:
 
 ```
                     SPICE Level 2        CMMI Level 3
-S�re                6-9 ay               12-18 ay
+S�re                6-9 ay               12-18 ay
 Maliyet             Düşük                Yüksek
 Zorunluluk          En az Level 2        En az Level 3
 KTS Kabulü          ✅ Kabul edilir       ✅ Kabul edilir

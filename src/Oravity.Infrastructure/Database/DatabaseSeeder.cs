@@ -30,8 +30,14 @@ public class DatabaseSeeder
         await SeedPermissionsAsync(ct);
         await SeedTranslationsAsync(ct);
 
+        await SeedCitizenshipTypesAsync(ct);
+        await SeedReferralSourcesAsync(ct);
+
         if (_env.IsDevelopment())
+        {
             await SeedPlatformAdminAsync(ct);
+            await SeedTestPatientsAsync(ct);
+        }
 
         _logger.LogInformation("Database seed tamamlandı.");
     }
@@ -272,6 +278,116 @@ public class DatabaseSeeder
         }
 
         _logger.LogInformation("{Count} çeviri anahtarı eklendi (TR+EN).", definitions.Length);
+    }
+
+    // ─── Vatandaşlık Tipleri ──────────────────────────────────────────────
+    private async Task SeedCitizenshipTypesAsync(CancellationToken ct)
+    {
+        if (await _db.CitizenshipTypes.AnyAsync(ct))
+        {
+            _logger.LogDebug("Vatandaşlık tipleri zaten mevcut, atlanıyor.");
+            return;
+        }
+
+        var items = new[]
+        {
+            CitizenshipType.Create("Yurtiçi Türk Hasta",    "DOMESTIC_TURKISH",  0),
+            CitizenshipType.Create("Yurtiçi Yabancı Hasta", "DOMESTIC_FOREIGN",  1),
+            CitizenshipType.Create("Yurtdışı Hasta",         "INTERNATIONAL",     2),
+        };
+
+        await _db.CitizenshipTypes.AddRangeAsync(items, ct);
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("{Count} vatandaşlık tipi eklendi.", items.Length);
+    }
+
+    // ─── Geliş Şekilleri ──────────────────────────────────────────────────
+    private async Task SeedReferralSourcesAsync(CancellationToken ct)
+    {
+        if (await _db.ReferralSources.AnyAsync(ct))
+        {
+            _logger.LogDebug("Geliş şekilleri zaten mevcut, atlanıyor.");
+            return;
+        }
+
+        var items = new[]
+        {
+            ReferralSource.Create("Anlaşmalı Kurum",  "INSTITUTION",   0),
+            ReferralSource.Create("Tavsiye",           "REFERRAL",      1),
+            ReferralSource.Create("İnternet",          "INTERNET",      2),
+            ReferralSource.Create("Sosyal Medya",      "SOCIAL_MEDIA",  3),
+            ReferralSource.Create("TV Reklamı",        "TV",            4),
+            ReferralSource.Create("Tekrar Gelen",      "RETURNING",     5),
+            ReferralSource.Create("Diğer",             "OTHER",         6),
+        };
+
+        await _db.ReferralSources.AddRangeAsync(items, ct);
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("{Count} geliş şekli eklendi.", items.Length);
+    }
+
+    // ─── Test Hastaları (sadece Development) ─────────────────────────────
+    private async Task SeedTestPatientsAsync(CancellationToken ct)
+    {
+        const string demoCompanyName = "Demo Diş Kliniği";
+
+        // Demo şirket — yoksa oluştur
+        var company = await _db.Companies.FirstOrDefaultAsync(c => c.Name == demoCompanyName, ct);
+        if (company is null)
+        {
+            var dental = await _db.Verticals.FirstOrDefaultAsync(v => v.Code == "DENTAL", ct);
+            if (dental is null)
+            {
+                _logger.LogWarning("DENTAL vertical bulunamadı, test hastaları atlanıyor.");
+                return;
+            }
+
+            company = Company.Create(demoCompanyName, dental.Id);
+            company.SetSubscription(DateTime.UtcNow.AddYears(1));
+            await _db.Companies.AddAsync(company, ct);
+            await _db.SaveChangesAsync(ct);
+            _logger.LogInformation("Demo şirket oluşturuldu: {Name}", demoCompanyName);
+        }
+
+        // Demo şube — yoksa oluştur
+        var branch = await _db.Branches.FirstOrDefaultAsync(b => b.CompanyId == company.Id, ct);
+        if (branch is null)
+        {
+            branch = Branch.Create("Ana Şube", company.Id);
+            await _db.Branches.AddAsync(branch, ct);
+            await _db.SaveChangesAsync(ct);
+            _logger.LogInformation("Demo şube oluşturuldu.");
+        }
+
+        // Zaten hasta varsa atla
+        if (await _db.Patients.AnyAsync(p => p.BranchId == branch.Id, ct))
+        {
+            _logger.LogDebug("Test hastaları zaten mevcut, atlanıyor.");
+            return;
+        }
+
+        var patients = new[]
+        {
+            Patient.Create(branch.Id, "Ayşe",    "Kaya",        "5321234567",  "ayse.kaya@example.com",      new DateOnly(1985, 3, 15), "female", address: "Kadıköy, İstanbul"),
+            Patient.Create(branch.Id, "Mehmet",  "Yılmaz",      "5337654321",  "mehmet.yilmaz@example.com",  new DateOnly(1978, 7, 22), "male",   address: "Çankaya, Ankara"),
+            Patient.Create(branch.Id, "Fatma",   "Demir",       "5441122334",  "fatma.demir@example.com",    new DateOnly(1992, 11, 5), "female", bloodType: "A+"),
+            Patient.Create(branch.Id, "Ali",     "Çelik",       "5069988776",  null,                         new DateOnly(1965, 1, 30), "male",   bloodType: "0+"),
+            Patient.Create(branch.Id, "Zeynep",  "Şahin",       "5554433221",  "zeynep.sahin@example.com",   new DateOnly(1999, 6, 18), "female"),
+            Patient.Create(branch.Id, "Mustafa", "Arslan",      "5323344556",  "mustafa.arslan@example.com", new DateOnly(1970, 9, 3),  "male",   address: "Bornova, İzmir"),
+            Patient.Create(branch.Id, "Emine",   "Doğan",       "5067788990",  null,                         new DateOnly(1988, 4, 25), "female", bloodType: "B+"),
+            Patient.Create(branch.Id, "Hasan",   "Kurt",        "5449900112",  "hasan.kurt@example.com",     new DateOnly(1955, 12, 10),"male"),
+            Patient.Create(branch.Id, "Hatice",  "Öztürk",      "5322211334",  "hatice.ozturk@example.com",  new DateOnly(2001, 2, 14), "female", bloodType: "AB+"),
+            Patient.Create(branch.Id, "İbrahim", "Aydın",       "5558877665",  null,                         new DateOnly(1982, 8, 7),  "male",   address: "Nilüfer, Bursa"),
+            Patient.Create(branch.Id, "Merve",   "Koç",         "5071234000",  "merve.koc@example.com",      new DateOnly(1995, 5, 21), "female", bloodType: "A-"),
+            Patient.Create(branch.Id, "Ömer",    "Yıldız",      "5335550011",  "omer.yildiz@example.com",    new DateOnly(1973, 10, 16),"male"),
+            Patient.Create(branch.Id, "Selin",   "Güneş",       "5463322110",  "selin.gunes@example.com",    new DateOnly(2003, 3, 8),  "female"),
+            Patient.Create(branch.Id, "Burak",   "Aksoy",       "5076543210",  null,                         new DateOnly(1990, 7, 29), "male",   bloodType: "B-"),
+            Patient.Create(branch.Id, "Büşra",   "Polat",       "5327890123",  "busra.polat@example.com",    new DateOnly(1997, 1, 11), "female", address: "Şişli, İstanbul"),
+        };
+
+        await _db.Patients.AddRangeAsync(patients, ct);
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("{Count} test hastası eklendi (şube: {Branch}).", patients.Length, branch.Name);
     }
 
     // ─── Platform Admin (sadece Development) ──────────────────────────────

@@ -40,6 +40,9 @@ public class AppDbContext : DbContext
 
     // ─── Patients ──────────────────────────────────────────────────────────
     public DbSet<Patient> Patients => Set<Patient>();
+    public DbSet<PatientEmergencyContact> PatientEmergencyContacts => Set<PatientEmergencyContact>();
+    public DbSet<CitizenshipType> CitizenshipTypes => Set<CitizenshipType>();
+    public DbSet<ReferralSource> ReferralSources => Set<ReferralSource>();
 
     // ─── Appointments ──────────────────────────────────────────────────────
     public DbSet<Appointment> Appointments => Set<Appointment>();
@@ -104,6 +107,24 @@ public class AppDbContext : DbContext
     public DbSet<ExchangeRate>           ExchangeRates           => Set<ExchangeRate>();
     public DbSet<ExchangeRateOverride>   ExchangeRateOverrides   => Set<ExchangeRateOverride>();
     public DbSet<ExchangeRateDifference> ExchangeRateDifferences => Set<ExchangeRateDifference>();
+
+    // ─── Tedavi Kataloğu ──────────────────────────────────────────────────
+    public DbSet<Treatment>         Treatments         => Set<Treatment>();
+    public DbSet<TreatmentCategory> TreatmentCategories => Set<TreatmentCategory>();
+
+    // ─── Fiyatlandırma ────────────────────────────────────────────────────
+    public DbSet<PricingRule>         PricingRules         => Set<PricingRule>();
+    public DbSet<ReferencePriceList>  ReferencePriceLists  => Set<ReferencePriceList>();
+    public DbSet<ReferencePriceItem>  ReferencePriceItems  => Set<ReferencePriceItem>();
+    public DbSet<TreatmentMapping>    TreatmentMappings    => Set<TreatmentMapping>();
+
+    // ─── Güvenlik (2FA / Cihaz / Politika) ───────────────────────────────
+    public DbSet<User2FASettings>       User2FASettings        => Set<User2FASettings>();
+    public DbSet<TrustedDevice>         TrustedDevices         => Set<TrustedDevice>();
+    public DbSet<BranchSecurityPolicy>  BranchSecurityPolicies => Set<BranchSecurityPolicy>();
+
+    // ─── Yedekleme ────────────────────────────────────────────────────────
+    public DbSet<BackupLog> BackupLogs => Set<BackupLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -385,36 +406,102 @@ public class AppDbContext : DbContext
             e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
             e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_patients_public_id");
 
-            e.Property(x => x.FirstName).HasMaxLength(100).IsRequired();
-            e.Property(x => x.LastName).HasMaxLength(100).IsRequired();
+            // Kişisel
+            e.Property(x => x.FirstName).HasMaxLength(200).IsRequired();
+            e.Property(x => x.LastName).HasMaxLength(200).IsRequired();
+            e.Property(x => x.MotherName).HasMaxLength(200);
+            e.Property(x => x.FatherName).HasMaxLength(200);
+            e.Property(x => x.Gender).HasMaxLength(10);
+            e.Property(x => x.MaritalStatus).HasMaxLength(20);
+            e.Property(x => x.Nationality).HasMaxLength(100);
+            e.Property(x => x.Occupation).HasMaxLength(200);
+            e.Property(x => x.SmokingType).HasMaxLength(20);
+
+            // Kimlik (şifreli)
+            e.Property(x => x.TcNumberEncrypted).HasMaxLength(500);
+            e.Property(x => x.TcNumberHash).HasMaxLength(64);
+            e.HasIndex(x => x.TcNumberHash).HasDatabaseName("ix_patients_tc_hash");
+            e.Property(x => x.PassportNoEncrypted).HasMaxLength(500);
+
+            // İletişim
+            e.Property(x => x.Phone).HasMaxLength(20);
+            e.HasIndex(x => new { x.BranchId, x.Phone }).HasDatabaseName("ix_patients_branch_phone");
+            e.Property(x => x.HomePhone).HasMaxLength(20);
+            e.Property(x => x.WorkPhone).HasMaxLength(20);
+            e.Property(x => x.Email).HasMaxLength(200);
+
+            // Adres
+            e.Property(x => x.Country).HasMaxLength(100);
+            e.Property(x => x.City).HasMaxLength(100);
+            e.Property(x => x.District).HasMaxLength(100);
+            e.Property(x => x.Neighborhood).HasMaxLength(200);
+            e.Property(x => x.Address).HasColumnType("text");
 
             // Ad + Soyad composite index (arama)
             e.HasIndex(x => new { x.BranchId, x.LastName, x.FirstName })
              .HasDatabaseName("ix_patients_branch_name");
 
-            e.Property(x => x.Gender).HasMaxLength(10);
-            e.Property(x => x.TcNumberEncrypted).HasMaxLength(500);
-            e.Property(x => x.TcNumberHash).HasMaxLength(64);
-            e.HasIndex(x => x.TcNumberHash).HasDatabaseName("ix_patients_tc_hash");
-
-            e.Property(x => x.Phone).HasMaxLength(20);
-            e.HasIndex(x => new { x.BranchId, x.Phone }).HasDatabaseName("ix_patients_branch_phone");
-
-            e.Property(x => x.Email).HasMaxLength(200);
-            e.Property(x => x.Address).HasColumnType("text");
+            // Tıbbi / Geliş
             e.Property(x => x.BloodType).HasMaxLength(5);
+            e.Property(x => x.ReferralPerson).HasMaxLength(200);
+            e.Property(x => x.Notes).HasColumnType("text");
             e.Property(x => x.PreferredLanguageCode).HasMaxLength(5).HasDefaultValue("tr");
+            e.Property(x => x.SmsOptIn).HasDefaultValue(true);
+            e.Property(x => x.CampaignOptIn).HasDefaultValue(true);
             e.Property(x => x.IsActive).HasDefaultValue(true);
+
+            e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.CitizenshipType).WithMany().HasForeignKey(x => x.CitizenshipTypeId).IsRequired(false);
+            e.HasOne(x => x.ReferralSource).WithMany().HasForeignKey(x => x.ReferralSourceId).IsRequired(false);
+            e.HasMany(x => x.EmergencyContacts).WithOne(x => x.Patient).HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Cascade);
 
             // Audit fields
             e.Property(x => x.TenantId).IsRequired();
             e.Property(x => x.CreatedByUserId);
             e.Property(x => x.UpdatedByUserId);
+        });
 
-            e.HasOne(x => x.Branch)
-             .WithMany()
-             .HasForeignKey(x => x.BranchId)
-             .OnDelete(DeleteBehavior.Restrict);
+        // ── PatientEmergencyContact ────────────────────────────────────────
+        m.Entity<PatientEmergencyContact>(e =>
+        {
+            e.ToTable("patient_emergency_contacts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.Property(x => x.FullName).HasMaxLength(200);
+            e.Property(x => x.Relationship).HasMaxLength(100);
+            e.Property(x => x.Phone).HasMaxLength(20);
+            e.Property(x => x.Email).HasMaxLength(200);
+            e.Property(x => x.Address).HasColumnType("text");
+            e.HasIndex(x => new { x.PatientId, x.SortOrder }).IsUnique().HasDatabaseName("ix_patient_emergency_sort");
+        });
+
+        // ── CitizenshipType ────────────────────────────────────────────────
+        m.Entity<CitizenshipType>(e =>
+        {
+            e.ToTable("citizenship_types");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            e.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            // Code unique per company (null = global; şirket kendi kodunu üstüne yazabilir)
+            e.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique().HasDatabaseName("ix_citizenship_types_company_code");
+            e.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).IsRequired(false).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── ReferralSource ─────────────────────────────────────────────────
+        m.Entity<ReferralSource>(e =>
+        {
+            e.ToTable("referral_sources");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            e.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            // Code unique per company (null = global)
+            e.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique().HasDatabaseName("ix_referral_sources_company_code");
+            e.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).IsRequired(false).OnDelete(DeleteBehavior.Cascade);
         });
 
         // ── Appointment ───────────────────────────────────────────────────
@@ -1455,6 +1542,242 @@ public class AppDbContext : DbContext
              .WithMany()
              .HasForeignKey(x => x.LanguageId)
              .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── TreatmentCategory ─────────────────────────────────────────────
+        m.Entity<TreatmentCategory>(e =>
+        {
+            e.ToTable("treatment_categories");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique()
+             .HasDatabaseName("ix_treatment_categories_public_id");
+
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+
+            e.HasIndex(x => new { x.CompanyId, x.IsActive })
+             .HasDatabaseName("ix_treatment_categories_company_active");
+
+            e.HasOne(x => x.Company)
+             .WithMany()
+             .HasForeignKey(x => x.CompanyId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Parent)
+             .WithMany()
+             .HasForeignKey(x => x.ParentId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── Treatment ─────────────────────────────────────────────────────
+        m.Entity<Treatment>(e =>
+        {
+            e.ToTable("treatments");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique()
+             .HasDatabaseName("ix_treatments_public_id");
+
+            e.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            e.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique()
+             .HasDatabaseName("ix_treatments_company_code");
+
+            e.Property(x => x.Name).HasMaxLength(300).IsRequired();
+            e.Property(x => x.Tags).HasColumnType("jsonb");
+            e.Property(x => x.KdvRate).HasColumnType("numeric(5,2)");
+            e.Property(x => x.AllowedScopes).HasColumnType("integer[]");
+
+            e.HasIndex(x => new { x.CompanyId, x.IsActive })
+             .HasDatabaseName("ix_treatments_company_active");
+
+            e.HasOne(x => x.Company)
+             .WithMany()
+             .HasForeignKey(x => x.CompanyId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Category)
+             .WithMany()
+             .HasForeignKey(x => x.CategoryId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ── PricingRule ───────────────────────────────────────────────────
+        m.Entity<PricingRule>(e =>
+        {
+            e.ToTable("pricing_rules");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique()
+             .HasDatabaseName("ix_pricing_rules_public_id");
+
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Description).HasColumnType("text");
+            e.Property(x => x.RuleType).HasMaxLength(50).IsRequired();
+            e.Property(x => x.IncludeFilters).HasColumnType("jsonb");
+            e.Property(x => x.ExcludeFilters).HasColumnType("jsonb");
+            e.Property(x => x.Formula).HasColumnType("text");
+            e.Property(x => x.OutputCurrency).HasMaxLength(3).HasDefaultValue("TRY");
+
+            e.HasIndex(x => new { x.CompanyId, x.IsActive, x.Priority })
+             .HasDatabaseName("ix_pricing_rules_company_active_priority");
+        });
+
+        // ── ReferencePriceList ────────────────────────────────────────────
+        m.Entity<ReferencePriceList>(e =>
+        {
+            e.ToTable("reference_price_lists");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique()
+             .HasDatabaseName("ix_reference_price_lists_public_id");
+
+            e.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            e.HasIndex(x => new { x.Code, x.Year }).IsUnique()
+             .HasDatabaseName("ix_reference_price_lists_code_year");
+
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            e.Property(x => x.SourceType).HasMaxLength(50).IsRequired();
+        });
+
+        // ── ReferencePriceItem ────────────────────────────────────────────
+        m.Entity<ReferencePriceItem>(e =>
+        {
+            e.ToTable("reference_price_items");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+
+            e.Property(x => x.TreatmentCode).HasMaxLength(50).IsRequired();
+            e.Property(x => x.TreatmentName).HasMaxLength(300).IsRequired();
+            e.Property(x => x.Price).HasColumnType("numeric(12,2)");
+            e.Property(x => x.PriceKdv).HasColumnType("numeric(12,2)");
+            e.Property(x => x.Currency).HasMaxLength(3).HasDefaultValue("TRY");
+            e.Property(x => x.Metadata).HasColumnType("jsonb");
+
+            e.HasIndex(x => new { x.ListId, x.TreatmentCode })
+             .HasDatabaseName("ix_reference_price_items_list_code");
+
+            e.HasOne(x => x.List)
+             .WithMany(l => l.Items)
+             .HasForeignKey(x => x.ListId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── TreatmentMapping ──────────────────────────────────────────────
+        m.Entity<TreatmentMapping>(e =>
+        {
+            e.ToTable("treatment_mappings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+
+            e.Property(x => x.ReferenceCode).HasMaxLength(50).IsRequired();
+            e.Property(x => x.MappingQuality).HasMaxLength(20);
+            e.Property(x => x.Notes).HasColumnType("text");
+
+            e.HasIndex(x => new { x.InternalTreatmentId, x.ReferenceListId }).IsUnique()
+             .HasDatabaseName("ix_treatment_mappings_treatment_list");
+
+            e.HasOne(x => x.InternalTreatment)
+             .WithMany()
+             .HasForeignKey(x => x.InternalTreatmentId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.ReferenceList)
+             .WithMany()
+             .HasForeignKey(x => x.ReferenceListId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── User2FASettings ───────────────────────────────────────────────
+        m.Entity<User2FASettings>(e =>
+        {
+            e.ToTable("user_2fa_settings");
+            e.HasKey(x => x.UserId);
+
+            e.Property(x => x.TotpSecret).HasColumnType("text");
+            e.Property(x => x.PreferredMethod).HasMaxLength(20);
+            e.Property(x => x.BackupCodes).HasColumnType("jsonb");
+            e.Property(x => x.BackupCodesAt).IsRequired(false);
+            e.Property(x => x.TotpVerifiedAt).IsRequired(false);
+            e.Property(x => x.UpdatedAt).IsRequired();
+
+            e.HasOne(x => x.User)
+             .WithMany()
+             .HasForeignKey(x => x.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── TrustedDevice ─────────────────────────────────────────────────
+        m.Entity<TrustedDevice>(e =>
+        {
+            e.ToTable("trusted_devices");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+
+            e.Property(x => x.DeviceToken).HasMaxLength(200).IsRequired();
+            e.HasIndex(x => x.DeviceToken).IsUnique()
+             .HasDatabaseName("ix_trusted_devices_token");
+
+            e.Property(x => x.DeviceName).HasMaxLength(200);
+            e.Property(x => x.IpAddress).HasMaxLength(45);
+
+            e.HasIndex(x => new { x.UserId, x.ExpiresAt })
+             .HasDatabaseName("ix_trusted_devices_user_expires");
+
+            e.HasOne(x => x.User)
+             .WithMany()
+             .HasForeignKey(x => x.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── BranchSecurityPolicy ──────────────────────────────────────────
+        m.Entity<BranchSecurityPolicy>(e =>
+        {
+            e.ToTable("branch_security_policies");
+            e.HasKey(x => x.BranchId);
+
+            e.Property(x => x.AllowedIpRanges).HasColumnType("jsonb");
+            e.Property(x => x.SessionTimeoutMinutes).HasDefaultValue(480);
+            e.Property(x => x.MaxFailedAttempts).HasDefaultValue(5);
+            e.Property(x => x.LockoutMinutes).HasDefaultValue(30);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── BackupLog ─────────────────────────────────────────────────────
+        m.Entity<BackupLog>(e =>
+        {
+            e.ToTable("backup_logs");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique()
+             .HasDatabaseName("ix_backup_logs_public_id");
+
+            e.Property(x => x.BackupType).HasMaxLength(50).IsRequired();
+            e.Property(x => x.FileName).HasMaxLength(500);
+            e.Property(x => x.FileSizeMb).HasColumnType("numeric(10,2)");
+            e.Property(x => x.StorageLocation).HasMaxLength(1000);
+            e.Property(x => x.Checksum).HasMaxLength(200);
+            e.Property(x => x.Status).HasMaxLength(20).HasDefaultValue("started").IsRequired();
+            e.Property(x => x.ErrorMessage).HasColumnType("text");
+
+            e.HasIndex(x => new { x.Status, x.StartedAt })
+             .HasDatabaseName("ix_backup_logs_status_started");
+
+            e.HasIndex(x => x.CompanyId)
+             .HasDatabaseName("ix_backup_logs_company");
         });
     }
 

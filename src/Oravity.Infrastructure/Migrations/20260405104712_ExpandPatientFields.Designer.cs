@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Oravity.Infrastructure.Database;
@@ -11,9 +12,11 @@ using Oravity.Infrastructure.Database;
 namespace Oravity.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260405104712_ExpandPatientFields")]
+    partial class ExpandPatientFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -398,9 +401,6 @@ namespace Oravity.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
-                    b.Property<long?>("CompanyId")
-                        .HasColumnType("bigint");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -428,9 +428,9 @@ namespace Oravity.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CompanyId", "Code")
+                    b.HasIndex("Code")
                         .IsUnique()
-                        .HasDatabaseName("ix_citizenship_types_company_code");
+                        .HasDatabaseName("ix_citizenship_types_code");
 
                     b.ToTable("citizenship_types", (string)null);
                 });
@@ -2897,9 +2897,6 @@ namespace Oravity.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
-                    b.Property<long?>("CompanyId")
-                        .HasColumnType("bigint");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2927,9 +2924,9 @@ namespace Oravity.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CompanyId", "Code")
+                    b.HasIndex("Code")
                         .IsUnique()
-                        .HasDatabaseName("ix_referral_sources_company_code");
+                        .HasDatabaseName("ix_referral_sources_code");
 
                     b.ToTable("referral_sources", (string)null);
                 });
@@ -4586,16 +4583,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("Branch");
                 });
 
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.CitizenshipType", b =>
-                {
-                    b.HasOne("Oravity.SharedKernel.Entities.Company", "Company")
-                        .WithMany()
-                        .HasForeignKey("CompanyId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
-                    b.Navigation("Company");
-                });
-
             modelBuilder.Entity("Oravity.SharedKernel.Entities.Company", b =>
                 {
                     b.HasOne("Oravity.SharedKernel.Entities.Vertical", "Vertical")
@@ -5122,16 +5109,6 @@ namespace Oravity.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("List");
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.ReferralSource", b =>
-                {
-                    b.HasOne("Oravity.SharedKernel.Entities.Company", "Company")
-                        .WithMany()
-                        .HasForeignKey("CompanyId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
-                    b.Navigation("Company");
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.RefreshToken", b =>
