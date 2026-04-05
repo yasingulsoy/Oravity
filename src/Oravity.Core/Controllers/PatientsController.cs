@@ -109,7 +109,27 @@ public class PatientsController : ControllerBase
             request.Gender,
             request.Address,
             request.BloodType,
-            request.PreferredLanguageCode));
+            request.PreferredLanguageCode,
+            request.MotherName,
+            request.FatherName,
+            request.MaritalStatus,
+            request.Nationality,
+            request.Occupation,
+            request.SmokingType,
+            request.PregnancyStatus,
+            request.HomePhone,
+            request.WorkPhone,
+            request.Country,
+            request.City,
+            request.District,
+            request.Neighborhood,
+            request.ReferralSourceId,
+            request.ReferralPerson,
+            request.LastInstitutionId,
+            request.CitizenshipTypeId,
+            request.Notes,
+            request.SmsOptIn,
+            request.CampaignOptIn));
 
         return Ok(result);
     }
@@ -149,11 +169,37 @@ public record CreatePatientRequest(
 public record UpdatePatientRequest(
     string FirstName,
     string LastName,
-    string? Phone,
-    string? Email,
-    DateOnly? BirthDate,
+    // Kişisel
+    string? MotherName,
+    string? FatherName,
     string? Gender,
+    string? MaritalStatus,
+    string? Nationality,
+    long? CitizenshipTypeId,
+    string? Occupation,
+    string? SmokingType,
+    int? PregnancyStatus,
+    DateOnly? BirthDate,
+    // İletişim
+    string? Phone,
+    string? HomePhone,
+    string? WorkPhone,
+    string? Email,
+    // Adres
+    string? Country,
+    string? City,
+    string? District,
+    string? Neighborhood,
     string? Address,
+    // Tıbbi
     string? BloodType,
-    string? PreferredLanguageCode
+    // Geliş / Kurum
+    long? ReferralSourceId,
+    string? ReferralPerson,
+    long? LastInstitutionId,
+    // Sistem
+    string? Notes,
+    string? PreferredLanguageCode,
+    bool? SmsOptIn,
+    bool? CampaignOptIn
 );

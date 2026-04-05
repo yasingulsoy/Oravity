@@ -17,7 +17,27 @@ public record UpdatePatientCommand(
     string? Gender,
     string? Address,
     string? BloodType,
-    string? PreferredLanguageCode
+    string? PreferredLanguageCode,
+    string? MotherName = null,
+    string? FatherName = null,
+    string? MaritalStatus = null,
+    string? Nationality = null,
+    string? Occupation = null,
+    string? SmokingType = null,
+    int? PregnancyStatus = null,
+    string? HomePhone = null,
+    string? WorkPhone = null,
+    string? Country = null,
+    string? City = null,
+    string? District = null,
+    string? Neighborhood = null,
+    long? ReferralSourceId = null,
+    string? ReferralPerson = null,
+    long? LastInstitutionId = null,
+    long? CitizenshipTypeId = null,
+    string? Notes = null,
+    bool? SmsOptIn = null,
+    bool? CampaignOptIn = null
 ) : IRequest<PatientResponse>;
 
 public class UpdatePatientCommandHandler : IRequestHandler<UpdatePatientCommand, PatientResponse>
@@ -50,7 +70,27 @@ public class UpdatePatientCommandHandler : IRequestHandler<UpdatePatientCommand,
             request.Gender,
             request.Address,
             request.BloodType,
-            request.PreferredLanguageCode);
+            request.PreferredLanguageCode,
+            request.MotherName,
+            request.FatherName,
+            request.MaritalStatus,
+            request.Nationality,
+            request.Occupation,
+            request.SmokingType,
+            request.PregnancyStatus,
+            request.HomePhone,
+            request.WorkPhone,
+            request.Country,
+            request.City,
+            request.District,
+            request.Neighborhood,
+            request.ReferralSourceId,
+            request.ReferralPerson,
+            request.LastInstitutionId,
+            request.CitizenshipTypeId,
+            request.Notes,
+            request.SmsOptIn,
+            request.CampaignOptIn);
 
         await _db.SaveChangesAsync(cancellationToken);
         return PatientMappings.ToResponse(patient);

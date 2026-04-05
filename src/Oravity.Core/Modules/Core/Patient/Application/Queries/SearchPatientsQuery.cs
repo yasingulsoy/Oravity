@@ -32,30 +32,32 @@ public class SearchPatientsQueryHandler
         CancellationToken cancellationToken)
     {
         var pageSize = Math.Clamp(request.PageSize, 1, 100);
-        var page = Math.Max(request.Page, 1);
+        var page     = Math.Max(request.Page, 1);
 
-        var query = _db.Patients.AsNoTracking();
-        query = ApplyTenantFilter(query);
+        IQueryable<SharedKernel.Entities.Patient> q = _db.Patients
+            .AsNoTracking()
+            .Include(p => p.CitizenshipType)
+            .Include(p => p.ReferralSource);
 
-        // ─── Arama kriterleri ──────────────────────────────────────────────
+        q = ApplyTenantFilter(q);
+
         if (!string.IsNullOrWhiteSpace(request.FirstName))
-            query = query.Where(p => EF.Functions.ILike(p.FirstName, $"%{request.FirstName.Trim()}%"));
+            q = q.Where(p => EF.Functions.ILike(p.FirstName, $"%{request.FirstName.Trim()}%"));
 
         if (!string.IsNullOrWhiteSpace(request.LastName))
-            query = query.Where(p => EF.Functions.ILike(p.LastName, $"%{request.LastName.Trim()}%"));
+            q = q.Where(p => EF.Functions.ILike(p.LastName, $"%{request.LastName.Trim()}%"));
 
         if (!string.IsNullOrWhiteSpace(request.Phone))
-            query = query.Where(p => p.Phone != null &&
+            q = q.Where(p => p.Phone != null &&
                 EF.Functions.ILike(p.Phone, $"%{request.Phone.Trim()}%"));
 
         if (!string.IsNullOrWhiteSpace(request.TcHash))
-            query = query.Where(p => p.TcNumberHash == request.TcHash.ToLowerInvariant());
+            q = q.Where(p => p.TcNumberHash == request.TcHash.ToLowerInvariant());
 
-        // ─── Sayfalama ─────────────────────────────────────────────────────
-        var totalCount = await query.CountAsync(cancellationToken);
+        var totalCount = await q.CountAsync(cancellationToken);
         var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
 
-        var items = await query
+        var items = await q
             .OrderBy(p => p.LastName)
             .ThenBy(p => p.FirstName)
             .Skip((page - 1) * pageSize)

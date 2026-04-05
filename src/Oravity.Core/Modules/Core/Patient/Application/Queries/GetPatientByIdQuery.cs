@@ -25,6 +25,8 @@ public class GetPatientByIdQueryHandler : IRequestHandler<GetPatientByIdQuery, P
         CancellationToken cancellationToken)
     {
         var query = _db.Patients.AsNoTracking()
+            .Include(p => p.CitizenshipType)
+            .Include(p => p.ReferralSource)
             .Where(p => p.PublicId == request.PublicId);
 
         query = ApplyTenantFilter(query);
