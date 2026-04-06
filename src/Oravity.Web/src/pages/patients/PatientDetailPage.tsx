@@ -48,7 +48,7 @@ function Field({ label, value }: { label: string; value: string | number | boole
   );
 }
 
-/** Controlled Select helper — fixes value display bug */
+/** Controlled Select helper — shows label not raw value */
 function FormSelect({
   control,
   name,
@@ -64,18 +64,32 @@ function FormSelect({
     <Controller
       name={name}
       control={control}
-      render={({ field }) => (
-        <Select value={(field.value as string) ?? ''} onValueChange={field.onChange}>
-          <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>
-          <SelectContent>
-            {(options as any[]).map((opt) => {
-              const v = typeof opt === 'string' ? opt : opt.value;
-              const l = typeof opt === 'string' ? opt : opt.label;
-              return <SelectItem key={v} value={v}>{l}</SelectItem>;
-            })}
-          </SelectContent>
-        </Select>
-      )}
+      render={({ field }) => {
+        const currentVal = (field.value as string) ?? '';
+        const matched = (options as any[]).find((opt) =>
+          (typeof opt === 'string' ? opt : opt.value) === currentVal
+        );
+        const displayLabel = matched
+          ? typeof matched === 'string' ? matched : matched.label
+          : undefined;
+
+        return (
+          <Select value={currentVal} onValueChange={field.onChange}>
+            <SelectTrigger>
+              <SelectValue placeholder={placeholder}>
+                {displayLabel}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {(options as any[]).map((opt) => {
+                const v = typeof opt === 'string' ? opt : opt.value;
+                const l = typeof opt === 'string' ? opt : opt.label;
+                return <SelectItem key={v} value={v}>{l}</SelectItem>;
+              })}
+            </SelectContent>
+          </Select>
+        );
+      }}
     />
   );
 }
@@ -157,6 +171,8 @@ export function PatientDetailPage() {
 
   function startEdit() {
     if (!patient) return;
+    // birthDate: API'den "2000-01-01" veya "2000-01-01T00:00:00" gelebilir; input type=date için ilk 10 karakter yeterli
+    const birthDateValue = patient.birthDate ? patient.birthDate.substring(0, 10) : undefined;
     reset({
       firstName: patient.firstName,
       lastName: patient.lastName,
@@ -167,7 +183,7 @@ export function PatientDetailPage() {
       nationality: patient.nationality ?? undefined,
       citizenshipTypeId: patient.citizenshipTypeId ?? undefined,
       occupation: patient.occupation ?? undefined,
-      birthDate: patient.birthDate ?? undefined,
+      birthDate: birthDateValue,
       phone: patient.phone ?? undefined,
       homePhone: patient.homePhone ?? undefined,
       workPhone: patient.workPhone ?? undefined,
@@ -185,6 +201,13 @@ export function PatientDetailPage() {
       campaignOptIn: patient.campaignOptIn,
     });
     setEditing(true);
+  }
+
+  function sanitizeForSubmit(data: UpdatePatientRequest): UpdatePatientRequest {
+    // Boş stringleri undefined'a çevir (backend DateOnly/number parse hatası önleme)
+    return Object.fromEntries(
+      Object.entries(data).map(([k, v]) => [k, v === '' ? undefined : v])
+    ) as UpdatePatientRequest;
   }
 
   if (isLoading) {
@@ -240,7 +263,7 @@ export function PatientDetailPage() {
 
         <TabsContent value="info" className="mt-4">
           {editing ? (
-            <form onSubmit={handleSubmit((d) => updateMutation.mutate(d))} className="space-y-4">
+            <form onSubmit={handleSubmit((d) => updateMutation.mutate(sanitizeForSubmit(d)))} className="space-y-4">
 
               {/* ── Kişisel ── */}
               <Card>
@@ -300,19 +323,22 @@ export function PatientDetailPage() {
                     <Controller
                       name="citizenshipTypeId"
                       control={control}
-                      render={({ field }) => (
-                        <Select
-                          value={field.value ? String(field.value) : ''}
-                          onValueChange={(v) => field.onChange(Number(v))}
-                        >
-                          <SelectTrigger><SelectValue placeholder="Seçin…" /></SelectTrigger>
-                          <SelectContent>
-                            {citizenshipTypes?.data?.map((ct) => (
-                              <SelectItem key={ct.id} value={String(ct.id)}>{ct.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
+                      render={({ field }) => {
+                        const label = citizenshipTypes?.data?.find((ct) => ct.id === field.value)?.name;
+                        return (
+                          <Select
+                            value={field.value ? String(field.value) : ''}
+                            onValueChange={(v) => field.onChange(Number(v))}
+                          >
+                            <SelectTrigger><SelectValue placeholder="Seçin…">{label}</SelectValue></SelectTrigger>
+                            <SelectContent>
+                              {citizenshipTypes?.data?.map((ct) => (
+                                <SelectItem key={ct.id} value={String(ct.id)}>{ct.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        );
+                      }}
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -441,19 +467,22 @@ export function PatientDetailPage() {
                     <Controller
                       name="referralSourceId"
                       control={control}
-                      render={({ field }) => (
-                        <Select
-                          value={field.value ? String(field.value) : ''}
-                          onValueChange={(v) => field.onChange(Number(v))}
-                        >
-                          <SelectTrigger><SelectValue placeholder="Seçin…" /></SelectTrigger>
-                          <SelectContent>
-                            {referralSources?.data?.map((rs) => (
-                              <SelectItem key={rs.id} value={String(rs.id)}>{rs.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
+                      render={({ field }) => {
+                        const label = referralSources?.data?.find((rs) => rs.id === field.value)?.name;
+                        return (
+                          <Select
+                            value={field.value ? String(field.value) : ''}
+                            onValueChange={(v) => field.onChange(Number(v))}
+                          >
+                            <SelectTrigger><SelectValue placeholder="Seçin…">{label}</SelectValue></SelectTrigger>
+                            <SelectContent>
+                              {referralSources?.data?.map((rs) => (
+                                <SelectItem key={rs.id} value={String(rs.id)}>{rs.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        );
+                      }}
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -465,19 +494,22 @@ export function PatientDetailPage() {
                     <Controller
                       name="lastInstitutionId"
                       control={control}
-                      render={({ field }) => (
-                        <Select
-                          value={field.value ? String(field.value) : ''}
-                          onValueChange={(v) => field.onChange(Number(v))}
-                        >
-                          <SelectTrigger><SelectValue placeholder="Seçin…" /></SelectTrigger>
-                          <SelectContent>
-                            {institutionsData?.data?.map((inst) => (
-                              <SelectItem key={inst.id} value={String(inst.id)}>{inst.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
+                      render={({ field }) => {
+                        const label = institutionsData?.data?.find((inst) => inst.id === field.value)?.name;
+                        return (
+                          <Select
+                            value={field.value ? String(field.value) : ''}
+                            onValueChange={(v) => field.onChange(Number(v))}
+                          >
+                            <SelectTrigger><SelectValue placeholder="Seçin…">{label}</SelectValue></SelectTrigger>
+                            <SelectContent>
+                              {institutionsData?.data?.map((inst) => (
+                                <SelectItem key={inst.id} value={String(inst.id)}>{inst.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        );
+                      }}
                     />
                   </div>
                 </CardContent>
@@ -509,7 +541,12 @@ export function PatientDetailPage() {
               </Card>
 
               {updateMutation.isError && (
-                <p className="text-sm text-destructive">Güncelleme başarısız, tekrar deneyin.</p>
+                <p className="text-sm text-destructive">
+                  Güncelleme başarısız:{' '}
+                  {(updateMutation.error as any)?.response?.data?.detail ??
+                   (updateMutation.error as any)?.response?.data?.title ??
+                   'Tekrar deneyin.'}
+                </p>
               )}
 
               <div className="flex gap-2 justify-end">
