@@ -4895,13 +4895,54 @@ CREATE TABLE treatment_categories (
 );
 
 -- Kurumlar
+-- Anlaşmalı sigorta şirketi, kurumsal müşteri vb.
+-- CompanyId NULL → platform geneli, NOT NULL → şirkete özel
 CREATE TABLE institutions (
     id SERIAL PRIMARY KEY,
+    public_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    company_id INT REFERENCES companies(id),
+
+    -- Temel
     name VARCHAR(200) NOT NULL,
-    code VARCHAR(50) UNIQUE,
-    type VARCHAR(50),  -- 'sigorta', 'kurumsal', 'anlaşmalı'
-    tags JSONB,
-    is_active BOOLEAN DEFAULT true
+    code VARCHAR(50),                -- Kısa kod: SGK, AXA, ALLIANZ
+    type VARCHAR(50),                -- 'sigorta' | 'kurumsal' | 'kamu' | 'uluslararası'
+    market_segment VARCHAR(20),      -- 'domestic' | 'international'
+                                     -- Raporlamada yurtiçi/yurtdışı pazarlama ayrımı için
+
+    -- Fiyatlandırma
+    default_pricing_rule_id INT REFERENCES pricing_rules(id),
+    -- Kurumdan gelen hastalara uygulanacak varsayılan fiyat kuralı.
+    -- NULL → kuruma özel kural yok, genel fiyat listesi uygulanır.
+    -- PricingEngine bu kurala ek olarak diğer eşleşen kuralları da değerlendirir;
+    -- bu alan sadece "ana anlaşma" shortcut'ı olarak kullanılır.
+
+    -- İletişim
+    phone VARCHAR(30),
+    email VARCHAR(200),
+    website VARCHAR(300),
+
+    -- Adres
+    country VARCHAR(100),
+    city VARCHAR(100),
+    district VARCHAR(100),
+    address TEXT,
+
+    -- Yetkili Kişi
+    contact_person VARCHAR(200),
+    contact_phone VARCHAR(30),
+
+    -- Mali / Fatura
+    tax_number VARCHAR(20),
+    tax_office VARCHAR(200),
+
+    -- Ödeme Koşulları
+    payment_days INT DEFAULT 30,     -- Fatura vadesi (gün)
+    payment_terms TEXT,              -- Serbest metin ödeme koşulu notu
+
+    notes TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
 );
 ```
 

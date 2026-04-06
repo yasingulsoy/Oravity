@@ -15,8 +15,10 @@ public class Institution : BaseEntity
     // Temel
     public string Name { get; private set; } = default!;
     public string? Code { get; private set; }
-    /// <summary>sigorta | kurumsal | anlaşmalı</summary>
+    /// <summary>sigorta | kurumsal | kamu | uluslararası</summary>
     public string? Type { get; private set; }
+    /// <summary>domestic | international — yurtiçi/yurtdışı pazarlama ayrımı</summary>
+    public string? MarketSegment { get; private set; }
 
     // İletişim
     public string? Phone { get; private set; }
@@ -53,6 +55,7 @@ public class Institution : BaseEntity
         string? code = null,
         string? type = null,
         long? companyId = null,
+        string? marketSegment = null,
         string? phone = null,
         string? email = null,
         string? website = null,
@@ -73,6 +76,7 @@ public class Institution : BaseEntity
             Name = name.Trim(),
             Code = code?.Trim().ToUpperInvariant(),
             Type = type,
+            MarketSegment = marketSegment,
             CompanyId = companyId,
             Phone = phone?.Trim(),
             Email = email?.Trim().ToLowerInvariant(),
@@ -97,6 +101,7 @@ public class Institution : BaseEntity
         string? code,
         string? type,
         bool isActive,
+        string? marketSegment = null,
         string? phone = null,
         string? email = null,
         string? website = null,
@@ -116,6 +121,7 @@ public class Institution : BaseEntity
         Name = name.Trim();
         Code = code?.Trim().ToUpperInvariant();
         Type = type;
+        MarketSegment = marketSegment;
         IsActive = isActive;
         Phone = phone?.Trim();
         Email = email?.Trim().ToLowerInvariant();

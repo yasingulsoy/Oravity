@@ -6,6 +6,7 @@ export interface InstitutionItem {
   name: string;
   code: string | null;
   type: string | null;
+  marketSegment: 'domestic' | 'international' | null;
   phone: string | null;
   email: string | null;
   website: string | null;
@@ -29,6 +30,7 @@ export interface CreateInstitutionRequest {
   name: string;
   code?: string;
   type?: string;
+  marketSegment?: 'domestic' | 'international';
   phone?: string;
   email?: string;
   website?: string;

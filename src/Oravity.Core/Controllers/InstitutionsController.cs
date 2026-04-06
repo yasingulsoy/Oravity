@@ -35,7 +35,7 @@ public class InstitutionsController : ControllerBase
             .Where(x => x.IsActive && (x.CompanyId == null || x.CompanyId == companyId))
             .OrderBy(x => x.Name)
             .Select(x => new InstitutionResponse(
-                x.Id, x.PublicId, x.Name, x.Code, x.Type,
+                x.Id, x.PublicId, x.Name, x.Code, x.Type, x.MarketSegment,
                 x.Phone, x.Email, x.Website,
                 x.Country, x.City, x.District, x.Address,
                 x.ContactPerson, x.ContactPhone,
@@ -58,7 +58,7 @@ public class InstitutionsController : ControllerBase
 
         var companyId = _tenant.IsPlatformAdmin ? (long?)null : _tenant.CompanyId;
         var entity = Institution.Create(
-            req.Name, req.Code, req.Type, companyId,
+            req.Name, req.Code, req.Type, companyId, req.MarketSegment,
             req.Phone, req.Email, req.Website,
             req.Country, req.City, req.District, req.Address,
             req.ContactPerson, req.ContactPhone,
@@ -81,7 +81,7 @@ public class InstitutionsController : ControllerBase
         if (entity.CompanyId != null && entity.CompanyId != _tenant.CompanyId) return Forbid();
 
         entity.Update(
-            req.Name, req.Code, req.Type, req.IsActive,
+            req.Name, req.Code, req.Type, req.IsActive, req.MarketSegment,
             req.Phone, req.Email, req.Website,
             req.Country, req.City, req.District, req.Address,
             req.ContactPerson, req.ContactPhone,
@@ -108,7 +108,7 @@ public class InstitutionsController : ControllerBase
     }
 
     private static InstitutionResponse ToResponse(Institution x) => new(
-        x.Id, x.PublicId, x.Name, x.Code, x.Type,
+        x.Id, x.PublicId, x.Name, x.Code, x.Type, x.MarketSegment,
         x.Phone, x.Email, x.Website,
         x.Country, x.City, x.District, x.Address,
         x.ContactPerson, x.ContactPhone,
@@ -119,7 +119,7 @@ public class InstitutionsController : ControllerBase
 }
 
 public record InstitutionResponse(
-    long Id, Guid PublicId, string Name, string? Code, string? Type,
+    long Id, Guid PublicId, string Name, string? Code, string? Type, string? MarketSegment,
     string? Phone, string? Email, string? Website,
     string? Country, string? City, string? District, string? Address,
     string? ContactPerson, string? ContactPhone,
@@ -129,7 +129,7 @@ public record InstitutionResponse(
     bool IsGlobal, bool IsActive);
 
 public record CreateInstitutionRequest(
-    string Name, string? Code, string? Type,
+    string Name, string? Code, string? Type, string? MarketSegment,
     string? Phone, string? Email, string? Website,
     string? Country, string? City, string? District, string? Address,
     string? ContactPerson, string? ContactPhone,
@@ -138,7 +138,7 @@ public record CreateInstitutionRequest(
     string? Notes);
 
 public record UpdateInstitutionRequest(
-    string Name, string? Code, string? Type, bool IsActive,
+    string Name, string? Code, string? Type, bool IsActive, string? MarketSegment,
     string? Phone, string? Email, string? Website,
     string? Country, string? City, string? District, string? Address,
     string? ContactPerson, string? ContactPhone,
