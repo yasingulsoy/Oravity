@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { Plus, Search, Phone, CreditCard, User, Eye, Users } from 'lucide-react';
 import { patientsApi } from '@/api/patients';
 import type { PatientListRequest } from '@/types/patient';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
@@ -233,11 +233,13 @@ export function PatientListPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" asChild title="Hasta Detayı">
-                            <Link to={`/patients/${patient.publicId}`}>
-                              <Eye className="h-4 w-4" />
-                            </Link>
-                          </Button>
+                          <Link
+                            to={`/patients/${patient.publicId}`}
+                            title="Hasta Detayı"
+                            className={buttonVariants({ variant: 'ghost', size: 'icon' })}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Link>
                         </TableCell>
                       </TableRow>
                     ))

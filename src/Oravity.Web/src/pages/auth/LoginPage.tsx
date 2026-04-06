@@ -50,6 +50,7 @@ export function LoginPage() {
               <Input
                 id="email"
                 type="email"
+                autoComplete="username"
                 placeholder="ornek@oravity.com"
                 {...register('email')}
               />
@@ -63,6 +64,7 @@ export function LoginPage() {
               <Input
                 id="password"
                 type="password"
+                autoComplete="current-password"
                 placeholder="••••••"
                 {...register('password')}
               />

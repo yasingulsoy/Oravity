@@ -10,8 +10,7 @@ import { institutionsApi } from '@/api/institutions';
 import type { UpdatePatientRequest } from '@/types/patient';
 import { OCCUPATIONS } from '@/data/occupations';
 
-const TC_NATIONALITY_CODE = 'TC';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -223,9 +222,7 @@ export function PatientDetailPage() {
     return (
       <div className="text-center py-16">
         <p className="text-muted-foreground">Hasta bulunamadı.</p>
-        <Button variant="link" asChild>
-          <Link to="/patients">Hasta listesine dön</Link>
-        </Button>
+        <Link to="/patients" className={buttonVariants({ variant: 'link' })}>Hasta listesine dön</Link>
       </div>
     );
   }
@@ -236,9 +233,9 @@ export function PatientDetailPage() {
     <div className="space-y-6">
       {/* Başlık */}
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link to="/patients"><ArrowLeft className="h-4 w-4" /></Link>
-        </Button>
+        <Link to="/patients" className={buttonVariants({ variant: 'ghost', size: 'icon' })}>
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
         <div className="flex-1">
           <h1 className="text-2xl font-bold tracking-tight">{fullName}</h1>
           <div className="flex items-center gap-2 mt-1">
