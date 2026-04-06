@@ -353,14 +353,19 @@ export function PatientDetailPage() {
               <Card>
                 <CardHeader><CardTitle className="text-base">Kimlik Bilgisi</CardTitle></CardHeader>
                 <CardContent className="grid gap-4 sm:grid-cols-2">
-                  {isTurkishNationality || !watchedNationality ? (
+                  {/* Uyruk seçilmemişse veya Türkiye ise TC göster */}
+                  {(!watchedNationality || isTurkishNationality) ? (
                     <div className="space-y-1.5">
-                      <Label>TC Kimlik No</Label>
+                      <Label>TC Kimlik No {isTurkishNationality && <span className="text-destructive">*</span>}</Label>
                       <Input
                         {...register('tcNumber', {
                           validate: (v) => {
                             if (!isTurkishNationality) return true;
-                            if (!v && !patient.hasTcNumber) return 'TC Kimlik No giriniz';
+                            // TC seçili ve kayıtlı TC yoksa zorunlu
+                            if (!v && !patient.hasTcNumber) return 'TC Kimlik No zorunludur';
+                            // Girilmişse 11 haneli olmalı
+                            if (v && v.length !== 11) return 'TC Kimlik No 11 haneli olmalıdır';
+                            if (v && !/^\d{11}$/.test(v)) return 'TC Kimlik No yalnızca rakam içermelidir';
                             return true;
                           },
                         })}
@@ -371,11 +376,18 @@ export function PatientDetailPage() {
                     </div>
                   ) : (
                     <div className="space-y-1.5">
-                      <Label>Pasaport No</Label>
+                      <Label>Pasaport No <span className="text-destructive">*</span></Label>
                       <Input
-                        {...register('passportNo')}
+                        {...register('passportNo', {
+                          validate: (v) => {
+                            // Yabancı uyruklu: kayıtlı pasaport yoksa zorunlu
+                            if (!v && !patient.hasPassportNo) return 'Pasaport No zorunludur';
+                            return true;
+                          },
+                        })}
                         placeholder={patient.hasPassportNo ? '••••••• (değiştirmek için girin)' : 'Pasaport numarası'}
                       />
+                      {errors.passportNo && <p className="text-xs text-destructive">{errors.passportNo.message}</p>}
                     </div>
                   )}
                 </CardContent>

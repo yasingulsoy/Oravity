@@ -32,6 +32,7 @@ public class DatabaseSeeder
 
         await SeedCitizenshipTypesAsync(ct);
         await SeedReferralSourcesAsync(ct);
+        await SeedInstitutionsAsync(ct);
 
         if (_env.IsDevelopment())
         {
@@ -198,6 +199,10 @@ public class DatabaseSeeder
             ("patient",          "upload_document",  false),
             ("patient",          "edit_basic",       false),
             ("anamnesis",        "edit",             false),
+
+            // Institution
+            ("institution",      "view",             false),
+            ("institution",      "manage",           false),
         };
 
         var existingCodes = await _db.Permissions
@@ -324,6 +329,33 @@ public class DatabaseSeeder
         await _db.ReferralSources.AddRangeAsync(items, ct);
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation("{Count} geliş şekli eklendi.", items.Length);
+    }
+
+    // ─── Kurumlar (platform geneli) ───────────────────────────────────────
+    private async Task SeedInstitutionsAsync(CancellationToken ct)
+    {
+        if (await _db.Institutions.AnyAsync(ct))
+        {
+            _logger.LogDebug("Kurumlar zaten mevcut, atlanıyor.");
+            return;
+        }
+
+        var items = new[]
+        {
+            Institution.Create("SGK",                          "SGK",        "sigorta",    null),
+            Institution.Create("Acıbadem Sigorta",             "ACIBADEM",   "sigorta",    null),
+            Institution.Create("Allianz Sigorta",              "ALLIANZ",    "sigorta",    null),
+            Institution.Create("AXA Sigorta",                  "AXA",        "sigorta",    null),
+            Institution.Create("Güneş Sigorta",                "GUNES",      "sigorta",    null),
+            Institution.Create("Mapfre Sigorta",               "MAPFRE",     "sigorta",    null),
+            Institution.Create("Türkiye İş Bankası",           "ISBANK",     "kurumsal",   null),
+            Institution.Create("Ziraat Bankası",               "ZIRAAT",     "kurumsal",   null),
+            Institution.Create("Garanti BBVA",                 "GARANTI",    "kurumsal",   null),
+        };
+
+        await _db.Institutions.AddRangeAsync(items, ct);
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("{Count} kurum eklendi.", items.Length);
     }
 
     // ─── Test Hastaları (sadece Development) ─────────────────────────────
