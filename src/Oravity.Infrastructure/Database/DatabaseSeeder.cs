@@ -334,28 +334,38 @@ public class DatabaseSeeder
     // ─── Kurumlar (platform geneli) ───────────────────────────────────────
     private async Task SeedInstitutionsAsync(CancellationToken ct)
     {
-        if (await _db.Institutions.AnyAsync(ct))
+        var definitions = new[]
         {
-            _logger.LogDebug("Kurumlar zaten mevcut, atlanıyor.");
+            ("SGK",                "SGK",      "sigorta"),
+            ("Acıbadem Sigorta",   "ACIBADEM", "sigorta"),
+            ("Allianz Sigorta",    "ALLIANZ",  "sigorta"),
+            ("AXA Sigorta",        "AXA",      "sigorta"),
+            ("Güneş Sigorta",      "GUNES",    "sigorta"),
+            ("Mapfre Sigorta",     "MAPFRE",   "sigorta"),
+            ("Türkiye İş Bankası", "ISBANK",   "kurumsal"),
+            ("Ziraat Bankası",     "ZIRAAT",   "kurumsal"),
+            ("Garanti BBVA",       "GARANTI",  "kurumsal"),
+        };
+
+        var existingCodes = await _db.Institutions
+            .Where(i => i.CompanyId == null)
+            .Select(i => i.Code)
+            .ToListAsync(ct);
+
+        var toAdd = definitions
+            .Where(d => !existingCodes.Contains(d.Item2))
+            .Select(d => Institution.Create(d.Item1, d.Item2, d.Item3, null))
+            .ToList();
+
+        if (toAdd.Count == 0)
+        {
+            _logger.LogDebug("Tüm global kurumlar zaten mevcut, atlanıyor.");
             return;
         }
 
-        var items = new[]
-        {
-            Institution.Create("SGK",                          "SGK",        "sigorta",    null),
-            Institution.Create("Acıbadem Sigorta",             "ACIBADEM",   "sigorta",    null),
-            Institution.Create("Allianz Sigorta",              "ALLIANZ",    "sigorta",    null),
-            Institution.Create("AXA Sigorta",                  "AXA",        "sigorta",    null),
-            Institution.Create("Güneş Sigorta",                "GUNES",      "sigorta",    null),
-            Institution.Create("Mapfre Sigorta",               "MAPFRE",     "sigorta",    null),
-            Institution.Create("Türkiye İş Bankası",           "ISBANK",     "kurumsal",   null),
-            Institution.Create("Ziraat Bankası",               "ZIRAAT",     "kurumsal",   null),
-            Institution.Create("Garanti BBVA",                 "GARANTI",    "kurumsal",   null),
-        };
-
-        await _db.Institutions.AddRangeAsync(items, ct);
+        await _db.Institutions.AddRangeAsync(toAdd, ct);
         await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("{Count} kurum eklendi.", items.Length);
+        _logger.LogInformation("{Count} kurum eklendi.", toAdd.Count);
     }
 
     // ─── Test Hastaları (sadece Development) ─────────────────────────────
