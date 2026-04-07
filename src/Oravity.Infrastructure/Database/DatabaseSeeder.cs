@@ -672,12 +672,13 @@ public class DatabaseSeeder
 
         var t = (int h, int m = 0) => new TimeOnly(h, m);
 
-        // Aylin Şahin — Ana Şube: Pzt-Cum 09-18, öğle 13-14
-        foreach (var d in new[] { 1, 2, 3, 4, 5 })
+        // Aylin Şahin — Ana Şube: Pzt, Çar, Cum 09-18, öğle 13-14
+        // (Salı+Perş Kadıköy'de, çakışma önlendi)
+        foreach (var d in new[] { 1, 3, 5 })
             AddSchedule(aylin, anaSube, d, t(9), t(18), t(13), t(14));
-        // Aylin — Kadıköy: Salı + Perşembe 09-14 (öğle yok)
-        AddSchedule(aylin, kadikoySube, 2, t(9), t(14));
-        AddSchedule(aylin, kadikoySube, 4, t(9), t(14));
+        // Aylin — Kadıköy: Salı + Perşembe 09-17, öğle 12:30-13:30
+        AddSchedule(aylin, kadikoySube, 2, t(9), t(17), t(12, 30), t(13, 30));
+        AddSchedule(aylin, kadikoySube, 4, t(9), t(17), t(12, 30), t(13, 30));
 
         // Kerem Özdemir — Ana: Pzt, Çar, Cum 09-17, öğle 12:30-13:30
         foreach (var d in new[] { 1, 3, 5 })
@@ -686,12 +687,13 @@ public class DatabaseSeeder
         AddSchedule(kerem, anaSube, 2, t(14), t(19));
         AddSchedule(kerem, anaSube, 4, t(14), t(19));
 
-        // Seda Yıldırım — Kadıköy: Pzt-Cum 10-19, öğle 13-14
-        foreach (var d in new[] { 1, 2, 3, 4, 5 })
+        // Seda Yıldırım — Kadıköy: Pzt, Salı, Perş 10-19, öğle 13-14
+        // (Çar+Cum Beşiktaş'ta, çakışma önlendi)
+        foreach (var d in new[] { 1, 2, 4 })
             AddSchedule(seda, kadikoySube, d, t(10), t(19), t(13), t(14));
-        // Seda — Beşiktaş: Pzt, Çar, Cum 09-15 (sabah mesaisi)
-        foreach (var d in new[] { 1, 3, 5 })
-            AddSchedule(seda, besiktasSube, d, t(9), t(15));
+        // Seda — Beşiktaş: Çar, Cum 09-16
+        foreach (var d in new[] { 3, 5 })
+            AddSchedule(seda, besiktasSube, d, t(9), t(16), t(12), t(13));
 
         // Murat Demirkol — Ana: Pzt, Salı, Perş 09-16
         foreach (var d in new[] { 1, 2, 4 })

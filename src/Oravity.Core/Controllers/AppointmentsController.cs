@@ -8,7 +8,6 @@ using Oravity.Core.Modules.Appointment.Application.Commands;
 using Oravity.Core.Modules.Appointment.Application.Queries;
 using Oravity.Infrastructure.Database;
 using Oravity.SharedKernel.Entities;
-using Oravity.SharedKernel.Entities;
 using Oravity.SharedKernel.Interfaces;
 
 namespace Oravity.Core.Controllers;
@@ -137,6 +136,7 @@ public class AppointmentsController : ControllerBase
         var result = await _mediator.Send(new CreateAppointmentCommand(
             request.PatientId,
             request.DoctorId,
+            request.BranchId ?? _tenant.BranchId,
             request.StartTime,
             request.EndTime,
             request.Notes));
@@ -596,6 +596,7 @@ public class AppointmentsController : ControllerBase
 public record CreateAppointmentRequest(
     long PatientId,
     long DoctorId,
+    long? BranchId,
     DateTime StartTime,
     DateTime EndTime,
     string? Notes

@@ -14,6 +14,7 @@ namespace Oravity.Core.Modules.Appointment.Application.Commands;
 public record CreateAppointmentCommand(
     long PatientId,
     long DoctorId,
+    long? ExplicitBranchId,
     DateTime StartTime,
     DateTime EndTime,
     string? Notes
@@ -39,7 +40,7 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
         CreateAppointmentCommand request,
         CancellationToken cancellationToken)
     {
-        var branchId = _tenant.BranchId
+        var branchId = request.ExplicitBranchId ?? _tenant.BranchId
             ?? throw new ForbiddenException("Randevu kaydı için şube bağlamı gereklidir.");
 
         // ── Katman 1: Slot çakışma kontrolü (uygulama seviyesi) ────────────

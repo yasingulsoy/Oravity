@@ -3,6 +3,7 @@ using PatientEntity = Oravity.SharedKernel.Entities.Patient;
 namespace Oravity.Core.Modules.Core.Patient.Application;
 
 public record PatientResponse(
+    long Id,
     Guid PublicId,
     long BranchId,
     // Kimlik (şifreli alanlar: sadece var/yok bilgisi döner)
@@ -60,7 +61,7 @@ public record PagedResult<T>(
 public static class PatientMappings
 {
     public static PatientResponse ToResponse(PatientEntity p) => new(
-        p.PublicId, p.BranchId,
+        p.Id, p.PublicId, p.BranchId,
         p.TcNumberEncrypted != null, p.PassportNoEncrypted != null,
         p.FirstName, p.LastName, p.MotherName, p.FatherName,
         p.Gender, p.MaritalStatus, p.Nationality,
