@@ -23,6 +23,9 @@ public class PatientPortalLogoutCommandHandler
         PatientPortalLogoutCommand request,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+            return;
+
         var tokenHash = _jwt.HashToken(request.RefreshToken);
 
         var session = await _db.PatientPortalSessions

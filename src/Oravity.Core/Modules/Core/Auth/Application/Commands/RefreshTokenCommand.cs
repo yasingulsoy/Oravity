@@ -22,6 +22,9 @@ public class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCommand, L
 
     public async Task<LoginResponse> Handle(RefreshTokenCommand request, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+            throw new UnauthorizedException("Refresh token gerekli.");
+
         var tokenHash = _jwtService.HashToken(request.RefreshToken);
 
         var tokenEntity = await _db.RefreshTokens

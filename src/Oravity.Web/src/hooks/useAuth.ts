@@ -26,7 +26,10 @@ export function useLogout() {
   const logout = useAuthStore((s) => s.logout);
 
   return useMutation({
-    mutationFn: () => authApi.logout(),
+    mutationFn: async () => {
+      const { refreshToken } = useAuthStore.getState();
+      await authApi.logout(refreshToken);
+    },
     onSettled: () => {
       logout();
       navigate('/');

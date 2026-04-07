@@ -14,7 +14,6 @@ import {
 import { cn } from '@/lib/utils';
 import { useUiStore } from '@/store/uiStore';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -38,7 +37,7 @@ export function Sidebar() {
         sidebarOpen ? 'w-64' : 'w-16',
       )}
     >
-      <div className="flex h-14 shrink-0 items-center px-4">
+      <div className="flex h-14 shrink-0 items-center border-b border-border px-4">
         {sidebarOpen ? (
           <>
             <span className="text-lg font-semibold tracking-tight">Oravity</span>
@@ -66,8 +65,6 @@ export function Sidebar() {
           </div>
         )}
       </div>
-
-      <Separator />
 
       <nav className="flex-1 space-y-1 p-2">
         {navItems.map(({ to, label, icon: Icon }) => (

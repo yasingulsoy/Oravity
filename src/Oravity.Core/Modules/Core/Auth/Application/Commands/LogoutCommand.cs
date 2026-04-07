@@ -20,6 +20,9 @@ public class LogoutCommandHandler : IRequestHandler<LogoutCommand>
 
     public async Task Handle(LogoutCommand request, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(request.RefreshToken))
+            return;
+
         var tokenHash = _jwtService.HashToken(request.RefreshToken);
 
         var tokenEntity = await _db.RefreshTokens
