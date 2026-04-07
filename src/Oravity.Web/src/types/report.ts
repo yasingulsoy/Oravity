@@ -74,7 +74,7 @@ export interface AppointmentStatsReport {
 }
 
 export interface AppointmentStatusSummary {
-  status: string;
+  status: number;
   label: string;
   count: number;
   percentage: number;

@@ -1,9 +1,14 @@
 import apiClient from './client';
 import type {
   Appointment,
+  AppointmentStatus,
+  AppointmentType,
+  Specialization,
   CreateAppointmentRequest,
   UpdateAppointmentRequest,
   AppointmentCalendarQuery,
+  DoctorCalendarInfo,
+  AccessibleBranch,
 } from '@/types/appointment';
 
 export const appointmentsApi = {
@@ -38,9 +43,40 @@ export const appointmentsApi = {
   update: (id: string, data: UpdateAppointmentRequest) =>
     apiClient.put<Appointment>(`/appointments/${id}`, data),
 
-  updateStatus: (publicId: string, status: string) =>
-    apiClient.put(`/appointments/${publicId}/status`, { status }),
+  updateStatus: (publicId: string, statusId: number) =>
+    apiClient.put(`/appointments/${publicId}/status`, { statusId }),
 
   cancel: (publicId: string, reason?: string) =>
     apiClient.delete(`/appointments/${publicId}`, { params: { reason } }),
+
+  getStatuses: () =>
+    apiClient.get<AppointmentStatus[]>('/appointments/statuses'),
+
+  getTypes: () =>
+    apiClient.get<AppointmentType[]>('/appointments/types'),
+
+  getSpecializations: () =>
+    apiClient.get<Specialization[]>('/appointments/specializations'),
+
+  getCalendarDoctors: (params: { date: string; branchIds?: number[]; specializationIds?: number[] }) =>
+    apiClient.get<DoctorCalendarInfo[]>('/appointments/calendar-doctors', { params }),
+
+  getAccessibleBranches: () =>
+    apiClient.get<AccessibleBranch[]>('/appointments/accessible-branches'),
+
+  getCalendarSettings: () =>
+    apiClient.get<CalendarSettings>('/appointments/calendar-settings'),
+
+  updateCalendarSettings: (data: CalendarSettings) =>
+    apiClient.put<CalendarSettings>('/appointments/calendar-settings', data),
+
+  getForDoctors: async (date: string, doctorIds: number[]) => {
+    if (doctorIds.length === 0) return { data: [] as Appointment[] };
+    const results = await Promise.all(
+      doctorIds.map((id) =>
+        apiClient.get<Appointment[]>('/appointments', { params: { date, doctorId: id } })
+      )
+    );
+    return { data: results.flatMap((r) => r.data) };
+  },
 };

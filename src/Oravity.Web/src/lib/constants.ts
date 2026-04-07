@@ -6,20 +6,15 @@ export const STORAGE_KEYS = {
   UI: 'oravity-ui',
 } as const;
 
-export const APPOINTMENT_STATUS_COLORS: Record<string, string> = {
-  Scheduled: 'bg-blue-100 text-blue-800',
-  Confirmed: 'bg-green-100 text-green-800',
-  InProgress: 'bg-yellow-100 text-yellow-800',
-  Completed: 'bg-gray-100 text-gray-800',
-  Cancelled: 'bg-red-100 text-red-800',
-  NoShow: 'bg-orange-100 text-orange-800',
-};
-
-export const APPOINTMENT_STATUS_LABELS: Record<string, string> = {
-  Scheduled: 'Planlandı',
-  Confirmed: 'Onaylandı',
-  InProgress: 'Devam Ediyor',
-  Completed: 'Tamamlandı',
-  Cancelled: 'İptal Edildi',
-  NoShow: 'Gelmedi',
+// Key: statusId (WellKnownIds: 1=Planned, 2=Confirmed, 3=Arrived, 4=Left, 5=InRoom, 6=Cancelled, 7=Completed, 8=NoShow)
+// Takvim sayfası için fallback — asıl veriler /api/appointments/statuses'dan gelir
+export const APPOINTMENT_STATUS_COLORS: Record<number, string> = {
+  1: 'bg-blue-100 text-blue-800',
+  2: 'bg-green-100 text-green-800',
+  3: 'bg-teal-100 text-teal-800',
+  4: 'bg-purple-100 text-purple-800',
+  5: 'bg-yellow-100 text-yellow-800',
+  6: 'bg-red-100 text-red-800',
+  7: 'bg-gray-100 text-gray-800',
+  8: 'bg-orange-100 text-orange-800',
 };
