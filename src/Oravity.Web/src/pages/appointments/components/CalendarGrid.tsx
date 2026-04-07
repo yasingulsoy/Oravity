@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import type { Appointment, AppointmentStatus, DoctorCalendarInfo } from '@/types/appointment';
 import { AppointmentBlock } from './AppointmentBlock';
 import { cn } from '@/lib/utils';
 
-const PX_PER_MINUTE = 40 / 30; // sabit piksel/dakika oranı (~1.33)
+const PX_PER_MINUTE = 40 / 30;
 
 interface CalendarGridProps {
   doctors: DoctorCalendarInfo[];
@@ -12,7 +12,7 @@ interface CalendarGridProps {
   slotIntervalMinutes?: number;
   dayStartHour?: number;
   dayEndHour?: number;
-  onSlotClick: (doctorId: number, time: string) => void;
+  onRangeSelect: (doctorId: number, branchId: number, startTime: string, endTime: string) => void;
   onAppointmentClick: (appointment: Appointment) => void;
 }
 
@@ -31,10 +31,7 @@ function minutesToTime(minutes: number): string {
 
 type SlotType = 'open' | 'closed' | 'break';
 
-function getSlotType(
-  slotStart: number,
-  doctor: DoctorCalendarInfo
-): SlotType {
+function getSlotType(slotStart: number, doctor: DoctorCalendarInfo): SlotType {
   if (!doctor.workStart || !doctor.workEnd) return 'closed';
 
   const workStart = timeToMinutes(doctor.workStart);
@@ -51,6 +48,13 @@ function getSlotType(
   return 'open';
 }
 
+interface DragState {
+  doctorId: number;
+  branchId: number;
+  startMinutes: number;
+  currentMinutes: number;
+}
+
 export function CalendarGrid({
   doctors,
   appointments,
@@ -58,12 +62,35 @@ export function CalendarGrid({
   slotIntervalMinutes = 30,
   dayStartHour = 8,
   dayEndHour = 20,
-  onSlotClick,
+  onRangeSelect,
   onAppointmentClick,
 }: CalendarGridProps) {
   const dayStart = dayStartHour * 60;
   const dayEnd = dayEndHour * 60;
   const slotHeight = Math.round(slotIntervalMinutes * PX_PER_MINUTE);
+
+  const [dragState, setDragState] = useState<DragState | null>(null);
+  const isDragging = dragState !== null;
+
+  // Stable ref to avoid stale closure in mouseup handler
+  const dragRef = useRef<DragState | null>(null);
+  dragRef.current = dragState;
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseUp = () => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const startMins = Math.min(drag.startMinutes, drag.currentMinutes);
+      const endMins = Math.max(drag.startMinutes, drag.currentMinutes) + slotIntervalMinutes;
+      onRangeSelect(drag.doctorId, drag.branchId, minutesToTime(startMins), minutesToTime(endMins));
+      setDragState(null);
+    };
+
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => document.removeEventListener('mouseup', handleMouseUp);
+  }, [isDragging, slotIntervalMinutes, onRangeSelect]);
 
   const timeSlots = useMemo(() => {
     const slots: number[] = [];
@@ -83,6 +110,12 @@ export function CalendarGrid({
     return map;
   }, [appointments]);
 
+  const multibranchDoctorIds = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const d of doctors) counts.set(d.doctorId, (counts.get(d.doctorId) ?? 0) + 1);
+    return new Set([...counts.entries()].filter(([, n]) => n > 1).map(([id]) => id));
+  }, [doctors]);
+
   if (doctors.length === 0) {
     return (
       <div className="flex items-center justify-center py-20 text-muted-foreground">
@@ -98,13 +131,14 @@ export function CalendarGrid({
       : 'min-w-[150px]';
 
   return (
-    <div className="overflow-x-auto border rounded-lg">
+    <div
+      className="overflow-x-auto border rounded-lg"
+      style={{ userSelect: isDragging ? 'none' : undefined }}
+    >
       <div className="inline-flex min-w-full">
         {/* Time column */}
         <div className="sticky left-0 z-20 bg-background border-r w-16 shrink-0">
-          {/* Header spacer */}
           <div className="h-16 border-b" />
-          {/* Time labels */}
           {timeSlots.map((minutes) => (
             <div
               key={minutes}
@@ -121,9 +155,20 @@ export function CalendarGrid({
           const doctorApts = appointmentsByDoctor.get(doctor.doctorId) ?? [];
           const headerColor = doctor.calendarColor ?? '#0ea5e9';
 
+          // Drag overlay for this column
+          let overlayTop = 0;
+          let overlayHeight = 0;
+          const showOverlay = dragState?.doctorId === doctor.doctorId && dragState?.branchId === doctor.branchId;
+          if (showOverlay && dragState) {
+            const startMins = Math.min(dragState.startMinutes, dragState.currentMinutes);
+            const endMins = Math.max(dragState.startMinutes, dragState.currentMinutes) + slotIntervalMinutes;
+            overlayTop = ((startMins - dayStart) / slotIntervalMinutes) * slotHeight;
+            overlayHeight = ((endMins - startMins) / slotIntervalMinutes) * slotHeight;
+          }
+
           return (
             <div
-              key={doctor.doctorId}
+              key={`${doctor.doctorId}-${doctor.branchId}`}
               className={cn('flex-1 border-r last:border-r-0', colWidth)}
             >
               {/* Doctor header */}
@@ -140,20 +185,21 @@ export function CalendarGrid({
                 </span>
                 <span className="text-muted-foreground truncate leading-tight">
                   {doctor.workStart && doctor.workEnd
-                    ? `(${doctor.workStart} - ${doctor.workEnd})`
+                    ? `${doctor.workStart} - ${doctor.workEnd}`
                     : 'Calismiyor'}
                 </span>
-                {doctor.specializationName && (
-                  <span className="text-[10px] text-muted-foreground truncate leading-tight">
-                    {doctor.specializationName}
-                  </span>
-                )}
+                <span className="text-[10px] text-muted-foreground truncate leading-tight">
+                  {multibranchDoctorIds.has(doctor.doctorId)
+                    ? doctor.branchName
+                    : doctor.specializationName ?? ''}
+                </span>
               </div>
 
               {/* Slots */}
               <div className="relative">
                 {timeSlots.map((minutes) => {
                   const slotType = getSlotType(minutes, doctor);
+                  const isCurrentDragCol = isDragging && dragState?.doctorId === doctor.doctorId && dragState?.branchId === doctor.branchId;
                   return (
                     <div
                       key={minutes}
@@ -161,32 +207,44 @@ export function CalendarGrid({
                         'border-b',
                         slotType === 'closed' && 'bg-gray-100',
                         slotType === 'break' && 'bg-gray-50',
-                        slotType === 'open' && 'bg-white hover:bg-blue-50/50 cursor-pointer'
+                        slotType === 'open' && !isDragging && 'bg-white hover:bg-blue-50/50 cursor-crosshair',
+                        slotType === 'open' && isDragging && isCurrentDragCol && 'bg-white cursor-crosshair',
+                        slotType === 'open' && isDragging && !isCurrentDragCol && 'bg-white',
                       )}
                       style={{ height: `${slotHeight}px` }}
-                      onClick={() => {
+                      onMouseDown={() => {
                         if (slotType === 'open') {
-                          onSlotClick(doctor.doctorId, minutesToTime(minutes));
+                          setDragState({
+                            doctorId: doctor.doctorId,
+                            branchId: doctor.branchId,
+                            startMinutes: minutes,
+                            currentMinutes: minutes,
+                          });
                         }
                       }}
-                      role={slotType === 'open' ? 'button' : undefined}
-                      tabIndex={slotType === 'open' ? 0 : undefined}
-                      onKeyDown={(e) => {
-                        if (slotType === 'open' && (e.key === 'Enter' || e.key === ' ')) {
-                          e.preventDefault();
-                          onSlotClick(doctor.doctorId, minutesToTime(minutes));
+                      onMouseEnter={() => {
+                        if (
+                          isDragging &&
+                          dragState?.doctorId === doctor.doctorId &&
+                          dragState?.branchId === doctor.branchId &&
+                          slotType === 'open'
+                        ) {
+                          setDragState((prev) => prev ? { ...prev, currentMinutes: minutes } : null);
                         }
                       }}
-                      aria-label={
-                        slotType === 'open'
-                          ? `Yeni randevu: ${doctor.fullName}, ${minutesToTime(minutes)}`
-                          : undefined
-                      }
                     />
                   );
                 })}
 
-                {/* Appointment overlays */}
+                {/* Drag selection overlay */}
+                {showOverlay && overlayHeight > 0 && (
+                  <div
+                    className="absolute left-0 right-0 bg-blue-400/25 border-2 border-blue-500 pointer-events-none z-10 rounded-sm"
+                    style={{ top: overlayTop, height: overlayHeight }}
+                  />
+                )}
+
+                {/* Appointment blocks */}
                 {doctorApts.map((apt) => (
                   <AppointmentBlock
                     key={apt.publicId}

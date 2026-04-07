@@ -1,16 +1,11 @@
-import { useState, useCallback, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod/v4';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, addDays, subDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { appointmentsApi } from '@/api/appointments';
 import { useCalendarSocket } from '@/hooks/useCalendarSocket';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -24,25 +19,17 @@ import {
 import { APPOINTMENT_STATUS_COLORS } from '@/lib/constants';
 import { MultiSelect } from './components/MultiSelect';
 import { CalendarGrid } from './components/CalendarGrid';
+import { PatientSearchModal } from './components/PatientSearchModal';
 import type { Appointment, DoctorCalendarInfo, CalendarSettings } from '@/types/appointment';
 
-// -- Form schema ---------------------------------------------------------------
-
-const createAppointmentSchema = z.object({
-  patientId: z.string().min(1, 'Hasta ID gerekli'),
-  notes: z.string().optional(),
-});
-
-type CreateAppointmentForm = z.infer<typeof createAppointmentSchema>;
-
-interface SelectedSlot {
+interface SelectedRange {
   doctorId: number;
   doctorName: string;
-  start: Date;
-  end: Date;
+  branchId: number;
+  startTime: string;
+  endTime: string;
+  date: Date;
 }
-
-// -- Page component ------------------------------------------------------------
 
 export function AppointmentCalendarPage() {
   const queryClient = useQueryClient();
@@ -55,12 +42,9 @@ export function AppointmentCalendarPage() {
   const [selectedBranchIds, setSelectedBranchIds] = useState<number[]>([]);
   const [selectedSpecIds, setSelectedSpecIds] = useState<number[]>([]);
   const [selectedDoctorIds, setSelectedDoctorIds] = useState<number[]>([]);
-  const [branchesInitialized, setBranchesInitialized] = useState(false);
-  const [specsInitialized, setSpecsInitialized] = useState(false);
-  const [doctorsInitialized, setDoctorsInitialized] = useState(false);
 
   // --- Dialogs ---
-  const [selectedSlot, setSelectedSlot] = useState<SelectedSlot | null>(null);
+  const [selectedRange, setSelectedRange] = useState<SelectedRange | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -75,11 +59,9 @@ export function AppointmentCalendarPage() {
   });
   const branches = branchesData ?? [];
 
-  // Initialize branches once loaded
-  if (branches.length > 0 && !branchesInitialized) {
-    setSelectedBranchIds(branches.map((b) => b.id));
-    setBranchesInitialized(true);
-  }
+  useEffect(() => {
+    if (branches.length > 0) setSelectedBranchIds(branches.map((b) => b.id));
+  }, [branches.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: specsData } = useQuery({
     queryKey: ['appointments', 'specializations'],
@@ -89,10 +71,9 @@ export function AppointmentCalendarPage() {
   });
   const specializations = specsData ?? [];
 
-  if (specializations.length > 0 && !specsInitialized) {
-    setSelectedSpecIds(specializations.map((s) => s.id));
-    setSpecsInitialized(true);
-  }
+  useEffect(() => {
+    if (specializations.length > 0) setSelectedSpecIds(specializations.map((s) => s.id));
+  }, [specializations.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: statusesData } = useQuery({
     queryKey: ['appointments', 'statuses'],
@@ -112,15 +93,16 @@ export function AppointmentCalendarPage() {
 
   const { data: doctorsData, isLoading: doctorsLoading } = useQuery({
     queryKey: ['appointments', 'calendar-doctors', dateStr, selectedBranchIds, selectedSpecIds],
-    queryFn: async () => {
-      setDoctorsInitialized(false); // yeni sorgu → re-init
-      return appointmentsApi.getCalendarDoctors({
-        date: dateStr,
-        branchIds: selectedBranchIds.length > 0 ? selectedBranchIds : undefined,
-        specializationIds: selectedSpecIds.length > 0 ? selectedSpecIds : undefined,
-      });
-    },
-    enabled: branchesInitialized,
+    queryFn: () => appointmentsApi.getCalendarDoctors({
+      date: dateStr,
+      branchIds: selectedBranchIds.length > 0 && selectedBranchIds.length < branches.length
+        ? selectedBranchIds
+        : undefined,
+      specializationIds: selectedSpecIds.length > 0 && selectedSpecIds.length < specializations.length
+        ? selectedSpecIds
+        : undefined,
+    }),
+    enabled: selectedBranchIds.length > 0,
     select: (res) => res.data ?? [],
   });
   const allDoctors: DoctorCalendarInfo[] = doctorsData ?? [];
@@ -130,16 +112,11 @@ export function AppointmentCalendarPage() {
     [allDoctors]
   );
 
-  // Hekimler ilk yüklendiğinde hepsini seç; filtre/tarih değişince geçersiz ID'leri temizle
-  if (allDoctors.length > 0 && !doctorsInitialized) {
-    setSelectedDoctorIds(allDoctors.map((d) => d.doctorId));
-    setDoctorsInitialized(true);
-  }
+  useEffect(() => {
+    if (allDoctors.length > 0) setSelectedDoctorIds(allDoctors.map((d) => d.doctorId));
+  }, [allDoctors]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Filtre/tarih değişip yeni hekim listesi gelince seçili olmayan ID'leri düşür,
-  // tamamı geçersizse yeniden hepsini seç
   const visibleDoctorIds = useMemo(() => {
-    if (selectedDoctorIds.length === 0) return [];
     const validIds = new Set(allDoctors.map((d) => d.doctorId));
     return selectedDoctorIds.filter((id) => validIds.has(id));
   }, [selectedDoctorIds, allDoctors]);
@@ -166,21 +143,17 @@ export function AppointmentCalendarPage() {
 
   // --- Handlers ---
 
-  function handleSlotClick(doctorId: number, time: string) {
-    const doctor = allDoctors.find((d) => d.doctorId === doctorId);
+  function handleRangeSelect(doctorId: number, branchId: number, startTime: string, endTime: string) {
+    const doctor = allDoctors.find((d) => d.doctorId === doctorId && d.branchId === branchId);
     if (!doctor) return;
 
-    const [h, m] = time.split(':').map(Number);
-    const start = new Date(currentDate);
-    start.setHours(h, m, 0, 0);
-    const end = new Date(start);
-    end.setMinutes(end.getMinutes() + 30);
-
-    setSelectedSlot({
+    setSelectedRange({
       doctorId,
+      branchId,
       doctorName: `${doctor.title ? doctor.title + ' ' : ''}${doctor.fullName}`,
-      start,
-      end,
+      startTime,
+      endTime,
+      date: currentDate,
     });
     setCreateOpen(true);
   }
@@ -190,46 +163,7 @@ export function AppointmentCalendarPage() {
     setDetailOpen(true);
   }
 
-  // --- Create mutation ---
-
-  const createMutation = useMutation({
-    mutationFn: (data: { patientId: string; doctorId: number; startTime: string; endTime: string; notes?: string }) =>
-      appointmentsApi.create({
-        patientId: Number(data.patientId),
-        doctorId: data.doctorId,
-        startTime: data.startTime,
-        endTime: data.endTime,
-        notes: data.notes,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['appointments'] });
-      setCreateOpen(false);
-      reset();
-    },
-  });
-
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors },
-  } = useForm<CreateAppointmentForm>({
-    resolver: zodResolver(createAppointmentSchema),
-  });
-
-  function onSubmit(formData: CreateAppointmentForm) {
-    if (!selectedSlot) return;
-    createMutation.mutate({
-      patientId: formData.patientId,
-      doctorId: selectedSlot.doctorId,
-      startTime: selectedSlot.start.toISOString(),
-      endTime: selectedSlot.end.toISOString(),
-      notes: formData.notes || undefined,
-    });
-  }
-
   // --- Date helpers ---
-
   const displayDate = format(currentDate, "dd MMMM yyyy - EEEE", { locale: tr });
 
   function goToday() {
@@ -240,7 +174,7 @@ export function AppointmentCalendarPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header row: title + status legend + filters */}
+      {/* Header row */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-bold tracking-tight whitespace-nowrap">RANDEVU</h1>
@@ -322,74 +256,24 @@ export function AppointmentCalendarPage() {
           slotIntervalMinutes={settings.slotIntervalMinutes}
           dayStartHour={settings.dayStartHour}
           dayEndHour={settings.dayEndHour}
-          onSlotClick={handleSlotClick}
+          onRangeSelect={handleRangeSelect}
           onAppointmentClick={handleAppointmentClick}
         />
       )}
 
-      {/* Create appointment dialog */}
-      <Dialog
+      {/* Patient search + create appointment modal */}
+      <PatientSearchModal
         open={createOpen}
-        onOpenChange={(open) => {
-          setCreateOpen(open);
-          if (!open) reset();
+        range={selectedRange}
+        onClose={() => {
+          setCreateOpen(false);
+          setSelectedRange(null);
         }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Yeni Randevu Olustur</DialogTitle>
-          </DialogHeader>
-
-          {selectedSlot && (
-            <div className="rounded-md bg-muted p-3 text-sm space-y-1">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Hekim</span>
-                <span className="font-medium">{selectedSlot.doctorName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Tarih</span>
-                <span className="font-medium">{format(selectedSlot.start, 'dd.MM.yyyy')}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Saat</span>
-                <span className="font-medium">
-                  {format(selectedSlot.start, 'HH:mm')} - {format(selectedSlot.end, 'HH:mm')}
-                </span>
-              </div>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="patientId">Hasta ID</Label>
-              <Input id="patientId" placeholder="Hasta ID giriniz" {...register('patientId')} />
-              {errors.patientId && (
-                <p className="text-sm text-destructive">{errors.patientId.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="notes">Notlar</Label>
-              <Input id="notes" placeholder="Randevu notu (opsiyonel)" {...register('notes')} />
-            </div>
-
-            {createMutation.isError && (
-              <p className="text-sm text-destructive">
-                Randevu olusturulamadi. Lutfen bilgileri kontrol edin.
-              </p>
-            )}
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
-                Iptal
-              </Button>
-              <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending ? 'Olusturuluyor...' : 'Randevu Olustur'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+        onSuccess={() => {
+          setCreateOpen(false);
+          setSelectedRange(null);
+        }}
+      />
 
       {/* Appointment detail dialog */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>

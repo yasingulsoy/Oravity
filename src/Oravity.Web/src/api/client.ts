@@ -6,6 +6,9 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  // ASP.NET Core model binding: ?ids=1&ids=2 (bracket'sız tekrar eden key)
+  // Axios default: ?ids[]=1&ids[]=2 — backend null görür
+  paramsSerializer: { indexes: null },
 });
 
 apiClient.interceptors.request.use((config) => {

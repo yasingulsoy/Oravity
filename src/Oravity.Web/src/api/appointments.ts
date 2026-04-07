@@ -3,6 +3,7 @@ import type {
   Appointment,
   AppointmentStatus,
   AppointmentType,
+  CalendarSettings,
   Specialization,
   CreateAppointmentRequest,
   UpdateAppointmentRequest,

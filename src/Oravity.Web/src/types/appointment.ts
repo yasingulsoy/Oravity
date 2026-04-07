@@ -17,6 +17,7 @@ export interface Appointment {
 export interface CreateAppointmentRequest {
   patientId: number;
   doctorId: number;
+  branchId?: number;
   startTime: string;
   endTime: string;
   notes?: string;

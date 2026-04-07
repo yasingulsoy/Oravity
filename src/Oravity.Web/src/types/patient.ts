@@ -1,4 +1,5 @@
 export interface Patient {
+  id: number;
   publicId: string;
   branchId: number;
   // Kimlik
