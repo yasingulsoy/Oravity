@@ -79,15 +79,15 @@ public class SendSurveyJob : ISendSurveyJob
             .AsNoTracking()
             .FirstOrDefaultAsync(a => a.Id == appointmentId);
 
-        if (apt is null)
+        if (apt is null || apt.PatientId is null)
         {
-            _logger.LogWarning("SendSurveyJob: Randevu bulunamadı {AppointmentId}", appointmentId);
+            _logger.LogWarning("SendSurveyJob: Randevu bulunamadı veya hasta yok {AppointmentId}", appointmentId);
             return;
         }
 
         await _mediator.Send(new SendSurveyCommand(
             templateId,
-            apt.PatientId,
+            apt.PatientId.Value,
             apt.BranchId,
             apt.Branch.CompanyId,
             SurveyChannel.Sms,

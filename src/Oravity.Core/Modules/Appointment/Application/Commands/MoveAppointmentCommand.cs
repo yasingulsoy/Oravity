@@ -64,8 +64,8 @@ public class MoveAppointmentCommandHandler : IRequestHandler<MoveAppointmentComm
                 a.BranchId  == appointment.BranchId &&
                 a.StartTime <  request.NewEndTime.ToUniversalTime() &&
                 a.EndTime   >  request.NewStartTime.ToUniversalTime() &&
-                a.Status    != AppointmentStatus.Cancelled &&
-                a.Status    != AppointmentStatus.NoShow,
+                a.StatusId  != AppointmentStatus.WellKnownIds.Cancelled &&
+                a.StatusId  != AppointmentStatus.WellKnownIds.NoShow,
                 cancellationToken);
 
         if (conflict)

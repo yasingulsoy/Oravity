@@ -34,10 +34,15 @@ public class DatabaseSeeder
         await SeedReferralSourcesAsync(ct);
         await SeedInstitutionsAsync(ct);
 
+        await SeedSpecializationsAsync(ct);
+        await SeedAppointmentStatusesAsync(ct);
+        await SeedAppointmentTypesAsync(ct);
+
         if (_env.IsDevelopment())
         {
             await SeedPlatformAdminAsync(ct);
             await SeedTestPatientsAsync(ct);
+            await SeedDoctorSchedulesAsync(ct);
         }
 
         _logger.LogInformation("Database seed tamamlandı.");
@@ -368,6 +373,121 @@ public class DatabaseSeeder
         _logger.LogInformation("{Count} kurum eklendi.", toAdd.Count);
     }
 
+    // ─── Uzmanlık Alanları ────────────────────────────────────────────────
+    private async Task SeedSpecializationsAsync(CancellationToken ct)
+    {
+        if (await _db.Specializations.AnyAsync(ct))
+        {
+            _logger.LogDebug("Uzmanlık alanları zaten mevcut, atlanıyor.");
+            return;
+        }
+
+        var items = new[]
+        {
+            Specialization.Create("Genel Diş Hekimliği",   "GENERAL",       0),
+            Specialization.Create("Ortodonti",              "ORTHODONTICS",  1),
+            Specialization.Create("Endodonti",              "ENDODONTICS",   2),
+            Specialization.Create("Periodontoloji",         "PERIODONTICS",  3),
+            Specialization.Create("Pedodonti",              "PEDODONTICS",   4),
+            Specialization.Create("Oral Cerrahi",           "ORAL_SURGERY",  5),
+            Specialization.Create("Protez",                 "PROSTHETICS",   6),
+            Specialization.Create("Restoratif Diş",         "RESTORATIVE",   7),
+            Specialization.Create("Ağız Radyolojisi",       "RADIOLOGY",     8),
+            Specialization.Create("Implantoloji",           "IMPLANTOLOGY",  9),
+        };
+
+        await _db.Specializations.AddRangeAsync(items, ct);
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("{Count} uzmanlık alanı eklendi.", items.Length);
+    }
+
+    // ─── Randevu Durumları ────────────────────────────────────────────────
+    private async Task SeedAppointmentStatusesAsync(CancellationToken ct)
+    {
+        if (await _db.AppointmentStatuses.AnyAsync(ct))
+        {
+            _logger.LogDebug("Randevu durumları zaten mevcut, atlanıyor.");
+            return;
+        }
+
+        // WellKnownIds sırası: 1-7 ardışık seed, NoShow sonradan ID=8 alır.
+        // AppDbContext filter "NOT IN (4, 6, 8)" ile uyumlu olması için
+        // LEFT=4, CANCELLED=6, NO_SHOW=8 olacak şekilde 8 kayıt ekliyoruz.
+        var items = new[]
+        {
+            //                  name              code          titleColor  containerColor borderColor  textColor    className      isPatient sort
+            MakeStatus("Planlandı",       "PLANNED",     "#3598DC", "#EBF5FB",   "#2980B9",  "#1a1a1a", "cl-blue",    true,  1),
+            MakeStatus("Onaylandı",       "CONFIRMED",   "#27AE60", "#EAFAF1",   "#1E8449",  "#1a1a1a", "cl-green",   true,  2),
+            MakeStatus("Geldi",           "ARRIVED",     "#16A085", "#E8F8F5",   "#117A65",  "#1a1a1a", "cl-teal",    true,  3),
+            MakeStatus("Ayrıldı",         "LEFT",        "#8E44AD", "#F5EEF8",   "#6C3483",  "#1a1a1a", "cl-purple",  true,  4),  // terminal
+            MakeStatus("Odada",           "IN_ROOM",     "#F39C12", "#FEF9E7",   "#D68910",  "#1a1a1a", "cl-yellow",  true,  5),
+            MakeStatus("İptal",           "CANCELLED",   "#E74C3C", "#FDEDEC",   "#CB4335",  "#ffffff", "cl-red",     true,  6),  // terminal
+            MakeStatus("Tamamlandı",      "COMPLETED",   "#7F8C8D", "#F2F3F4",   "#626567",  "#1a1a1a", "cl-gray",    true,  7),
+            MakeStatus("Gelmedi",         "NO_SHOW",     "#E67E22", "#FEF5E7",   "#CA6F1E",  "#1a1a1a", "cl-orange",  true,  8),  // terminal
+        };
+
+        await _db.AppointmentStatuses.AddRangeAsync(items, ct);
+        await _db.SaveChangesAsync(ct);
+
+        // Geçiş kuralları (AllowedNextStatusIds JSON)
+        var saved = await _db.AppointmentStatuses.ToListAsync(ct);
+        var byCode = saved.ToDictionary(s => s.Code);
+
+        // PLANNED → CONFIRMED, ARRIVED, CANCELLED, NO_SHOW
+        byCode["PLANNED"].SetAllowedNextStatusIds(
+            $"[{byCode["CONFIRMED"].Id},{byCode["ARRIVED"].Id},{byCode["CANCELLED"].Id},{byCode["NO_SHOW"].Id}]");
+        // CONFIRMED → ARRIVED, CANCELLED, NO_SHOW
+        byCode["CONFIRMED"].SetAllowedNextStatusIds(
+            $"[{byCode["ARRIVED"].Id},{byCode["CANCELLED"].Id},{byCode["NO_SHOW"].Id}]");
+        // ARRIVED → IN_ROOM, CANCELLED, NO_SHOW
+        byCode["ARRIVED"].SetAllowedNextStatusIds(
+            $"[{byCode["IN_ROOM"].Id},{byCode["CANCELLED"].Id},{byCode["NO_SHOW"].Id}]");
+        // IN_ROOM → COMPLETED, LEFT
+        byCode["IN_ROOM"].SetAllowedNextStatusIds(
+            $"[{byCode["COMPLETED"].Id},{byCode["LEFT"].Id}]");
+        // Terminal durumlar: geçiş yok
+
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("{Count} randevu durumu eklendi.", items.Length);
+
+        static AppointmentStatus MakeStatus(
+            string name, string code,
+            string titleColor, string containerColor, string borderColor, string textColor,
+            string className, bool isPatient, int sort)
+        {
+            var s = AppointmentStatus.Create(name, code, titleColor, containerColor, borderColor, textColor, className, isPatient, sort);
+            return s;
+        }
+    }
+
+    // ─── Randevu Tipleri ──────────────────────────────────────────────────
+    private async Task SeedAppointmentTypesAsync(CancellationToken ct)
+    {
+        if (await _db.AppointmentTypes.AnyAsync(ct))
+        {
+            _logger.LogDebug("Randevu tipleri zaten mevcut, atlanıyor.");
+            return;
+        }
+
+        var items = new[]
+        {
+            // Hasta randevuları
+            AppointmentType.Create("Yeni Hasta",      "NEW_PATIENT",    "#3598DC", isPatientAppointment: true,  defaultDurationMinutes: 60, sortOrder: 0),
+            AppointmentType.Create("Klinik Hastası",  "RETURNING",      "#27AE60", isPatientAppointment: true,  defaultDurationMinutes: 30, sortOrder: 1),
+            AppointmentType.Create("Online Randevu",  "ONLINE",         "#9B59B6", isPatientAppointment: true,  defaultDurationMinutes: 30, sortOrder: 2),
+            AppointmentType.Create("Kontrol",         "CHECKUP",        "#16A085", isPatientAppointment: true,  defaultDurationMinutes: 20, sortOrder: 3),
+            AppointmentType.Create("Acil",            "EMERGENCY",      "#E74C3C", isPatientAppointment: true,  defaultDurationMinutes: 45, sortOrder: 4),
+            // Hekim blokları (hasta randevusu değil)
+            AppointmentType.Create("Toplantı",        "MEETING",        "#95A5A6", isPatientAppointment: false, defaultDurationMinutes: 60, sortOrder: 10),
+            AppointmentType.Create("Öğle Molası",     "LUNCH_BREAK",    "#BDC3C7", isPatientAppointment: false, defaultDurationMinutes: 60, sortOrder: 11),
+            AppointmentType.Create("İzin",            "LEAVE",          "#7F8C8D", isPatientAppointment: false, defaultDurationMinutes: 480, sortOrder: 12),
+        };
+
+        await _db.AppointmentTypes.AddRangeAsync(items, ct);
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("{Count} randevu tipi eklendi.", items.Length);
+    }
+
     // ─── Test Hastaları (sadece Development) ─────────────────────────────
     private async Task SeedTestPatientsAsync(CancellationToken ct)
     {
@@ -430,6 +550,216 @@ public class DatabaseSeeder
         await _db.Patients.AddRangeAsync(patients, ct);
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation("{Count} test hastası eklendi (şube: {Branch}).", patients.Length, branch.Name);
+    }
+
+    // ─── Hekim Takvim Verileri (sadece Development) ───────────────────────
+    private async Task SeedDoctorSchedulesAsync(CancellationToken ct)
+    {
+        // Zaten hekim programı varsa atla
+        if (await _db.DoctorSchedules.AnyAsync(ct))
+        {
+            _logger.LogDebug("Hekim programları zaten mevcut, atlanıyor.");
+            return;
+        }
+
+        // Demo şirketi bul
+        var company = await _db.Companies.FirstOrDefaultAsync(c => c.Name == "Demo Diş Kliniği", ct);
+        if (company is null)
+        {
+            _logger.LogWarning("Demo Diş Kliniği bulunamadı, hekim seed atlanıyor.");
+            return;
+        }
+
+        // Uzmanlık ID'lerini al
+        var specs = await _db.Specializations
+            .ToDictionaryAsync(s => s.Code, s => s.Id, ct);
+
+        // DOCTOR rol şablonu
+        var doctorRole = await _db.RoleTemplates.FirstOrDefaultAsync(r => r.Code == "DOCTOR", ct);
+        if (doctorRole is null) return;
+
+        var pw = BCrypt.Net.BCrypt.HashPassword("Doktor123!", workFactor: 12);
+
+        // ── Şubeler ──────────────────────────────────────────────────────────
+        var branches = await _db.Branches
+            .Where(b => b.CompanyId == company.Id && b.IsActive)
+            .ToListAsync(ct);
+
+        Branch GetOrAdd(string name)
+        {
+            var b = branches.FirstOrDefault(x => x.Name == name);
+            if (b is not null) return b;
+            b = Branch.Create(name, company.Id);
+            _db.Branches.Add(b);
+            branches.Add(b);
+            return b;
+        }
+
+        var anaSube       = GetOrAdd("Ana Şube");
+        var kadikoySube   = GetOrAdd("Kadıköy Şube");
+        var besiktasSube  = GetOrAdd("Beşiktaş Şube");
+        await _db.SaveChangesAsync(ct);
+
+        // ── Doktor kullanıcıları ──────────────────────────────────────────────
+        async Task<User> GetOrCreateDoctor(
+            string email, string fullName, string title,
+            string specCode, string calendarColor, int duration)
+        {
+            var u = await _db.Users.FirstOrDefaultAsync(x => x.Email == email, ct);
+            if (u is null)
+            {
+                u = User.Create(email, fullName, pw);
+                await _db.Users.AddAsync(u, ct);
+                await _db.SaveChangesAsync(ct);
+            }
+            u.UpdateDoctorProfile(
+                title,
+                specs.TryGetValue(specCode, out var sid) ? (int?)sid : null,
+                calendarColor,
+                duration);
+            await _db.SaveChangesAsync(ct);
+            return u;
+        }
+
+        var aylin  = await GetOrCreateDoctor("aylin.sahin@demo.com",   "Aylin Şahin",    "Dt.",       "GENERAL",      "#4CAF50", 30);
+        var kerem  = await GetOrCreateDoctor("kerem.ozdemir@demo.com", "Kerem Özdemir",  "Dt.",       "ORTHODONTICS", "#2196F3", 45);
+        var seda   = await GetOrCreateDoctor("seda.yildirim@demo.com", "Seda Yıldırım",  "Uzm. Dt.",  "ENDODONTICS",  "#9C27B0", 60);
+        var murat  = await GetOrCreateDoctor("murat.demirkol@demo.com","Murat Demirkol", "Op. Dr.",   "ORAL_SURGERY", "#FF5722", 60);
+        var ceren  = await GetOrCreateDoctor("ceren.atak@demo.com",    "Ceren Atak",     "Dt.",       "PEDODONTICS",  "#00BCD4", 30);
+        var hakan  = await GetOrCreateDoctor("hakan.arslan@demo.com",  "Hakan Arslan",   "Prof. Dr.", "IMPLANTOLOGY", "#795548", 90);
+
+        // ── UserRoleAssignment ────────────────────────────────────────────────
+        var existingAssignments = await _db.UserRoleAssignments
+            .Where(a => a.RoleTemplateId == doctorRole.Id)
+            .Select(a => new { a.UserId, a.BranchId })
+            .ToListAsync(ct);
+
+        void AddAssignment(long userId, long branchId)
+        {
+            if (existingAssignments.Any(a => a.UserId == userId && a.BranchId == branchId)) return;
+            _db.UserRoleAssignments.Add(UserRoleAssignment.Create(userId, doctorRole.Id, company.Id, branchId));
+        }
+
+        // Aylin: Ana + Kadıköy
+        AddAssignment(aylin.Id, anaSube.Id);
+        AddAssignment(aylin.Id, kadikoySube.Id);
+        // Kerem: Ana Şube
+        AddAssignment(kerem.Id, anaSube.Id);
+        // Seda: Kadıköy + Beşiktaş
+        AddAssignment(seda.Id, kadikoySube.Id);
+        AddAssignment(seda.Id, besiktasSube.Id);
+        // Murat: Ana + Beşiktaş
+        AddAssignment(murat.Id, anaSube.Id);
+        AddAssignment(murat.Id, besiktasSube.Id);
+        // Ceren: Kadıköy
+        AddAssignment(ceren.Id, kadikoySube.Id);
+        // Hakan: Ana Şube (yarı zamanlı)
+        AddAssignment(hakan.Id, anaSube.Id);
+
+        await _db.SaveChangesAsync(ct);
+
+        // ── DoctorSchedule (1=Pzt…7=Paz) ─────────────────────────────────────
+        var schedules = new List<DoctorSchedule>();
+
+        void AddSchedule(User doctor, Branch branch, int day,
+            TimeOnly start, TimeOnly end,
+            TimeOnly? breakStart = null, TimeOnly? breakEnd = null)
+        {
+            var s = DoctorSchedule.Create(doctor.Id, branch.Id, day);
+            s.Update(true, start, end, breakStart, breakEnd);
+            schedules.Add(s);
+        }
+
+        var t = (int h, int m = 0) => new TimeOnly(h, m);
+
+        // Aylin Şahin — Ana Şube: Pzt-Cum 09-18, öğle 13-14
+        foreach (var d in new[] { 1, 2, 3, 4, 5 })
+            AddSchedule(aylin, anaSube, d, t(9), t(18), t(13), t(14));
+        // Aylin — Kadıköy: Salı + Perşembe 09-14 (öğle yok)
+        AddSchedule(aylin, kadikoySube, 2, t(9), t(14));
+        AddSchedule(aylin, kadikoySube, 4, t(9), t(14));
+
+        // Kerem Özdemir — Ana: Pzt, Çar, Cum 09-17, öğle 12:30-13:30
+        foreach (var d in new[] { 1, 3, 5 })
+            AddSchedule(kerem, anaSube, d, t(9), t(17), t(12, 30), t(13, 30));
+        // Kerem — Ana: Salı, Perş 14-19 (akşam seferi)
+        AddSchedule(kerem, anaSube, 2, t(14), t(19));
+        AddSchedule(kerem, anaSube, 4, t(14), t(19));
+
+        // Seda Yıldırım — Kadıköy: Pzt-Cum 10-19, öğle 13-14
+        foreach (var d in new[] { 1, 2, 3, 4, 5 })
+            AddSchedule(seda, kadikoySube, d, t(10), t(19), t(13), t(14));
+        // Seda — Beşiktaş: Pzt, Çar, Cum 09-15 (sabah mesaisi)
+        foreach (var d in new[] { 1, 3, 5 })
+            AddSchedule(seda, besiktasSube, d, t(9), t(15));
+
+        // Murat Demirkol — Ana: Pzt, Salı, Perş 09-16
+        foreach (var d in new[] { 1, 2, 4 })
+            AddSchedule(murat, anaSube, d, t(9), t(16), t(12), t(13));
+        // Murat — Beşiktaş: Çar, Cum 09-17
+        foreach (var d in new[] { 3, 5 })
+            AddSchedule(murat, besiktasSube, d, t(9), t(17), t(12, 30), t(13, 30));
+        // Murat — Beşiktaş: Cumartesi 10-14 (nöbet)
+        AddSchedule(murat, besiktasSube, 6, t(10), t(14));
+
+        // Ceren Atak — Kadıköy: Pzt-Cum 08-15 (çocuk hekimi, sabahçı, ara yok)
+        foreach (var d in new[] { 1, 2, 3, 4, 5 })
+            AddSchedule(ceren, kadikoySube, d, t(8), t(15));
+
+        // Prof. Hakan Arslan — Ana: Salı + Perşembe 10-15 (yarı zamanlı uzman)
+        AddSchedule(hakan, anaSube, 2, t(10), t(15));
+        AddSchedule(hakan, anaSube, 4, t(10), t(15));
+
+        await _db.DoctorSchedules.AddRangeAsync(schedules, ct);
+        await _db.SaveChangesAsync(ct);
+
+        // ── DoctorSpecialDay ──────────────────────────────────────────────────
+        var today    = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        // Gelecek Pazartesi: Aylin Ana'da kongre (tam izin)
+        var nextMonday = today.AddDays((8 - (int)today.DayOfWeek) % 7 + 1);
+        _db.DoctorSpecialDays.Add(DoctorSpecialDay.Create(
+            aylin.Id, anaSube.Id, nextMonday,
+            DoctorSpecialDayType.DayOff, null, null, "Ulusal Diş Hekimliği Kongresi"));
+
+        // Gelecek Cuma: Kerem Ana'da erken çıkış 09-12 (saat değişikliği)
+        var nextFriday = today.AddDays((12 - (int)today.DayOfWeek + 7) % 7 + 1);
+        _db.DoctorSpecialDays.Add(DoctorSpecialDay.Create(
+            kerem.Id, anaSube.Id, nextFriday,
+            DoctorSpecialDayType.HourChange, t(9), t(12), "Öğleden sonra sertifika sınavı"));
+
+        // Bu hafta Çarşamba: Hakan Ana'da ekstra mesai (normalde Çar. yok)
+        var nextWed = today.AddDays((10 - (int)today.DayOfWeek + 7) % 7 + 1);
+        _db.DoctorSpecialDays.Add(DoctorSpecialDay.Create(
+            hakan.Id, anaSube.Id, nextWed,
+            DoctorSpecialDayType.ExtraWork, t(10), t(17), "Ekstra implant ameliyatı günü"));
+
+        // Gelecek Salı: Seda Beşiktaş'ta tam gün (normalde 09-15, bugün 09-18)
+        var nextTue = today.AddDays((9 - (int)today.DayOfWeek + 7) % 7 + 1);
+        _db.DoctorSpecialDays.Add(DoctorSpecialDay.Create(
+            seda.Id, besiktasSube.Id, nextTue,
+            DoctorSpecialDayType.HourChange, t(9), t(18), "Hasta yoğunluğu nedeniyle uzatıldı"));
+
+        await _db.SaveChangesAsync(ct);
+
+        // ── DoctorOnCallSettings ──────────────────────────────────────────────
+        // Murat: Cumartesi + Pazar nöbetçi (Beşiktaş)
+        var muratOnCall = DoctorOnCallSettings.Create(murat.Id, besiktasSube.Id);
+        muratOnCall.Update(false, false, false, false, false, saturday: true, sunday: true,
+            OnCallPeriodType.Monthly, today.AddDays(1), today.AddDays(30));
+        await _db.DoctorOnCallSettings.AddAsync(muratOnCall, ct);
+
+        // Aylin: Pazartesi nöbetçi (Ana Şube)
+        var aylinOnCall = DoctorOnCallSettings.Create(aylin.Id, anaSube.Id);
+        aylinOnCall.Update(monday: true, false, false, false, false, false, false,
+            OnCallPeriodType.Weekly, today, today.AddDays(7));
+        await _db.DoctorOnCallSettings.AddAsync(aylinOnCall, ct);
+
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Hekim seed tamamlandı: 3 şube, 6 hekim, {Sched} program, {Spec} özel gün, 2 nöbet ayarı.",
+            schedules.Count, 4);
     }
 
     // ─── Platform Admin (sadece Development) ──────────────────────────────

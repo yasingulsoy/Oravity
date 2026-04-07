@@ -1,5 +1,3 @@
-using Oravity.SharedKernel.Entities;
-
 namespace Oravity.Core.Modules.Reporting.Application;
 
 // ─── Dashboard ────────────────────────────────────────────────────────────
@@ -72,10 +70,10 @@ public record AppointmentStatsReport(
     IReadOnlyList<AppointmentByDayLine>       ByDay);
 
 public record AppointmentStatusSummary(
-    AppointmentStatus Status,
-    string            Label,
-    int               Count,
-    decimal           Percentage);
+    int     Status,
+    string  Label,
+    int     Count,
+    decimal Percentage);
 
 public record AppointmentByDayLine(
     DateOnly Date,

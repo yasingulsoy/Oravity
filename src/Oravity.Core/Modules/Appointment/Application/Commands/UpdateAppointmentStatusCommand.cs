@@ -11,7 +11,7 @@ namespace Oravity.Core.Modules.Appointment.Application.Commands;
 
 public record UpdateAppointmentStatusCommand(
     Guid PublicId,
-    AppointmentStatus NewStatus
+    int NewStatusId
 ) : IRequest<AppointmentResponse>;
 
 public class UpdateAppointmentStatusCommandHandler
@@ -42,11 +42,11 @@ public class UpdateAppointmentStatusCommandHandler
 
         EnsureTenantAccess(appointment);
 
-        // Geçiş kontrolü entity içinde yapılır (InvalidOperationException → 400 dönmeli)
-        appointment.UpdateStatus(request.NewStatus);
+        // Geçiş kontrolü uygulama katmanında yapılır (AllowedNextStatusIds JSON'u okunarak).
+        appointment.SetStatus(request.NewStatusId);
 
         // Outbox: AppointmentCompleted → hakediş hesaplama + anket planlaması
-        if (request.NewStatus == AppointmentStatus.Completed)
+        if (request.NewStatusId == AppointmentStatus.WellKnownIds.Completed)
         {
             var payload = JsonSerializer.Serialize(new
             {
@@ -63,7 +63,7 @@ public class UpdateAppointmentStatusCommandHandler
 
         await _db.SaveChangesAsync(cancellationToken);
 
-        var eventType = AppointmentMappings.StatusToEventType(request.NewStatus);
+        var eventType = AppointmentMappings.StatusToEventType(request.NewStatusId);
         await _broadcast.BroadcastAsync(
             appointment.BranchId,
             AppointmentMappings.ToBroadcast(appointment),

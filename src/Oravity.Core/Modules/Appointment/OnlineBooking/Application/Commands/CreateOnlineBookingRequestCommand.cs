@@ -98,6 +98,7 @@ public class CreateOnlineBookingRequestCommandHandler
                 branchId:  branchSettings.BranchId,
                 patientId: request.PatientId ?? 0, // yeni hasta ise 0, onay sonrası güncellenir
                 doctorId:  request.DoctorId,
+                statusId:  AppointmentStatus.WellKnownIds.Confirmed,
                 startTime: startTime,
                 endTime:   endTime);
 

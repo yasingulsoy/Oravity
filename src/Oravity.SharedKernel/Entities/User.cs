@@ -23,6 +23,19 @@ public class User : BaseEntity
     /// <summary>Sağlayıcıdan gelen e-posta (isteğe bağlı, denormalize).</summary>
     public string? SsoEmail { get; private set; }
 
+    // ─── Hekim Bilgileri (null = hekim değil) ─────────────────────────────
+    /// <summary>Dr., Dt., Prof. Dr., Uzm. Dr. vb.</summary>
+    public string? Title { get; private set; }
+
+    public int? SpecializationId { get; private set; }
+    public Specialization? Specialization { get; private set; }
+
+    /// <summary>Takvimde hekim sütun/blok rengi (hex, ör. #4c4cff)</summary>
+    public string? CalendarColor { get; private set; }
+
+    /// <summary>Varsayılan randevu süresi (dakika). Null = şube ayarına bak.</summary>
+    public int? DefaultAppointmentDuration { get; private set; }
+
     public ICollection<UserRoleAssignment> RoleAssignments { get; private set; } = [];
     public ICollection<UserPermissionOverride> PermissionOverrides { get; private set; } = [];
 
@@ -65,6 +78,15 @@ public class User : BaseEntity
             SsoSubject  = ssoSubject,
             SsoEmail    = ssoEmail
         };
+    }
+
+    public void UpdateDoctorProfile(string? title, int? specializationId, string? calendarColor, int? defaultAppointmentDuration)
+    {
+        Title = title;
+        SpecializationId = specializationId;
+        CalendarColor = calendarColor;
+        DefaultAppointmentDuration = defaultAppointmentDuration;
+        MarkUpdated();
     }
 
     /// <summary>Mevcut hesaba SSO kimliği bağlar (ör. ilk SSO öncesi yerel hesap).</summary>

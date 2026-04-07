@@ -8,11 +8,11 @@ namespace Oravity.Core.Modules.Appointment.Application;
 public record AppointmentResponse(
     Guid PublicId,
     long BranchId,
-    long PatientId,
+    long? PatientId,
     long DoctorId,
     DateTime StartTime,
     DateTime EndTime,
-    AppointmentStatus Status,
+    int StatusId,
     string StatusLabel,
     string? Notes,
     int RowVersion,
@@ -23,11 +23,11 @@ public record AppointmentResponse(
 public record AppointmentBroadcastDto(
     Guid PublicId,
     long BranchId,
-    long PatientId,
+    long? PatientId,
     long DoctorId,
     DateTime StartTime,
     DateTime EndTime,
-    AppointmentStatus Status,
+    int StatusId,
     string StatusLabel,
     int RowVersion
 );
@@ -81,32 +81,33 @@ public static class AppointmentMappings
 {
     public static AppointmentResponse ToResponse(AppointmentEntity a) => new(
         a.PublicId, a.BranchId, a.PatientId, a.DoctorId,
-        a.StartTime, a.EndTime, a.Status, StatusLabel(a.Status),
+        a.StartTime, a.EndTime, a.StatusId, StatusLabel(a.StatusId),
         a.Notes, a.RowVersion, a.CreatedAt);
 
     public static AppointmentBroadcastDto ToBroadcast(AppointmentEntity a) => new(
         a.PublicId, a.BranchId, a.PatientId, a.DoctorId,
-        a.StartTime, a.EndTime, a.Status, StatusLabel(a.Status), a.RowVersion);
+        a.StartTime, a.EndTime, a.StatusId, StatusLabel(a.StatusId), a.RowVersion);
 
-    public static string StatusLabel(AppointmentStatus s) => s switch
+    public static string StatusLabel(int statusId) => statusId switch
     {
-        AppointmentStatus.Planned   => "Planlandı",
-        AppointmentStatus.Confirmed => "Onaylandı",
-        AppointmentStatus.Arrived   => "Geldi",
-        AppointmentStatus.InRoom    => "Odaya Alındı",
-        AppointmentStatus.Completed => "Tamamlandı",
-        AppointmentStatus.Cancelled => "İptal",
-        AppointmentStatus.NoShow    => "Gelmedi",
-        _ => s.ToString()
+        AppointmentStatus.WellKnownIds.Planned   => "Planlandı",
+        AppointmentStatus.WellKnownIds.Confirmed => "Onaylandı",
+        AppointmentStatus.WellKnownIds.Arrived   => "Geldi",
+        AppointmentStatus.WellKnownIds.InRoom    => "Odaya Alındı",
+        AppointmentStatus.WellKnownIds.Left      => "Ayrıldı",
+        AppointmentStatus.WellKnownIds.Cancelled => "İptal",
+        AppointmentStatus.WellKnownIds.Completed => "Tamamlandı",
+        AppointmentStatus.WellKnownIds.NoShow    => "Gelmedi",
+        _ => statusId.ToString()
     };
 
-    public static CalendarEventType StatusToEventType(AppointmentStatus s) => s switch
+    public static CalendarEventType StatusToEventType(int statusId) => statusId switch
     {
-        AppointmentStatus.Arrived   => CalendarEventType.PatientArrived,
-        AppointmentStatus.InRoom    => CalendarEventType.PatientInRoom,
-        AppointmentStatus.Completed => CalendarEventType.Completed,
-        AppointmentStatus.Cancelled => CalendarEventType.Cancelled,
-        AppointmentStatus.NoShow    => CalendarEventType.NoShow,
+        AppointmentStatus.WellKnownIds.Arrived   => CalendarEventType.PatientArrived,
+        AppointmentStatus.WellKnownIds.InRoom    => CalendarEventType.PatientInRoom,
+        AppointmentStatus.WellKnownIds.Completed => CalendarEventType.Completed,
+        AppointmentStatus.WellKnownIds.Cancelled => CalendarEventType.Cancelled,
+        AppointmentStatus.WellKnownIds.NoShow    => CalendarEventType.NoShow,
         _ => CalendarEventType.StatusChanged
     };
 }

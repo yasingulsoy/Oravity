@@ -91,7 +91,7 @@ public class OnlineBookingFilterService : IOnlineBookingFilterService
                 .AnyAsync(a =>
                     a.PatientId == patientId.Value &&
                     a.BranchId == branchId &&
-                    a.Status != AppointmentStatus.Cancelled,
+                    a.StatusId != AppointmentStatus.WellKnownIds.Cancelled,
                     ct);
         }
 

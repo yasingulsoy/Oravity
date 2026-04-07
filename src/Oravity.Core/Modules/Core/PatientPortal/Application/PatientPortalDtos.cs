@@ -76,16 +76,17 @@ public static class PatientPortalMappings
         a.IsActive, a.PreferredLanguageCode,
         a.PatientId, a.LastLoginAt);
 
-    public static string AppointmentStatusLabel(AppointmentStatus s) => s switch
+    public static string AppointmentStatusLabel(int statusId) => statusId switch
     {
-        AppointmentStatus.Planned     => "Planlandı",
-        AppointmentStatus.Confirmed   => "Onaylandı",
-        AppointmentStatus.Arrived     => "Geldi",
-        AppointmentStatus.InRoom      => "Odaya Alındı",
-        AppointmentStatus.Completed   => "Tamamlandı",
-        AppointmentStatus.Cancelled   => "İptal",
-        AppointmentStatus.NoShow      => "Gelmedi",
-        _                             => s.ToString()
+        AppointmentStatus.WellKnownIds.Planned   => "Planlandı",
+        AppointmentStatus.WellKnownIds.Confirmed => "Onaylandı",
+        AppointmentStatus.WellKnownIds.Arrived   => "Geldi",
+        AppointmentStatus.WellKnownIds.InRoom    => "Odaya Alındı",
+        AppointmentStatus.WellKnownIds.Left      => "Ayrıldı",
+        AppointmentStatus.WellKnownIds.Completed => "Tamamlandı",
+        AppointmentStatus.WellKnownIds.Cancelled => "İptal",
+        AppointmentStatus.WellKnownIds.NoShow    => "Gelmedi",
+        _                                        => statusId.ToString()
     };
 
     public static string TreatmentStatusLabel(int s) => s switch

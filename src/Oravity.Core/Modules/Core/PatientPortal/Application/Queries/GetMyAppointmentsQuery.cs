@@ -50,7 +50,7 @@ public class GetMyAppointmentsQueryHandler
                 a.StartTime,
                 a.EndTime,
                 DoctorName = a.Doctor.FullName,
-                a.Status
+                a.StatusId
             })
             .ToListAsync(cancellationToken);
 
@@ -59,8 +59,8 @@ public class GetMyAppointmentsQueryHandler
             a.StartTime,
             a.EndTime,
             a.DoctorName,
-            (int)a.Status,
-            PatientPortalMappings.AppointmentStatusLabel(a.Status),
+            a.StatusId,
+            PatientPortalMappings.AppointmentStatusLabel(a.StatusId),
             a.StartTime >= now
         )).ToList();
     }

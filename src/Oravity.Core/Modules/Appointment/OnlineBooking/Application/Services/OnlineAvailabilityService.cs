@@ -82,8 +82,8 @@ public class OnlineAvailabilityService : IOnlineAvailabilityService
                 a.BranchId == branchId &&
                 a.StartTime >= dateAsDateTime &&
                 a.StartTime < dateAsDateTime.AddDays(1) &&
-                a.Status != AppointmentStatus.Cancelled &&
-                a.Status != AppointmentStatus.NoShow)
+                a.StatusId != AppointmentStatus.WellKnownIds.Cancelled &&
+                a.StatusId != AppointmentStatus.WellKnownIds.NoShow)
             .Select(a => new { a.StartTime, a.EndTime })
             .ToListAsync(ct);
 

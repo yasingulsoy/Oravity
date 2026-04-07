@@ -45,7 +45,15 @@ public class AppDbContext : DbContext
     public DbSet<ReferralSource> ReferralSources => Set<ReferralSource>();
 
     // ─── Appointments ──────────────────────────────────────────────────────
-    public DbSet<Appointment> Appointments => Set<Appointment>();
+    public DbSet<Appointment>       Appointments       => Set<Appointment>();
+    public DbSet<AppointmentStatus> AppointmentStatuses => Set<AppointmentStatus>();
+    public DbSet<AppointmentType>   AppointmentTypes   => Set<AppointmentType>();
+    public DbSet<Specialization>    Specializations    => Set<Specialization>();
+
+    // ─── Hekim Takvimleri ─────────────────────────────────────────────────
+    public DbSet<DoctorSchedule>       DoctorSchedules       => Set<DoctorSchedule>();
+    public DbSet<DoctorSpecialDay>     DoctorSpecialDays     => Set<DoctorSpecialDay>();
+    public DbSet<DoctorOnCallSettings> DoctorOnCallSettings  => Set<DoctorOnCallSettings>();
 
     // ─── Treatment Plans ───────────────────────────────────────────────────
     public DbSet<TreatmentPlan> TreatmentPlans => Set<TreatmentPlan>();
@@ -75,6 +83,7 @@ public class AppDbContext : DbContext
     public DbSet<DoctorOnlineSchedule> DoctorOnlineSchedules => Set<DoctorOnlineSchedule>();
     public DbSet<DoctorOnlineBlock> DoctorOnlineBlocks => Set<DoctorOnlineBlock>();
     public DbSet<BranchOnlineBookingSettings> BranchOnlineBookingSettings => Set<BranchOnlineBookingSettings>();
+    public DbSet<BranchCalendarSettings>      BranchCalendarSettings      => Set<BranchCalendarSettings>();
     public DbSet<OnlineBookingRequest> OnlineBookingRequests => Set<OnlineBookingRequest>();
 
     // ─── Patient Portal ────────────────────────────────────────────────────
@@ -261,6 +270,15 @@ public class AppDbContext : DbContext
                 .IsUnique()
                 .HasDatabaseName("idx_users_sso")
                 .HasFilter("\"SsoProvider\" IS NOT NULL");
+
+            // ─── Hekim alanları
+            e.Property(x => x.Title).HasMaxLength(50);
+            e.Property(x => x.CalendarColor).HasMaxLength(7);
+            e.HasOne(x => x.Specialization)
+             .WithMany()
+             .HasForeignKey(x => x.SpecializationId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── Permission ────────────────────────────────────────────────────
@@ -590,6 +608,46 @@ public class AppDbContext : DbContext
             e.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).IsRequired(false).OnDelete(DeleteBehavior.Cascade);
         });
 
+        // ── Specialization ────────────────────────────────────────────────
+        m.Entity<Specialization>(e =>
+        {
+            e.ToTable("specializations");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            e.HasIndex(x => x.Code).IsUnique().HasDatabaseName("ix_specializations_code");
+        });
+
+        // ── AppointmentStatus ─────────────────────────────────────────────
+        m.Entity<AppointmentStatus>(e =>
+        {
+            e.ToTable("appointment_statuses");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            e.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            e.HasIndex(x => x.Code).IsUnique().HasDatabaseName("ix_appointment_statuses_code");
+            e.Property(x => x.TitleColor).HasMaxLength(7).HasDefaultValue("#3598DC");
+            e.Property(x => x.ContainerColor).HasMaxLength(7).HasDefaultValue("#4c4cff");
+            e.Property(x => x.BorderColor).HasMaxLength(7).HasDefaultValue("#3333ff");
+            e.Property(x => x.TextColor).HasMaxLength(7).HasDefaultValue("#ffffff");
+            e.Property(x => x.ClassName).HasMaxLength(50).HasDefaultValue("cl-white");
+            e.Property(x => x.AllowedNextStatusIds).HasColumnType("text").HasDefaultValue("[]");
+        });
+
+        // ── AppointmentType ───────────────────────────────────────────────
+        m.Entity<AppointmentType>(e =>
+        {
+            e.ToTable("appointment_types");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            e.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            e.HasIndex(x => x.Code).IsUnique().HasDatabaseName("ix_appointment_types_code");
+            e.Property(x => x.Color).HasMaxLength(7).HasDefaultValue("#3598DC");
+        });
+
         // ── Appointment ───────────────────────────────────────────────────
         m.Entity<Appointment>(e =>
         {
@@ -599,26 +657,25 @@ public class AppDbContext : DbContext
             e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
             e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_appointments_public_id");
 
-            e.Property(x => x.Status).IsRequired();
+            e.Property(x => x.StatusId).IsRequired();
             e.Property(x => x.StartTime).IsRequired();
             e.Property(x => x.EndTime).IsRequired();
             e.Property(x => x.Notes).HasColumnType("text");
+            e.Property(x => x.AppointmentNo).HasMaxLength(50);
+            e.Property(x => x.BookingSource).HasMaxLength(50).HasDefaultValue("manual");
             e.Property(x => x.RowVersion).HasDefaultValue(1).IsConcurrencyToken();
 
-            // Optimistic lock: doctor+branch+start_time unique (aktif randevular)
-            // Status 6=İptal, 7=Gelmedi hariç tutulur
+            // Slot çakışması: terminal durum kodları (LEFT=4, CANCELLED=6, NO_SHOW=8) hariç
             e.HasIndex(x => new { x.DoctorId, x.BranchId, x.StartTime })
              .IsUnique()
-             .HasFilter("\"Status\" NOT IN (6, 7)")
+             .HasFilter("\"StatusId\" NOT IN (4, 6, 8)")
              .HasDatabaseName("ix_appointments_slot_unique");
 
-            // Sorgu index'leri
             e.HasIndex(x => new { x.BranchId, x.StartTime })
              .HasDatabaseName("ix_appointments_branch_start");
             e.HasIndex(x => new { x.DoctorId, x.StartTime })
              .HasDatabaseName("ix_appointments_doctor_start");
 
-            // Audit fields
             e.Property(x => x.TenantId).IsRequired();
 
             e.HasOne(x => x.Branch)
@@ -629,12 +686,72 @@ public class AppDbContext : DbContext
             e.HasOne(x => x.Patient)
              .WithMany()
              .HasForeignKey(x => x.PatientId)
+             .IsRequired(false)
              .OnDelete(DeleteBehavior.Restrict);
 
             e.HasOne(x => x.Doctor)
              .WithMany()
              .HasForeignKey(x => x.DoctorId)
              .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Status)
+             .WithMany()
+             .HasForeignKey(x => x.StatusId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.AppointmentType)
+             .WithMany()
+             .HasForeignKey(x => x.AppointmentTypeId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Specialization)
+             .WithMany()
+             .HasForeignKey(x => x.SpecializationId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── DoctorSchedule ────────────────────────────────────────────────
+        m.Entity<DoctorSchedule>(e =>
+        {
+            e.ToTable("doctor_schedules");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.HasIndex(x => new { x.DoctorId, x.BranchId, x.DayOfWeek })
+             .IsUnique()
+             .HasDatabaseName("ix_doctor_schedules_unique");
+            e.HasOne(x => x.Doctor).WithMany().HasForeignKey(x => x.DoctorId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── DoctorSpecialDay ──────────────────────────────────────────────
+        m.Entity<DoctorSpecialDay>(e =>
+        {
+            e.ToTable("doctor_special_days");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.Reason).HasMaxLength(200);
+            e.Property(x => x.Type).HasConversion<int>();
+            e.HasIndex(x => new { x.DoctorId, x.BranchId, x.SpecificDate })
+             .IsUnique()
+             .HasDatabaseName("ix_doctor_special_days_unique");
+            e.HasOne(x => x.Doctor).WithMany().HasForeignKey(x => x.DoctorId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── DoctorOnCallSettings ──────────────────────────────────────────
+        m.Entity<DoctorOnCallSettings>(e =>
+        {
+            e.ToTable("doctor_on_call_settings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PeriodType).HasConversion<int>();
+            e.HasIndex(x => new { x.DoctorId, x.BranchId })
+             .IsUnique()
+             .HasDatabaseName("ix_doctor_on_call_settings_unique");
+            e.HasOne(x => x.Doctor).WithMany().HasForeignKey(x => x.DoctorId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Cascade);
         });
 
         // ── TreatmentPlan ──────────────────────────────────────────────────
@@ -1126,6 +1243,22 @@ public class AppDbContext : DbContext
 
             e.Property(x => x.PrimaryColor).HasMaxLength(7).HasDefaultValue("#2563eb");
             e.Property(x => x.LogoUrl).HasMaxLength(500);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── BranchCalendarSettings ────────────────────────────────────────
+        m.Entity<BranchCalendarSettings>(e =>
+        {
+            e.ToTable("branch_calendar_settings");
+            e.HasKey(x => x.BranchId);
+
+            e.Property(x => x.SlotIntervalMinutes).HasDefaultValue(30);
+            e.Property(x => x.DayStartHour).HasDefaultValue(8);
+            e.Property(x => x.DayEndHour).HasDefaultValue(20);
 
             e.HasOne(x => x.Branch)
              .WithMany()

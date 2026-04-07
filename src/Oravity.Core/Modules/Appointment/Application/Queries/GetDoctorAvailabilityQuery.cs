@@ -45,8 +45,8 @@ public class GetDoctorAvailabilityQueryHandler
                 a.DoctorId  == request.DoctorId &&
                 a.StartTime >= dayStart &&
                 a.StartTime <  dayEnd &&
-                a.Status    != AppointmentStatus.Cancelled &&
-                a.Status    != AppointmentStatus.NoShow);
+                a.StatusId  != AppointmentStatus.WellKnownIds.Cancelled &&
+                a.StatusId  != AppointmentStatus.WellKnownIds.NoShow);
 
         if (branchId.HasValue)
             existingQuery = existingQuery.Where(a => a.BranchId == branchId.Value);

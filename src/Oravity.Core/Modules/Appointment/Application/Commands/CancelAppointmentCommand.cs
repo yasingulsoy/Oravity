@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Oravity.Core.Modules.Appointment.Application;
 using Oravity.Infrastructure.Database;
+using Oravity.SharedKernel.Entities;
 using Oravity.SharedKernel.Exceptions;
 using Oravity.SharedKernel.Interfaces;
 
@@ -34,7 +35,9 @@ public class CancelAppointmentCommandHandler : IRequestHandler<CancelAppointment
         if (_tenant.IsBranchLevel && appointment.BranchId != _tenant.BranchId)
             throw new ForbiddenException("Bu randevuya erişim yetkiniz bulunmuyor.");
 
-        appointment.Cancel(request.Reason);
+        appointment.SetStatus(AppointmentStatus.WellKnownIds.Cancelled);
+        if (!string.IsNullOrWhiteSpace(request.Reason))
+            appointment.AddNote(request.Reason);
         await _db.SaveChangesAsync(cancellationToken);
 
         await _broadcast.BroadcastAsync(

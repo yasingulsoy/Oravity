@@ -35,7 +35,7 @@ public class DoctorPerformanceReportQueryHandler : IRequestHandler<DoctorPerform
         // Tamamlanan randevular — hekim bazında
         var apptQuery = _db.Appointments
             .Where(a => a.Branch.CompanyId == _tenant.CompanyId
-                     && a.Status == AppointmentStatus.Completed
+                     && a.StatusId == AppointmentStatus.WellKnownIds.Completed
                      && a.StartTime >= startUtc
                      && a.StartTime < endUtc);
 

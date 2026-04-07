@@ -49,8 +49,8 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
                 a.BranchId  == branchId &&
                 a.StartTime <  request.EndTime.ToUniversalTime() &&
                 a.EndTime   >  request.StartTime.ToUniversalTime() &&
-                a.Status != AppointmentStatus.Cancelled &&
-                a.Status != AppointmentStatus.NoShow,
+                a.StatusId  != AppointmentStatus.WellKnownIds.Cancelled &&
+                a.StatusId  != AppointmentStatus.WellKnownIds.NoShow,
                 cancellationToken);
 
         if (conflict)
@@ -60,6 +60,7 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
             branchId:  branchId,
             patientId: request.PatientId,
             doctorId:  request.DoctorId,
+            statusId:  AppointmentStatus.WellKnownIds.Planned,
             startTime: request.StartTime,
             endTime:   request.EndTime,
             notes:     request.Notes);

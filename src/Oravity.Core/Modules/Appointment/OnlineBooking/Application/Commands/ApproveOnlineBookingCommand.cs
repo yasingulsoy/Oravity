@@ -48,6 +48,7 @@ public class ApproveOnlineBookingCommandHandler
             branchId:  bookingRequest.BranchId,
             patientId: bookingRequest.PatientId ?? 0,
             doctorId:  bookingRequest.DoctorId,
+            statusId:  AppointmentStatus.WellKnownIds.Confirmed,
             startTime: startTime,
             endTime:   endTime);
 

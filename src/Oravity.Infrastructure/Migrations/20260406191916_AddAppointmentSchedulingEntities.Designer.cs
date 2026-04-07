@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Oravity.Infrastructure.Database;
@@ -11,9 +12,11 @@ using Oravity.Infrastructure.Database;
 namespace Oravity.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260406191916_AddAppointmentSchedulingEntities")]
+    partial class AddAppointmentSchedulingEntities
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -141,7 +144,7 @@ namespace Oravity.Infrastructure.Migrations
                     b.HasIndex("DoctorId", "BranchId", "StartTime")
                         .IsUnique()
                         .HasDatabaseName("ix_appointments_slot_unique")
-                        .HasFilter("\"StatusId\" NOT IN (4, 6, 8)");
+                        .HasFilter("\"StatusId\" NOT IN (4, 6, 10)");
 
                     b.ToTable("appointments", (string)null);
                 });
@@ -474,34 +477,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.HasIndex("VerticalId");
 
                     b.ToTable("branches", (string)null);
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.BranchCalendarSettings", b =>
-                {
-                    b.Property<long>("BranchId")
-                        .HasColumnType("bigint");
-
-                    b.Property<int>("DayEndHour")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(20);
-
-                    b.Property<int>("DayStartHour")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(8);
-
-                    b.Property<int>("SlotIntervalMinutes")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(30);
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("BranchId");
-
-                    b.ToTable("branch_calendar_settings", (string)null);
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.BranchOnlineBookingSettings", b =>
@@ -5269,17 +5244,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("Company");
 
                     b.Navigation("Vertical");
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.BranchCalendarSettings", b =>
-                {
-                    b.HasOne("Oravity.SharedKernel.Entities.Branch", "Branch")
-                        .WithMany()
-                        .HasForeignKey("BranchId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Branch");
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.BranchOnlineBookingSettings", b =>

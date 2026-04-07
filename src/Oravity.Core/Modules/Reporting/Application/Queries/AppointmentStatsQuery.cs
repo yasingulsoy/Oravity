@@ -42,17 +42,17 @@ public class AppointmentStatsQueryHandler : IRequestHandler<AppointmentStatsQuer
         else if (_tenant.BranchId > 0)
             query = query.Where(a => a.BranchId == _tenant.BranchId);
 
-        // Status grupları
+        // StatusId bazında gruplama
         var groups = await query
-            .GroupBy(a => a.Status)
-            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .GroupBy(a => a.StatusId)
+            .Select(g => new { StatusId = g.Key, Count = g.Count() })
             .ToListAsync(ct);
 
         var total = groups.Sum(g => g.Count);
 
-        // Ortalama randevu süresi (dakika) — sadece tamamlananlar, bellek içi
+        // Ortalama randevu süresi (dakika) — sadece tamamlananlar
         var completedTimes = await query
-            .Where(a => a.Status == AppointmentStatus.Completed)
+            .Where(a => a.StatusId == AppointmentStatus.WellKnownIds.Completed)
             .Select(a => new { a.StartTime, a.EndTime })
             .ToListAsync(ct);
         var avgMinutes = completedTimes.Count > 0
@@ -61,11 +61,7 @@ public class AppointmentStatsQueryHandler : IRequestHandler<AppointmentStatsQuer
 
         // Gün bazında istatistik
         var byDayRaw = await query
-            .Select(a => new
-            {
-                Date      = a.StartTime.Date,
-                a.Status
-            })
+            .Select(a => new { Date = a.StartTime.Date, a.StatusId })
             .ToListAsync(ct);
 
         var byDay = byDayRaw
@@ -73,32 +69,33 @@ public class AppointmentStatsQueryHandler : IRequestHandler<AppointmentStatsQuer
             .Select(g => new AppointmentByDayLine(
                 DateOnly.FromDateTime(g.Key),
                 g.Count(),
-                g.Count(a => a.Status == AppointmentStatus.Completed),
-                g.Count(a => a.Status == AppointmentStatus.NoShow)))
+                g.Count(a => a.StatusId == AppointmentStatus.WellKnownIds.Completed),
+                g.Count(a => a.StatusId == AppointmentStatus.WellKnownIds.NoShow)))
             .OrderBy(d => d.Date)
             .ToList();
 
         // Status label haritası
-        var statusLabels = new Dictionary<AppointmentStatus, string>
+        var statusLabels = new Dictionary<int, string>
         {
-            [AppointmentStatus.Planned]   = "Planlandı",
-            [AppointmentStatus.Confirmed] = "Onaylandı",
-            [AppointmentStatus.Arrived]   = "Geldi",
-            [AppointmentStatus.InRoom]    = "Odaya Alındı",
-            [AppointmentStatus.Completed] = "Tamamlandı",
-            [AppointmentStatus.Cancelled] = "İptal",
-            [AppointmentStatus.NoShow]    = "Gelmedi"
+            [AppointmentStatus.WellKnownIds.Planned]   = "Planlandı",
+            [AppointmentStatus.WellKnownIds.Confirmed] = "Onaylandı",
+            [AppointmentStatus.WellKnownIds.Arrived]   = "Geldi",
+            [AppointmentStatus.WellKnownIds.InRoom]    = "Odaya Alındı",
+            [AppointmentStatus.WellKnownIds.Left]      = "Ayrıldı",
+            [AppointmentStatus.WellKnownIds.Cancelled] = "İptal",
+            [AppointmentStatus.WellKnownIds.Completed] = "Tamamlandı",
+            [AppointmentStatus.WellKnownIds.NoShow]    = "Gelmedi"
         };
 
         var byStatus = groups.Select(g => new AppointmentStatusSummary(
-            g.Status,
-            statusLabels.GetValueOrDefault(g.Status, g.Status.ToString()),
+            g.StatusId,
+            statusLabels.GetValueOrDefault(g.StatusId, g.StatusId.ToString()),
             g.Count,
             total > 0 ? Math.Round((decimal)g.Count / total * 100, 1) : 0m))
             .OrderBy(s => s.Status)
             .ToList();
 
-        var noShowCount = groups.FirstOrDefault(g => g.Status == AppointmentStatus.NoShow)?.Count ?? 0;
+        var noShowCount = groups.FirstOrDefault(g => g.StatusId == AppointmentStatus.WellKnownIds.NoShow)?.Count ?? 0;
         var noShowRate  = total > 0 ? Math.Round((decimal)noShowCount / total * 100, 1) : 0m;
 
         return new AppointmentStatsReport(

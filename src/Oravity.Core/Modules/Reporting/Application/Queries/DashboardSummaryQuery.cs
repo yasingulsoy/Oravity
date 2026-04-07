@@ -64,14 +64,14 @@ public class DashboardSummaryQueryHandler : IRequestHandler<DashboardSummaryQuer
             .Where(a => a.BranchId == _tenant.BranchId
                      && a.StartTime >= todayUtcStart
                      && a.StartTime < todayUtcEnd)
-            .GroupBy(a => a.Status)
-            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .GroupBy(a => a.StatusId)
+            .Select(g => new { StatusId = g.Key, Count = g.Count() })
             .ToListAsync(ct);
 
         var apptTotal     = apptGroups.Sum(g => g.Count);
-        var apptCompleted = apptGroups.Where(g => g.Status == AppointmentStatus.Completed).Sum(g => g.Count);
-        var apptNoShow    = apptGroups.Where(g => g.Status == AppointmentStatus.NoShow).Sum(g => g.Count);
-        var apptCancelled = apptGroups.Where(g => g.Status == AppointmentStatus.Cancelled).Sum(g => g.Count);
+        var apptCompleted = apptGroups.Where(g => g.StatusId == AppointmentStatus.WellKnownIds.Completed).Sum(g => g.Count);
+        var apptNoShow    = apptGroups.Where(g => g.StatusId == AppointmentStatus.WellKnownIds.NoShow).Sum(g => g.Count);
+        var apptCancelled = apptGroups.Where(g => g.StatusId == AppointmentStatus.WellKnownIds.Cancelled).Sum(g => g.Count);
         var apptPending   = apptTotal - apptCompleted - apptNoShow - apptCancelled;
 
         var appointments = new AppointmentTodaySummary(
