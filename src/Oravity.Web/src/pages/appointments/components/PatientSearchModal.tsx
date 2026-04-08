@@ -111,6 +111,7 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
         firstName: quickFirstName.trim(),
         lastName: quickLastName.trim(),
         phone: quickPhone.trim() || undefined,
+        branchId: range?.branchId,
       }),
     onSuccess: (res) => {
       const newPatient = res.data;

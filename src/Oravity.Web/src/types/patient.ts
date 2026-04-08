@@ -59,6 +59,7 @@ export interface PatientListRequest {
 export interface CreatePatientRequest {
   firstName: string;
   lastName: string;
+  branchId?: number;
   tcNumber?: string;
   passportNo?: string;
   motherName?: string;

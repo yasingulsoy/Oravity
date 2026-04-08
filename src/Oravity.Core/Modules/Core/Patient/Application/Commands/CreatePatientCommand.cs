@@ -20,7 +20,8 @@ public record CreatePatientCommand(
     string? TcNumber,
     string? Address,
     string? BloodType,
-    string? PreferredLanguageCode
+    string? PreferredLanguageCode,
+    long? ExplicitBranchId = null
 ) : IRequest<PatientResponse>;
 
 public class CreatePatientCommandHandler : IRequestHandler<CreatePatientCommand, PatientResponse>
@@ -46,9 +47,10 @@ public class CreatePatientCommandHandler : IRequestHandler<CreatePatientCommand,
         if (!_tenantContext.IsAuthenticated)
             throw new UnauthorizedException();
 
-        var branchId = _tenantContext.BranchId;
+        // Explicit branchId > tenant branch > company fallback
+        var branchId = request.ExplicitBranchId ?? _tenantContext.BranchId;
 
-        if (branchId is null && _tenantContext.IsCompanyAdmin && _tenantContext.CompanyId.HasValue)
+        if (branchId is null && _tenantContext.CompanyId.HasValue)
         {
             branchId = await _db.Branches
                 .Where(b => b.CompanyId == _tenantContext.CompanyId.Value && b.IsActive)

@@ -85,7 +85,8 @@ public class PatientsController : ControllerBase
             request.TcNumber,
             request.Address,
             request.BloodType,
-            request.PreferredLanguageCode));
+            request.PreferredLanguageCode,
+            request.BranchId));
 
         return CreatedAtAction(nameof(GetById), new { publicId = result.PublicId }, result);
     }
@@ -164,7 +165,8 @@ public record CreatePatientRequest(
     string? TcNumber,
     string? Address,
     string? BloodType,
-    string? PreferredLanguageCode
+    string? PreferredLanguageCode,
+    long? BranchId = null
 );
 
 /// <summary>Hasta güncelleme isteği</summary>
