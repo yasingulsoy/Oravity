@@ -9,20 +9,23 @@ interface CalendarEvent {
 
 export function useCalendarSocket(onEvent: (event: CalendarEvent) => void) {
   const connectionRef = useRef<signalR.HubConnection | null>(null);
-  const accessToken = useAuthStore((s) => s.accessToken);
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
 
   useEffect(() => {
+    const { accessToken } = useAuthStore.getState();
     if (!accessToken) return;
 
     const connection = new signalR.HubConnectionBuilder()
       .withUrl('/hubs/calendar', {
-        accessTokenFactory: () => accessToken,
+        // Always read the latest token from the store — handles token refresh transparently
+        accessTokenFactory: () => useAuthStore.getState().accessToken ?? '',
       })
-      .withAutomaticReconnect()
+      .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
       .build();
 
     connection.on('AppointmentChanged', (event: CalendarEvent) => {
-      onEvent(event);
+      onEventRef.current(event);
     });
 
     connection
@@ -34,7 +37,7 @@ export function useCalendarSocket(onEvent: (event: CalendarEvent) => void) {
     return () => {
       connection.stop();
     };
-  }, [accessToken, onEvent]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return connectionRef;
 }
