@@ -265,6 +265,7 @@ export function AppointmentCalendarPage() {
           slotIntervalMinutes={settings.slotIntervalMinutes}
           dayStartHour={settings.dayStartHour}
           dayEndHour={settings.dayEndHour}
+          viewDate={currentDate}
           onRangeSelect={handleRangeSelect}
           onAppointmentClick={handleAppointmentClick}
         />

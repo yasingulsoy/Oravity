@@ -17,6 +17,7 @@ interface CalendarGridProps {
   slotIntervalMinutes?: number;
   dayStartHour?: number;
   dayEndHour?: number;
+  viewDate: Date;
   onRangeSelect: (doctorId: number, branchId: number, startTime: string, endTime: string) => void;
   onAppointmentClick: (appointment: Appointment) => void;
 }
@@ -72,6 +73,7 @@ export function CalendarGrid({
   slotIntervalMinutes = 30,
   dayStartHour = 8,
   dayEndHour = 20,
+  viewDate,
   onRangeSelect,
   onAppointmentClick,
 }: CalendarGridProps) {
@@ -92,6 +94,16 @@ export function CalendarGrid({
   const nowLineTop = showNowLine
     ? ((nowMinutes - dayStart) / slotIntervalMinutes) * slotHeight
     : null;
+
+  // Past-slot cutoff: future day → null (all bookable), today → nowMinutes, past day → Infinity
+  const today = new Date();
+  const isToday =
+    viewDate.getFullYear() === today.getFullYear() &&
+    viewDate.getMonth() === today.getMonth() &&
+    viewDate.getDate() === today.getDate();
+  const isPastDay =
+    viewDate < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const pastCutoffMinutes: number | null = isPastDay ? Infinity : isToday ? nowMinutes : null;
 
   // Stable ref to avoid stale closure in mouseup handler
   const dragRef = useRef<DragState | null>(null);
@@ -238,6 +250,8 @@ export function CalendarGrid({
                 )}
                 {timeSlots.map((minutes) => {
                   const { type: slotType, breakLabel } = getSlotInfo(minutes, doctor);
+                  const isPast = pastCutoffMinutes !== null && minutes < pastCutoffMinutes;
+                  const isBookable = slotType === 'open' && !isPast;
                   const isCurrentDragCol = isDragging && dragState?.doctorId === doctor.doctorId && dragState?.branchId === doctor.branchId;
                   // Break etiketini sadece mola bloğunun ilk slotunda göster
                   const isBreakStart = slotType === 'break' && (() => {
@@ -251,13 +265,15 @@ export function CalendarGrid({
                         'border-b relative',
                         slotType === 'closed' && 'bg-gray-100',
                         slotType === 'break' && 'bg-amber-50',
-                        slotType === 'open' && !isDragging && 'bg-white hover:bg-blue-50/50 cursor-crosshair',
-                        slotType === 'open' && isDragging && isCurrentDragCol && 'bg-white cursor-crosshair',
-                        slotType === 'open' && isDragging && !isCurrentDragCol && 'bg-white',
+                        isPast && slotType === 'open' && 'bg-gray-50',
+                        isBookable && !isDragging && 'bg-white hover:bg-blue-50/50 cursor-crosshair',
+                        isBookable && isDragging && isCurrentDragCol && 'bg-white cursor-crosshair',
+                        isBookable && isDragging && !isCurrentDragCol && 'bg-white',
+                        !isBookable && slotType === 'open' && 'cursor-default',
                       )}
                       style={{ height: `${slotHeight}px` }}
                       onMouseDown={() => {
-                        if (slotType === 'open') {
+                        if (isBookable) {
                           setDragState({
                             doctorId: doctor.doctorId,
                             branchId: doctor.branchId,
@@ -271,7 +287,7 @@ export function CalendarGrid({
                           isDragging &&
                           dragState?.doctorId === doctor.doctorId &&
                           dragState?.branchId === doctor.branchId &&
-                          slotType === 'open'
+                          isBookable
                         ) {
                           setDragState((prev) => prev ? { ...prev, currentMinutes: minutes } : null);
                         }

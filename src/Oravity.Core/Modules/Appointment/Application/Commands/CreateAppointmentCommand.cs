@@ -46,6 +46,10 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
         var branchId = request.ExplicitBranchId ?? _tenant.BranchId
             ?? throw new ForbiddenException("Randevu kaydı için şube bağlamı gereklidir.");
 
+        // ── Geçmiş zaman kontrolü ──────────────────────────────────────────
+        if (request.StartTime.ToUniversalTime() < DateTime.UtcNow)
+            throw new InvalidOperationException("Geçmiş bir saate randevu oluşturulamaz.");
+
         // ── Katman 1: Slot çakışma kontrolü (uygulama seviyesi) ────────────
         var conflict = await _db.Appointments
             .AnyAsync(a =>
