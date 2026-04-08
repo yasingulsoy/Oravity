@@ -8,6 +8,8 @@ interface AppointmentBlockProps {
   slotHeight: number;
   slotMinutes: number;
   dayStart: number; // minutes from midnight, e.g. 480 for 08:00
+  lane?: number;
+  totalLanes?: number;
   onClick: (appointment: Appointment) => void;
 }
 
@@ -17,6 +19,8 @@ export function AppointmentBlock({
   slotHeight,
   slotMinutes,
   dayStart,
+  lane = 0,
+  totalLanes = 1,
   onClick,
 }: AppointmentBlockProps) {
   const status = statuses.find((s) => s.id === appointment.statusId);
@@ -48,12 +52,14 @@ export function AppointmentBlock({
       type="button"
       onClick={() => onClick(appointment)}
       className={cn(
-        'absolute inset-x-1 z-10 overflow-hidden rounded-md px-1.5 py-0.5 text-left text-xs',
+        'absolute z-10 overflow-hidden rounded-md px-1.5 py-0.5 text-left text-xs',
         'cursor-pointer hover:opacity-90 transition-opacity'
       )}
       style={{
         top: `${top}px`,
         height: `${height}px`,
+        left: `calc(${(lane / totalLanes) * 100}% + 2px)`,
+        width: `calc(${(1 / totalLanes) * 100}% - 4px)`,
         backgroundColor: appointment.isUrgent
           ? '#fef2f2'
           : status?.containerColor ?? '#e5e7eb',

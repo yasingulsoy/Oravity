@@ -29,6 +29,8 @@ interface SelectedRange {
   startTime: string;
   endTime: string;
   date: Date;
+  dayStartHour: number;
+  dayEndHour: number;
 }
 
 export function AppointmentCalendarPage() {
@@ -163,6 +165,8 @@ export function AppointmentCalendarPage() {
       startTime,
       endTime,
       date: currentDate,
+      dayStartHour: settings.dayStartHour,
+      dayEndHour: settings.dayEndHour,
     });
     setCreateOpen(true);
   }

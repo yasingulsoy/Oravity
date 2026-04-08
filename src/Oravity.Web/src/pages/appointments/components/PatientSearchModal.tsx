@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Search, X, User, UserPlus, ChevronLeft, AlertTriangle, Clock } from 'lucide-react';
@@ -31,6 +31,8 @@ interface SelectedRange {
   startTime: string; // "HH:mm"
   endTime: string;   // "HH:mm"
   date: Date;
+  dayStartHour: number;
+  dayEndHour: number;
 }
 
 interface PatientSearchModalProps {
@@ -56,6 +58,8 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
   const [notes, setNotes] = useState('');
   const [isUrgent, setIsUrgent] = useState(false);
   const [isEarlierRequest, setIsEarlierRequest] = useState(false);
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
 
   // --- Quick register state ---
   const [quickFirstName, setQuickFirstName] = useState('');
@@ -70,6 +74,10 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
 
   // Reset on open/close
   useEffect(() => {
+    if (open && range) {
+      setStartTime(range.startTime);
+      setEndTime(range.endTime);
+    }
     if (!open) {
       setSearch('');
       setDebouncedSearch('');
@@ -78,12 +86,28 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
       setNotes('');
       setIsUrgent(false);
       setIsEarlierRequest(false);
+      setStartTime('');
+      setEndTime('');
       setMode('search');
       setQuickFirstName('');
       setQuickLastName('');
       setQuickPhone('');
     }
-  }, [open]);
+  }, [open, range]);
+
+  // Time options: 10-min intervals from dayStart to dayEnd
+  const timeOptions = useMemo(() => {
+    if (!range) return [];
+    const options: string[] = [];
+    const start = range.dayStartHour * 60;
+    const end = range.dayEndHour * 60;
+    for (let m = start; m <= end; m += 10) {
+      const h = Math.floor(m / 60).toString().padStart(2, '0');
+      const min = (m % 60).toString().padStart(2, '0');
+      options.push(`${h}:${min}`);
+    }
+    return options;
+  }, [range]);
 
   const { data: appointmentTypes } = useQuery({
     queryKey: ['appointments', 'types'],
@@ -126,11 +150,11 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
       if (!range || !selectedPatient) throw new Error('Eksik bilgi');
 
       const startDate = new Date(range.date);
-      const [sh, sm] = range.startTime.split(':').map(Number);
+      const [sh, sm] = startTime.split(':').map(Number);
       startDate.setHours(sh, sm, 0, 0);
 
       const endDate = new Date(range.date);
-      const [eh, em] = range.endTime.split(':').map(Number);
+      const [eh, em] = endTime.split(':').map(Number);
       endDate.setHours(eh, em, 0, 0);
 
       return appointmentsApi.create({
@@ -245,7 +269,7 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
         </DialogHeader>
 
         {/* Slot summary */}
-        <div className="rounded-md bg-muted p-3 text-sm space-y-1">
+        <div className="rounded-md bg-muted p-3 text-sm space-y-2">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Hekim</span>
             <span className="font-medium">{range.doctorName}</span>
@@ -254,9 +278,45 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
             <span className="text-muted-foreground">Tarih</span>
             <span className="font-medium">{dateLabel}</span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Saat</span>
-            <span className="font-medium">{range.startTime} - {range.endTime}</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted-foreground shrink-0">Saat</span>
+            <div className="flex items-center gap-1.5">
+              {/* Start time */}
+              <Select value={startTime} onValueChange={(v) => {
+                setStartTime(v);
+                // If end <= start, push end forward by 10 min
+                if (endTime && v >= endTime) {
+                  const [h, m] = v.split(':').map(Number);
+                  const next = h * 60 + m + 10;
+                  const nh = Math.floor(next / 60).toString().padStart(2, '0');
+                  const nm = (next % 60).toString().padStart(2, '0');
+                  setEndTime(`${nh}:${nm}`);
+                }
+              }}>
+                <SelectTrigger className="h-7 w-20 text-xs">
+                  <span>{startTime || '--:--'}</span>
+                </SelectTrigger>
+                <SelectContent>
+                  {timeOptions.slice(0, -1).map((t) => (
+                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-muted-foreground">–</span>
+              {/* End time */}
+              <Select value={endTime} onValueChange={setEndTime}>
+                <SelectTrigger className="h-7 w-20 text-xs">
+                  <span>{endTime || '--:--'}</span>
+                </SelectTrigger>
+                <SelectContent>
+                  {timeOptions
+                    .filter((t) => t > startTime)
+                    .map((t) => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 
@@ -437,7 +497,7 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
           </Button>
           <Button
             type="button"
-            disabled={!selectedPatient || createMutation.isPending}
+            disabled={!selectedPatient || !startTime || !endTime || endTime <= startTime || createMutation.isPending}
             onClick={() => createMutation.mutate()}
           >
             {createMutation.isPending ? 'Kaydediliyor...' : 'Randevu Oluştur'}

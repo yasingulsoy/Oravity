@@ -10,6 +10,43 @@ function getCurrentMinutes(): number {
 
 const PX_PER_MINUTE = 40 / 30;
 
+/** Assigns lane indices to appointments so overlapping ones render side-by-side. */
+function assignLanes(appointments: Appointment[]): Map<string, { lane: number; totalLanes: number }> {
+  const sorted = [...appointments].sort(
+    (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+  );
+
+  // Each "group" is a set of mutually-overlapping appointments
+  const groups: Appointment[][] = [];
+
+  for (const apt of sorted) {
+    const aptStart = new Date(apt.startTime).getTime();
+    const aptEnd = new Date(apt.endTime).getTime();
+
+    // Find the first group where this apt overlaps at least one member
+    const target = groups.find((g) =>
+      g.some((a) => {
+        const s = new Date(a.startTime).getTime();
+        const e = new Date(a.endTime).getTime();
+        return aptStart < e && aptEnd > s;
+      })
+    );
+
+    if (target) {
+      target.push(apt);
+    } else {
+      groups.push([apt]);
+    }
+  }
+
+  const result = new Map<string, { lane: number; totalLanes: number }>();
+  for (const group of groups) {
+    const totalLanes = group.length;
+    group.forEach((apt, i) => result.set(apt.publicId, { lane: i, totalLanes }));
+  }
+  return result;
+}
+
 interface CalendarGridProps {
   doctors: DoctorCalendarInfo[];
   appointments: Appointment[];
@@ -311,17 +348,25 @@ export function CalendarGrid({
                 )}
 
                 {/* Appointment blocks */}
-                {doctorApts.map((apt) => (
-                  <AppointmentBlock
-                    key={apt.publicId}
-                    appointment={apt}
-                    statuses={statuses}
-                    slotHeight={slotHeight}
-                    slotMinutes={slotIntervalMinutes}
-                    dayStart={dayStart}
-                    onClick={onAppointmentClick}
-                  />
-                ))}
+                {(() => {
+                  const lanes = assignLanes(doctorApts);
+                  return doctorApts.map((apt) => {
+                    const laneInfo = lanes.get(apt.publicId) ?? { lane: 0, totalLanes: 1 };
+                    return (
+                      <AppointmentBlock
+                        key={apt.publicId}
+                        appointment={apt}
+                        statuses={statuses}
+                        slotHeight={slotHeight}
+                        slotMinutes={slotIntervalMinutes}
+                        dayStart={dayStart}
+                        lane={laneInfo.lane}
+                        totalLanes={laneInfo.totalLanes}
+                        onClick={onAppointmentClick}
+                      />
+                    );
+                  });
+                })()}
               </div>
             </div>
           );
