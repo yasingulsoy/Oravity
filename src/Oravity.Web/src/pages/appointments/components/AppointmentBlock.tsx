@@ -80,6 +80,11 @@ export function AppointmentBlock({
       <div className="truncate leading-tight">
         {appointment.patientName ?? 'Isimsiz Hasta'}
       </div>
+      {appointment.appointmentTypeName && (
+        <div className="truncate text-[10px] opacity-70 leading-tight">
+          {appointment.appointmentTypeName}
+        </div>
+      )}
       {appointment.notes && height > slotHeight && (
         <div className="truncate text-[10px] opacity-75 leading-tight">
           {appointment.notes}

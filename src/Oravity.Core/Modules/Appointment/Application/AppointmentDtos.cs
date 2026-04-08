@@ -20,7 +20,8 @@ public record AppointmentResponse(
     bool IsUrgent,
     bool IsEarlierRequest,
     int RowVersion,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    string? AppointmentTypeName = null
 );
 
 /// <summary>SignalR broadcast için hafif DTO</summary>
@@ -89,7 +90,8 @@ public static class AppointmentMappings
         a.DoctorId,
         a.Doctor?.FullName,
         a.StartTime, a.EndTime, a.StatusId, StatusLabel(a.StatusId),
-        a.Notes, a.IsUrgent, a.IsEarlierRequest, a.RowVersion, a.CreatedAt);
+        a.Notes, a.IsUrgent, a.IsEarlierRequest, a.RowVersion, a.CreatedAt,
+        a.AppointmentType?.Name);
 
     public static AppointmentBroadcastDto ToBroadcast(AppointmentEntity a) => new(
         a.PublicId, a.BranchId, a.PatientId, a.DoctorId,

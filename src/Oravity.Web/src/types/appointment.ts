@@ -12,6 +12,7 @@ export interface Appointment {
   notes?: string;
   isUrgent: boolean;
   isEarlierRequest: boolean;
+  appointmentTypeName: string | null;
   rowVersion: number;
   createdAt: string;
 }
