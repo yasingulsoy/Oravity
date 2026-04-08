@@ -62,7 +62,28 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
                 cancellationToken);
 
         if (conflict)
-            throw new SlotConflictException("Bu slot dolu. Lütfen başka bir zaman seçin.");
+        {
+            // Platform admin veya appointment.create_overlap iznine sahip kullanıcı üst üste randevu yazabilir
+            var canOverlap = _tenant.IsPlatformAdmin;
+
+            if (!canOverlap)
+                canOverlap = await _db.UserRoleAssignments
+                    .Where(a => a.UserId == _tenant.UserId && a.IsActive
+                                && (a.ExpiresAt == null || a.ExpiresAt > DateTime.UtcNow))
+                    .SelectMany(a => a.RoleTemplate.RoleTemplatePermissions)
+                    .AnyAsync(rtp => rtp.Permission.Code == "appointment.create_overlap",
+                              cancellationToken);
+
+            if (!canOverlap)
+                canOverlap = await _db.UserPermissionOverrides
+                    .AnyAsync(o => o.UserId == _tenant.UserId
+                                   && o.Permission.Code == "appointment.create_overlap"
+                                   && o.IsGranted,
+                              cancellationToken);
+
+            if (!canOverlap)
+                throw new SlotConflictException("Bu slot dolu. Lütfen başka bir zaman seçin.");
+        }
 
         var appointment = AppointmentEntity.Create(
             branchId:          branchId,

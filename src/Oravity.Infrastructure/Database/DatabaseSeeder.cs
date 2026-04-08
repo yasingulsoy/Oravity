@@ -146,6 +146,7 @@ public class DatabaseSeeder
             // Appointment
             ("appointment",      "view",             false),
             ("appointment",      "create",           false),
+            ("appointment",      "create_overlap",   false),
             ("appointment",      "edit",             false),
             ("appointment",      "cancel",           false),
             ("appointment",      "delete",           true),
