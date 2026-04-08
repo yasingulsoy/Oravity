@@ -262,15 +262,34 @@ export function CalendarGrid({
                 >
                   {doctor.title ? `${doctor.title} ` : ''}{doctor.fullName}
                 </span>
-                <span className="text-muted-foreground truncate leading-tight">
+                <span className="text-muted-foreground truncate leading-tight flex items-center gap-1">
                   {doctor.workStart && doctor.workEnd
                     ? `${doctor.workStart} - ${doctor.workEnd}`
                     : 'Calismiyor'}
+                  {doctor.isSpecialDay && (
+                    <span
+                      className={cn(
+                        'inline-block shrink-0 text-[9px] font-bold px-0.5 py-px rounded leading-none',
+                        doctor.specialDayType === 1 && 'bg-green-100 text-green-700',
+                        doctor.specialDayType === 2 && 'bg-blue-100 text-blue-700',
+                        doctor.specialDayType === 3 && 'bg-red-100 text-red-700',
+                      )}
+                      title={doctor.specialDayReason ?? (
+                        doctor.specialDayType === 1 ? 'Ekstra mesai' :
+                        doctor.specialDayType === 2 ? 'Saat değişikliği' : 'İzin'
+                      )}
+                    >
+                      {doctor.specialDayType === 1 ? 'EKSTRA' :
+                       doctor.specialDayType === 2 ? 'ÖZEL' : 'İZİN'}
+                    </span>
+                  )}
                 </span>
                 <span className="text-[10px] text-muted-foreground truncate leading-tight">
-                  {multibranchDoctorIds.has(doctor.doctorId)
-                    ? doctor.branchName
-                    : doctor.specializationName ?? ''}
+                  {doctor.isSpecialDay && doctor.specialDayReason
+                    ? doctor.specialDayReason
+                    : multibranchDoctorIds.has(doctor.doctorId)
+                      ? doctor.branchName
+                      : doctor.specializationName ?? ''}
                 </span>
               </div>
 

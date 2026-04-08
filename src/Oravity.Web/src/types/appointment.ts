@@ -86,6 +86,9 @@ export interface DoctorCalendarInfo {
   breakEnd: string | null;
   breakLabel: string | null;
   isOnCall: boolean;
+  isSpecialDay: boolean;
+  specialDayType: number | null; // 1=ExtraWork, 2=HourChange, 3=DayOff
+  specialDayReason: string | null;
 }
 
 export interface AccessibleBranch {

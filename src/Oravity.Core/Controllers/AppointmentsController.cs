@@ -460,7 +460,8 @@ public class AppointmentsController : ControllerBase
                 sd.BranchId,
                 sd.StartTime,
                 sd.EndTime,
-                sd.Type
+                sd.Type,
+                sd.Reason
             })
             .ToListAsync();
 
@@ -573,7 +574,10 @@ public class AppointmentsController : ControllerBase
                     BreakStart:        breakStart,
                     BreakEnd:          breakEnd,
                     BreakLabel:        breakLabel,
-                    IsOnCall:          isOnCall
+                    IsOnCall:          isOnCall,
+                    IsSpecialDay:      special != null,
+                    SpecialDayType:    special != null ? (int)special.Type : null,
+                    SpecialDayReason:  special?.Reason
                 ));
             }
         }
@@ -663,5 +667,8 @@ public record DoctorCalendarInfoResponse(
     string? BreakStart,
     string? BreakEnd,
     string? BreakLabel,
-    bool    IsOnCall
+    bool    IsOnCall,
+    bool    IsSpecialDay = false,
+    int?    SpecialDayType = null,
+    string? SpecialDayReason = null
 );
