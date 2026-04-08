@@ -125,6 +125,20 @@ public static class InfrastructureServiceRegistration
                     ValidateLifetime = true,
                     ClockSkew = TimeSpan.Zero
                 };
+                // SignalR WebSocket/SSE: token query string'den oku
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = ctx =>
+                    {
+                        var token = ctx.Request.Query["access_token"];
+                        if (!string.IsNullOrEmpty(token)
+                            && ctx.Request.Path.StartsWithSegments("/hubs"))
+                        {
+                            ctx.Token = token;
+                        }
+                        return Task.CompletedTask;
+                    }
+                };
             })
             .AddJwtBearer("PatientPortal", options =>
             {
