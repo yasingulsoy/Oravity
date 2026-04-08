@@ -21,7 +21,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select';
 import type { Patient } from '@/types/patient';
 
@@ -99,7 +98,7 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
       patientsApi.list({
         page: 1,
         pageSize: 10,
-        firstName: debouncedSearch || undefined,
+        search: debouncedSearch || undefined,
       }),
     enabled: open && debouncedSearch.length >= 2,
     select: (res) => res.data?.items ?? [],
@@ -371,33 +370,46 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
         {appointmentTypes && appointmentTypes.length > 0 && (
           <div className="space-y-2">
             <Label>Randevu Tipi</Label>
-            <Select
-              value={selectedTypeId?.toString() ?? ''}
-              onValueChange={(v) => setSelectedTypeId(v ? Number(v) : null)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Tip seçin (opsiyonel)" />
-              </SelectTrigger>
-              <SelectContent>
-                {appointmentTypes.map((t: AppointmentType) => (
-                  <SelectItem
-                    key={t.id}
-                    value={t.id.toString()}
-                    textValue={t.name}
-                  >
-                    <span className="flex items-center gap-2">
-                      {t.color && (
-                        <span
-                          className="inline-block size-2.5 rounded-full shrink-0"
-                          style={{ backgroundColor: t.color }}
-                        />
-                      )}
-                      {t.name}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {(() => {
+              const selectedType = appointmentTypes.find((t: AppointmentType) => t.id === selectedTypeId);
+              return (
+                <Select
+                  value={selectedTypeId?.toString() ?? ''}
+                  onValueChange={(v) => setSelectedTypeId(v ? Number(v) : null)}
+                >
+                  <SelectTrigger className="w-full">
+                    {selectedType ? (
+                      <span className="flex flex-1 items-center gap-2 text-sm">
+                        {selectedType.color && (
+                          <span
+                            className="inline-block size-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: selectedType.color }}
+                          />
+                        )}
+                        {selectedType.name}
+                      </span>
+                    ) : (
+                      <span className="flex-1 text-sm text-muted-foreground">Tip seçin (opsiyonel)</span>
+                    )}
+                  </SelectTrigger>
+                  <SelectContent>
+                    {appointmentTypes.map((t: AppointmentType) => (
+                      <SelectItem key={t.id} value={t.id.toString()}>
+                        <span className="flex items-center gap-2">
+                          {t.color && (
+                            <span
+                              className="inline-block size-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: t.color }}
+                            />
+                          )}
+                          {t.name}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              );
+            })()}
           </div>
         )}
 

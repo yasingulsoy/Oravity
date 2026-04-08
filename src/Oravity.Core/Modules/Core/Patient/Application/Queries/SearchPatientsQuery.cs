@@ -7,6 +7,7 @@ using Oravity.SharedKernel.Interfaces;
 namespace Oravity.Core.Modules.Core.Patient.Application.Queries;
 
 public record SearchPatientsQuery(
+    string? Search,
     string? FirstName,
     string? LastName,
     string? Phone,
@@ -41,6 +42,15 @@ public class SearchPatientsQueryHandler
             .Include(p => p.LastInstitution);
 
         q = ApplyTenantFilter(q);
+
+        if (!string.IsNullOrWhiteSpace(request.Search))
+        {
+            var term = $"%{request.Search.Trim()}%";
+            q = q.Where(p =>
+                EF.Functions.ILike(p.FirstName, term) ||
+                EF.Functions.ILike(p.LastName, term) ||
+                (p.Phone != null && EF.Functions.ILike(p.Phone, term)));
+        }
 
         if (!string.IsNullOrWhiteSpace(request.FirstName))
             q = q.Where(p => EF.Functions.ILike(p.FirstName, $"%{request.FirstName.Trim()}%"));

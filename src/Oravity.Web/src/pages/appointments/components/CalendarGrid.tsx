@@ -3,6 +3,11 @@ import type { Appointment, AppointmentStatus, DoctorCalendarInfo } from '@/types
 import { AppointmentBlock } from './AppointmentBlock';
 import { cn } from '@/lib/utils';
 
+function getCurrentMinutes(): number {
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes();
+}
+
 const PX_PER_MINUTE = 40 / 30;
 
 interface CalendarGridProps {
@@ -77,6 +82,17 @@ export function CalendarGrid({
   const [dragState, setDragState] = useState<DragState | null>(null);
   const isDragging = dragState !== null;
 
+  // Current time line
+  const [nowMinutes, setNowMinutes] = useState(getCurrentMinutes);
+  useEffect(() => {
+    const id = setInterval(() => setNowMinutes(getCurrentMinutes()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const showNowLine = nowMinutes >= dayStart && nowMinutes <= dayEnd;
+  const nowLineTop = showNowLine
+    ? ((nowMinutes - dayStart) / slotIntervalMinutes) * slotHeight
+    : null;
+
   // Stable ref to avoid stale closure in mouseup handler
   const dragRef = useRef<DragState | null>(null);
   dragRef.current = dragState;
@@ -140,19 +156,28 @@ export function CalendarGrid({
       className="overflow-x-auto border rounded-lg"
       style={{ userSelect: isDragging ? 'none' : undefined }}
     >
-      <div className="inline-flex min-w-full">
+      <div className="inline-flex min-w-full relative">
         {/* Time column */}
         <div className="sticky left-0 z-20 bg-background border-r w-16 shrink-0">
           <div className="h-16 border-b" />
-          {timeSlots.map((minutes) => (
-            <div
-              key={minutes}
-              className="border-b text-xs text-muted-foreground flex items-start justify-end pr-2 pt-0.5"
-              style={{ height: `${slotHeight}px` }}
-            >
-              {minutesToTime(minutes)}
-            </div>
-          ))}
+          <div className="relative">
+            {timeSlots.map((minutes) => (
+              <div
+                key={minutes}
+                className="border-b text-xs text-muted-foreground flex items-start justify-end pr-2 pt-0.5"
+                style={{ height: `${slotHeight}px` }}
+              >
+                {minutesToTime(minutes)}
+              </div>
+            ))}
+            {/* Red dot on time axis */}
+            {nowLineTop !== null && (
+              <span
+                className="absolute right-0 size-2 rounded-full bg-red-500 z-30 translate-x-1/2 -translate-y-1/2"
+                style={{ top: `${nowLineTop}px` }}
+              />
+            )}
+          </div>
         </div>
 
         {/* Doctor columns */}
@@ -202,6 +227,15 @@ export function CalendarGrid({
 
               {/* Slots */}
               <div className="relative">
+                {/* Current time line */}
+                {nowLineTop !== null && (
+                  <div
+                    className="absolute left-0 right-0 z-20 pointer-events-none"
+                    style={{ top: `${nowLineTop}px` }}
+                  >
+                    <div className="h-px bg-red-500 opacity-80" />
+                  </div>
+                )}
                 {timeSlots.map((minutes) => {
                   const { type: slotType, breakLabel } = getSlotInfo(minutes, doctor);
                   const isCurrentDragCol = isDragging && dragState?.doctorId === doctor.doctorId && dragState?.branchId === doctor.branchId;

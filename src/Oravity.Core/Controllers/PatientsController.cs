@@ -36,6 +36,7 @@ public class PatientsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> Search(
+        [FromQuery] string? search,
         [FromQuery] string? firstName,
         [FromQuery] string? lastName,
         [FromQuery] string? phone,
@@ -44,7 +45,7 @@ public class PatientsController : ControllerBase
         [FromQuery] int pageSize = 20)
     {
         var result = await _mediator.Send(
-            new SearchPatientsQuery(firstName, lastName, phone, tcHash, page, pageSize));
+            new SearchPatientsQuery(search, firstName, lastName, phone, tcHash, page, pageSize));
         return Ok(result);
     }
 

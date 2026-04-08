@@ -49,6 +49,7 @@ export interface Patient {
 export interface PatientListRequest {
   page: number;
   pageSize: number;
+  search?: string;
   firstName?: string;
   lastName?: string;
   phone?: string;

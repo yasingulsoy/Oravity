@@ -46,8 +46,19 @@ public class CreatePatientCommandHandler : IRequestHandler<CreatePatientCommand,
         if (!_tenantContext.IsAuthenticated)
             throw new UnauthorizedException();
 
-        var branchId = _tenantContext.BranchId
-            ?? throw new ForbiddenException("Hasta kaydı için şube bağlamı gereklidir.");
+        var branchId = _tenantContext.BranchId;
+
+        if (branchId is null && _tenantContext.IsCompanyAdmin && _tenantContext.CompanyId.HasValue)
+        {
+            branchId = await _db.Branches
+                .Where(b => b.CompanyId == _tenantContext.CompanyId.Value && b.IsActive)
+                .OrderBy(b => b.Id)
+                .Select(b => (long?)b.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        if (branchId is null)
+            throw new ForbiddenException("Hasta kaydı için şube bağlamı gereklidir.");
 
         // TC Kimlik No işle
         string? tcEncrypted = null;
@@ -68,7 +79,7 @@ public class CreatePatientCommandHandler : IRequestHandler<CreatePatientCommand,
         }
 
         var patient = PatientEntity.Create(
-            branchId: branchId,
+            branchId: branchId.Value,
             firstName: request.FirstName,
             lastName: request.LastName,
             phone: request.Phone,
