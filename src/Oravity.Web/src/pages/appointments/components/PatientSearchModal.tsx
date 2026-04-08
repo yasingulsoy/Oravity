@@ -487,7 +487,16 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
 
         {createMutation.isError && (
           <p className="text-sm text-destructive">
-            Randevu oluşturulamadı. Slot dolu olabilir veya bağlantı hatası oluştu.
+            {(() => {
+              const err = createMutation.error as { response?: { status?: number; data?: { detail?: string; title?: string } } };
+              const status = err?.response?.status;
+              const detail = err?.response?.data?.detail ?? err?.response?.data?.title;
+              if (detail) return `Hata ${status}: ${detail}`;
+              if (status === 409) return 'Bu slot dolu. Başka bir saat seçin.';
+              if (status === 400) return 'Geçersiz istek. Saati kontrol edin.';
+              if (status === 401) return 'Oturum süresi dolmuş. Sayfayı yenileyin.';
+              return `Randevu oluşturulamadı (${status ?? 'bağlantı hatası'}).`;
+            })()}
           </p>
         )}
 

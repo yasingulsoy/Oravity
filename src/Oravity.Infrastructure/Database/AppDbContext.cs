@@ -665,11 +665,9 @@ public class AppDbContext : DbContext
             e.Property(x => x.BookingSource).HasMaxLength(50).HasDefaultValue("manual");
             e.Property(x => x.RowVersion).HasDefaultValue(1).IsConcurrencyToken();
 
-            // Slot çakışması: terminal durum kodları (LEFT=4, CANCELLED=6, NO_SHOW=8) hariç
-            e.HasIndex(x => new { x.DoctorId, x.BranchId, x.StartTime })
-             .IsUnique()
-             .HasFilter("\"StatusId\" NOT IN (4, 6, 8)")
-             .HasDatabaseName("ix_appointments_slot_unique");
+            // Slot çakışması application katmanında (CreateAppointmentCommand) yönetilir.
+            // Unique index kaldırıldı: appointment.create_overlap izinli kullanıcıların
+            // aynı saat dilimine birden fazla randevu ekleyebilmesi için.
 
             e.HasIndex(x => new { x.BranchId, x.StartTime })
              .HasDatabaseName("ix_appointments_branch_start");
