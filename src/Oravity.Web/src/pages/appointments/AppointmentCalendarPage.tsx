@@ -133,10 +133,16 @@ export function AppointmentCalendarPage() {
     return selectedDoctorIds.filter((id) => validIds.has(id));
   }, [selectedDoctorIds, allDoctors]);
 
-  const visibleDoctors = useMemo(
-    () => allDoctors.filter((d) => visibleDoctorIds.includes(d.doctorId)),
-    [allDoctors, visibleDoctorIds]
-  );
+  const visibleDoctors = useMemo(() => {
+    const collator = new Intl.Collator('tr', { sensitivity: 'base' });
+    return allDoctors
+      .filter((d) => visibleDoctorIds.includes(d.doctorId))
+      .sort((a, b) => {
+        if (a.isChiefPhysician !== b.isChiefPhysician)
+          return a.isChiefPhysician ? -1 : 1;
+        return collator.compare(a.fullName, b.fullName);
+      });
+  }, [allDoctors, visibleDoctorIds]);
 
   const { data: appointmentsData, isLoading: appointmentsLoading } = useQuery({
     queryKey: ['appointments', 'for-doctors', dateStr, visibleDoctorIds],

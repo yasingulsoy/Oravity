@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import type { Appointment, AppointmentStatus, DoctorCalendarInfo } from '@/types/appointment';
+import { DoctorSpecialDayType } from '@/types/appointment';
 import { AppointmentBlock } from './AppointmentBlock';
 import { cn } from '@/lib/utils';
 
@@ -256,10 +257,13 @@ export function CalendarGrid({
                 style={{ backgroundColor: headerColor + '18' }}
               >
                 <span
-                  className="font-semibold truncate leading-tight"
+                  className="font-semibold truncate leading-tight flex items-center gap-1"
                   style={{ color: headerColor }}
-                  title={`${doctor.title ? doctor.title + ' ' : ''}${doctor.fullName}`}
+                  title={`${doctor.title ? doctor.title + ' ' : ''}${doctor.fullName}${doctor.isChiefPhysician ? ' (Başhekim)' : ''}`}
                 >
+                  {doctor.isChiefPhysician && (
+                    <span className="shrink-0 text-[9px] font-bold bg-yellow-100 text-yellow-700 px-0.5 py-px rounded leading-none">BŞ</span>
+                  )}
                   {doctor.title ? `${doctor.title} ` : ''}{doctor.fullName}
                 </span>
                 <span className="text-muted-foreground truncate leading-tight flex items-center gap-1">
@@ -270,17 +274,17 @@ export function CalendarGrid({
                     <span
                       className={cn(
                         'inline-block shrink-0 text-[9px] font-bold px-0.5 py-px rounded leading-none',
-                        doctor.specialDayType === 1 && 'bg-green-100 text-green-700',
-                        doctor.specialDayType === 2 && 'bg-blue-100 text-blue-700',
-                        doctor.specialDayType === 3 && 'bg-red-100 text-red-700',
+                        doctor.specialDayType === DoctorSpecialDayType.ExtraWork  && 'bg-green-100 text-green-700',
+                        doctor.specialDayType === DoctorSpecialDayType.HourChange && 'bg-blue-100 text-blue-700',
+                        doctor.specialDayType === DoctorSpecialDayType.DayOff     && 'bg-red-100 text-red-700',
                       )}
                       title={doctor.specialDayReason ?? (
-                        doctor.specialDayType === 1 ? 'Ekstra mesai' :
-                        doctor.specialDayType === 2 ? 'Saat değişikliği' : 'İzin'
+                        doctor.specialDayType === DoctorSpecialDayType.ExtraWork  ? 'Ekstra mesai' :
+                        doctor.specialDayType === DoctorSpecialDayType.HourChange ? 'Saat değişikliği' : 'İzin'
                       )}
                     >
-                      {doctor.specialDayType === 1 ? 'EKSTRA' :
-                       doctor.specialDayType === 2 ? 'ÖZEL' : 'İZİN'}
+                      {doctor.specialDayType === DoctorSpecialDayType.ExtraWork  ? 'EKSTRA' :
+                       doctor.specialDayType === DoctorSpecialDayType.HourChange ? 'ÖZEL' : 'İZİN'}
                     </span>
                   )}
                 </span>

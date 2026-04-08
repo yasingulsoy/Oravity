@@ -71,6 +71,12 @@ export interface Specialization {
   code: string;
 }
 
+export enum DoctorSpecialDayType {
+  ExtraWork  = 1,
+  HourChange = 2,
+  DayOff     = 3,
+}
+
 export interface DoctorCalendarInfo {
   doctorId: number;
   fullName: string;
@@ -86,8 +92,9 @@ export interface DoctorCalendarInfo {
   breakEnd: string | null;
   breakLabel: string | null;
   isOnCall: boolean;
+  isChiefPhysician: boolean;
   isSpecialDay: boolean;
-  specialDayType: number | null; // 1=ExtraWork, 2=HourChange, 3=DayOff
+  specialDayType: DoctorSpecialDayType | null;
   specialDayReason: string | null;
 }
 
