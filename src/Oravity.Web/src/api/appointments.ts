@@ -45,7 +45,7 @@ export const appointmentsApi = {
     apiClient.put<Appointment>(`/appointments/${id}`, data),
 
   updateStatus: (publicId: string, statusId: number) =>
-    apiClient.put(`/appointments/${publicId}/status`, { statusId }),
+    apiClient.put<Appointment>(`/appointments/${publicId}/status`, { statusId }),
 
   cancel: (publicId: string, reason?: string) =>
     apiClient.delete(`/appointments/${publicId}`, { params: { reason } }),

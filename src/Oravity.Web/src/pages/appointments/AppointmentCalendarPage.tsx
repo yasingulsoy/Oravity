@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { format, addDays, subDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -50,6 +50,7 @@ export function AppointmentCalendarPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [pendingStatusId, setPendingStatusId] = useState<number | null>(null);
 
   // --- Queries ---
 
@@ -173,8 +174,19 @@ export function AppointmentCalendarPage() {
 
   function handleAppointmentClick(apt: Appointment) {
     setSelectedAppointment(apt);
+    setPendingStatusId(null);
     setDetailOpen(true);
   }
+
+  const statusMutation = useMutation({
+    mutationFn: ({ publicId, statusId }: { publicId: string; statusId: number }) =>
+      appointmentsApi.updateStatus(publicId, statusId),
+    onSuccess: (res) => {
+      setSelectedAppointment(res.data as Appointment);
+      setPendingStatusId(null);
+      queryClient.invalidateQueries({ queryKey: ['appointments'] });
+    },
+  });
 
   // --- Date helpers ---
   const displayDate = format(currentDate, "dd MMMM yyyy - EEEE", { locale: tr });
@@ -296,56 +308,118 @@ export function AppointmentCalendarPage() {
             <DialogTitle>Randevu Detayi</DialogTitle>
           </DialogHeader>
 
-          {selectedAppointment && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Durum</span>
-                <Badge className={APPOINTMENT_STATUS_COLORS[selectedAppointment.statusId]}>
-                  {selectedAppointment.statusLabel}
-                </Badge>
-              </div>
+          {selectedAppointment && (() => {
+            const currentStatus = statuses.find(s => s.id === selectedAppointment.statusId);
+            const allowedNextIds: number[] = currentStatus
+              ? JSON.parse(currentStatus.allowedNextStatusIds ?? '[]')
+              : [];
+            const allowedNextStatuses = statuses.filter(s => allowedNextIds.includes(s.id));
+            const activeStatusId = pendingStatusId ?? selectedAppointment.statusId;
+            const activeStatus = statuses.find(s => s.id === activeStatusId);
 
-              <Separator />
+            return (
+              <div className="space-y-4">
+                {/* Durum + geçiş */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Durum</span>
+                    <Badge
+                      style={{
+                        backgroundColor: activeStatus?.containerColor,
+                        borderColor: activeStatus?.borderColor,
+                        color: activeStatus?.textColor,
+                        border: `1px solid`,
+                      }}
+                    >
+                      {activeStatus?.name ?? selectedAppointment.statusLabel}
+                    </Badge>
+                  </div>
 
-              <dl className="space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <dt className="text-muted-foreground">Hasta</dt>
-                  <dd className="font-medium">{selectedAppointment.patientName}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-muted-foreground">Doktor</dt>
-                  <dd className="font-medium">{selectedAppointment.doctorName}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-muted-foreground">Tarih</dt>
-                  <dd className="font-medium">
-                    {format(new Date(selectedAppointment.startTime), 'dd.MM.yyyy')}
-                  </dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-muted-foreground">Saat</dt>
-                  <dd className="font-medium">
-                    {format(new Date(selectedAppointment.startTime), 'HH:mm')} -{' '}
-                    {format(new Date(selectedAppointment.endTime), 'HH:mm')}
-                  </dd>
-                </div>
-                {selectedAppointment.notes && (
-                  <>
-                    <Separator />
-                    <div>
-                      <dt className="text-muted-foreground mb-1">Notlar</dt>
-                      <dd>{selectedAppointment.notes}</dd>
+                  {allowedNextStatuses.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {allowedNextStatuses.map(s => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => setPendingStatusId(s.id)}
+                          className="text-xs px-2 py-1 rounded-md border transition-all"
+                          style={{
+                            backgroundColor: pendingStatusId === s.id ? s.containerColor : `${s.containerColor}33`,
+                            borderColor: s.borderColor,
+                            color: pendingStatusId === s.id ? s.textColor : s.borderColor,
+                            fontWeight: pendingStatusId === s.id ? 600 : 400,
+                          }}
+                        >
+                          {s.name}
+                        </button>
+                      ))}
                     </div>
-                  </>
-                )}
-              </dl>
-            </div>
-          )}
+                  )}
+
+                  {statusMutation.isError && (
+                    <p className="text-xs text-destructive">Durum güncellenemedi.</p>
+                  )}
+                </div>
+
+                <Separator />
+
+                <dl className="space-y-3 text-sm">
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Hasta</dt>
+                    <dd className="font-medium">{selectedAppointment.patientName}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Doktor</dt>
+                    <dd className="font-medium">{selectedAppointment.doctorName}</dd>
+                  </div>
+                  {selectedAppointment.appointmentTypeName && (
+                    <div className="flex justify-between">
+                      <dt className="text-muted-foreground">Randevu Tipi</dt>
+                      <dd className="font-medium">{selectedAppointment.appointmentTypeName}</dd>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Tarih</dt>
+                    <dd className="font-medium">
+                      {format(new Date(selectedAppointment.startTime), 'dd.MM.yyyy')}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Saat</dt>
+                    <dd className="font-medium">
+                      {format(new Date(selectedAppointment.startTime), 'HH:mm')} -{' '}
+                      {format(new Date(selectedAppointment.endTime), 'HH:mm')}
+                    </dd>
+                  </div>
+                  {selectedAppointment.notes && (
+                    <>
+                      <Separator />
+                      <div>
+                        <dt className="text-muted-foreground mb-1">Notlar</dt>
+                        <dd>{selectedAppointment.notes}</dd>
+                      </div>
+                    </>
+                  )}
+                </dl>
+              </div>
+            );
+          })()}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDetailOpen(false)}>
+            <Button variant="outline" onClick={() => { setDetailOpen(false); setPendingStatusId(null); }}>
               Kapat
             </Button>
+            {pendingStatusId !== null && (
+              <Button
+                onClick={() => statusMutation.mutate({
+                  publicId: selectedAppointment!.publicId,
+                  statusId: pendingStatusId,
+                })}
+                disabled={statusMutation.isPending}
+              >
+                {statusMutation.isPending ? 'Kaydediliyor...' : 'Durumu Güncelle'}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
