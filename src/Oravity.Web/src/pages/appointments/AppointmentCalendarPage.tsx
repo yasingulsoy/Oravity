@@ -107,13 +107,22 @@ export function AppointmentCalendarPage() {
   });
   const allDoctors: DoctorCalendarInfo[] = doctorsData ?? [];
 
-  const doctorOptions = useMemo(
-    () => allDoctors.map((d) => ({ value: d.doctorId, label: d.fullName })),
-    [allDoctors]
-  );
+  // Hekim dropdown için deduplicate (aynı doktor birden fazla şubede olabilir)
+  const doctorOptions = useMemo(() => {
+    const seen = new Set<number>();
+    return allDoctors
+      .filter((d) => {
+        if (seen.has(d.doctorId)) return false;
+        seen.add(d.doctorId);
+        return true;
+      })
+      .map((d) => ({ value: d.doctorId, label: d.fullName }));
+  }, [allDoctors]);
 
   useEffect(() => {
-    if (allDoctors.length > 0) setSelectedDoctorIds(allDoctors.map((d) => d.doctorId));
+    if (allDoctors.length > 0) {
+      setSelectedDoctorIds([...new Set(allDoctors.map((d) => d.doctorId))]);
+    }
   }, [allDoctors]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const visibleDoctorIds = useMemo(() => {

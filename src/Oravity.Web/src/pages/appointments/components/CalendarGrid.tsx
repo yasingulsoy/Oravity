@@ -31,21 +31,26 @@ function minutesToTime(minutes: number): string {
 
 type SlotType = 'open' | 'closed' | 'break';
 
-function getSlotType(slotStart: number, doctor: DoctorCalendarInfo): SlotType {
-  if (!doctor.workStart || !doctor.workEnd) return 'closed';
+function getSlotInfo(
+  slotStart: number,
+  doctor: DoctorCalendarInfo
+): { type: SlotType; breakLabel?: string } {
+  if (!doctor.workStart || !doctor.workEnd) return { type: 'closed' };
 
   const workStart = timeToMinutes(doctor.workStart);
   const workEnd = timeToMinutes(doctor.workEnd);
 
-  if (slotStart < workStart || slotStart >= workEnd) return 'closed';
+  if (slotStart < workStart || slotStart >= workEnd) return { type: 'closed' };
 
   if (doctor.breakStart && doctor.breakEnd) {
     const breakStart = timeToMinutes(doctor.breakStart);
     const breakEnd = timeToMinutes(doctor.breakEnd);
-    if (slotStart >= breakStart && slotStart < breakEnd) return 'break';
+    if (slotStart >= breakStart && slotStart < breakEnd) {
+      return { type: 'break', breakLabel: doctor.breakLabel ?? 'Mola' };
+    }
   }
 
-  return 'open';
+  return { type: 'open' };
 }
 
 interface DragState {
@@ -198,15 +203,20 @@ export function CalendarGrid({
               {/* Slots */}
               <div className="relative">
                 {timeSlots.map((minutes) => {
-                  const slotType = getSlotType(minutes, doctor);
+                  const { type: slotType, breakLabel } = getSlotInfo(minutes, doctor);
                   const isCurrentDragCol = isDragging && dragState?.doctorId === doctor.doctorId && dragState?.branchId === doctor.branchId;
+                  // Break etiketini sadece mola bloğunun ilk slotunda göster
+                  const isBreakStart = slotType === 'break' && (() => {
+                    const prev = minutes - slotIntervalMinutes;
+                    return prev < 0 || getSlotInfo(prev, doctor).type !== 'break';
+                  })();
                   return (
                     <div
                       key={minutes}
                       className={cn(
-                        'border-b',
+                        'border-b relative',
                         slotType === 'closed' && 'bg-gray-100',
-                        slotType === 'break' && 'bg-gray-50',
+                        slotType === 'break' && 'bg-amber-50',
                         slotType === 'open' && !isDragging && 'bg-white hover:bg-blue-50/50 cursor-crosshair',
                         slotType === 'open' && isDragging && isCurrentDragCol && 'bg-white cursor-crosshair',
                         slotType === 'open' && isDragging && !isCurrentDragCol && 'bg-white',
@@ -232,7 +242,13 @@ export function CalendarGrid({
                           setDragState((prev) => prev ? { ...prev, currentMinutes: minutes } : null);
                         }
                       }}
-                    />
+                    >
+                      {isBreakStart && breakLabel && (
+                        <span className="absolute inset-x-1 top-0.5 text-[10px] text-amber-700 font-medium truncate leading-none pointer-events-none">
+                          {breakLabel}
+                        </span>
+                      )}
+                    </div>
                   );
                 })}
 

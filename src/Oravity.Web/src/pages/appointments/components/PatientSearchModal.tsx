@@ -4,6 +4,7 @@ import { format } from 'date-fns';
 import { Search, X, User } from 'lucide-react';
 import { patientsApi } from '@/api/patients';
 import { appointmentsApi } from '@/api/appointments';
+import type { AppointmentType } from '@/types/appointment';
 import {
   Dialog,
   DialogContent,
@@ -14,6 +15,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import type { Patient } from '@/types/patient';
 
 interface SelectedRange {
@@ -37,6 +45,7 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
 
   // Debounce search input 300ms
@@ -51,9 +60,17 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
       setSearch('');
       setDebouncedSearch('');
       setSelectedPatient(null);
+      setSelectedTypeId(null);
       setNotes('');
     }
   }, [open]);
+
+  const { data: appointmentTypes } = useQuery({
+    queryKey: ['appointments', 'types'],
+    queryFn: () => appointmentsApi.getTypes(),
+    staleTime: Infinity,
+    select: (res) => (res.data ?? []).filter((t: AppointmentType) => t.isPatientAppointment),
+  });
 
   const { data: patients, isFetching } = useQuery({
     queryKey: ['patients', 'quick-search', debouncedSearch],
@@ -83,6 +100,7 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
         patientId: selectedPatient.id,
         doctorId: range.doctorId,
         branchId: range.branchId,
+        appointmentTypeId: selectedTypeId ?? undefined,
         startTime: startDate.toISOString(),
         endTime: endDate.toISOString(),
         notes: notes.trim() || undefined,
@@ -198,6 +216,36 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
             </div>
           )}
         </div>
+
+        {/* Appointment type */}
+        {appointmentTypes && appointmentTypes.length > 0 && (
+          <div className="space-y-2">
+            <Label>Randevu Tipi</Label>
+            <Select
+              value={selectedTypeId?.toString() ?? ''}
+              onValueChange={(v) => setSelectedTypeId(v ? Number(v) : null)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Tip seçin (opsiyonel)" />
+              </SelectTrigger>
+              <SelectContent>
+                {appointmentTypes.map((t: AppointmentType) => (
+                  <SelectItem key={t.id} value={t.id.toString()}>
+                    <span className="flex items-center gap-2">
+                      {t.color && (
+                        <span
+                          className="inline-block size-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: t.color }}
+                        />
+                      )}
+                      {t.name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {/* Notes */}
         <div className="space-y-2">

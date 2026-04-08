@@ -18,6 +18,7 @@ export interface CreateAppointmentRequest {
   patientId: number;
   doctorId: number;
   branchId?: number;
+  appointmentTypeId?: number;
   startTime: string;
   endTime: string;
   notes?: string;
@@ -78,6 +79,7 @@ export interface DoctorCalendarInfo {
   workEnd: string | null;
   breakStart: string | null;
   breakEnd: string | null;
+  breakLabel: string | null;
   isOnCall: boolean;
 }
 

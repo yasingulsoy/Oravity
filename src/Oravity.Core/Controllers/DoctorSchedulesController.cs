@@ -41,7 +41,8 @@ public class DoctorSchedulesController : ControllerBase
                 s.DayOfWeek, s.IsWorking,
                 s.StartTime.ToString("HH:mm"), s.EndTime.ToString("HH:mm"),
                 s.BreakStart != null ? s.BreakStart.Value.ToString("HH:mm") : null,
-                s.BreakEnd   != null ? s.BreakEnd.Value.ToString("HH:mm")   : null))
+                s.BreakEnd   != null ? s.BreakEnd.Value.ToString("HH:mm")   : null,
+                s.BreakLabel))
             .ToListAsync();
 
         return Ok(items);
@@ -87,14 +88,16 @@ public class DoctorSchedulesController : ControllerBase
         {
             existing.Update(request.IsWorking, start, end,
                 request.BreakStart != null ? TimeOnly.Parse(request.BreakStart) : null,
-                request.BreakEnd   != null ? TimeOnly.Parse(request.BreakEnd)   : null);
+                request.BreakEnd   != null ? TimeOnly.Parse(request.BreakEnd)   : null,
+                request.BreakLabel);
         }
         else
         {
             existing = DoctorSchedule.Create(request.DoctorId, request.BranchId, request.DayOfWeek);
             existing.Update(request.IsWorking, start, end,
                 request.BreakStart != null ? TimeOnly.Parse(request.BreakStart) : null,
-                request.BreakEnd   != null ? TimeOnly.Parse(request.BreakEnd)   : null);
+                request.BreakEnd   != null ? TimeOnly.Parse(request.BreakEnd)   : null,
+                request.BreakLabel);
             _db.DoctorSchedules.Add(existing);
         }
 
@@ -212,7 +215,7 @@ public class DoctorSchedulesController : ControllerBase
         new(s.Id, s.DoctorId, branchId, string.Empty,
             s.DayOfWeek, s.IsWorking,
             s.StartTime.ToString("HH:mm"), s.EndTime.ToString("HH:mm"),
-            s.BreakStart?.ToString("HH:mm"), s.BreakEnd?.ToString("HH:mm"));
+            s.BreakStart?.ToString("HH:mm"), s.BreakEnd?.ToString("HH:mm"), s.BreakLabel);
 }
 
 // ─── DTOs ──────────────────────────────────────────────────────────────────────
@@ -227,7 +230,8 @@ public record DoctorScheduleResponse(
     string  StartTime,
     string  EndTime,
     string? BreakStart,
-    string? BreakEnd
+    string? BreakEnd,
+    string? BreakLabel
 );
 
 public record UpsertDoctorScheduleRequest(
@@ -238,7 +242,8 @@ public record UpsertDoctorScheduleRequest(
     string  StartTime,
     string  EndTime,
     string? BreakStart,
-    string? BreakEnd
+    string? BreakEnd,
+    string? BreakLabel
 );
 
 public record ConflictCheckResponse(

@@ -27,6 +27,9 @@ public class DoctorSchedule
     public TimeOnly? BreakStart { get; private set; }
     public TimeOnly? BreakEnd { get; private set; }
 
+    /// <summary>Mola açıklaması: "Mola", "Öğle Tatili", "Toplantı" vb. (null = Mola)</summary>
+    public string? BreakLabel { get; private set; }
+
     public bool IsActive { get; private set; } = true;
 
     private DoctorSchedule() { }
@@ -39,13 +42,14 @@ public class DoctorSchedule
         IsWorking = true
     };
 
-    public void Update(bool isWorking, TimeOnly startTime, TimeOnly endTime, TimeOnly? breakStart, TimeOnly? breakEnd)
+    public void Update(bool isWorking, TimeOnly startTime, TimeOnly endTime, TimeOnly? breakStart, TimeOnly? breakEnd, string? breakLabel = null)
     {
         IsWorking  = isWorking;
         StartTime  = startTime;
         EndTime    = endTime;
         BreakStart = breakStart;
         BreakEnd   = breakEnd;
+        BreakLabel = breakLabel;
     }
 
     public void SetActive(bool value) => IsActive = value;

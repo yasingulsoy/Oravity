@@ -137,6 +137,7 @@ public class AppointmentsController : ControllerBase
             request.PatientId,
             request.DoctorId,
             request.BranchId ?? _tenant.BranchId,
+            request.AppointmentTypeId,
             request.StartTime,
             request.EndTime,
             request.Notes));
@@ -440,7 +441,8 @@ public class AppointmentsController : ControllerBase
                 s.StartTime,
                 s.EndTime,
                 s.BreakStart,
-                s.BreakEnd
+                s.BreakEnd,
+                s.BreakLabel
             })
             .ToListAsync();
 
@@ -516,7 +518,7 @@ public class AppointmentsController : ControllerBase
                 // Nöbet
                 var onCall = onCallSettings.FirstOrDefault(oc => oc.DoctorId == doctor.Id && oc.BranchId == branchId);
 
-                string? workStart = null, workEnd = null, breakStart = null, breakEnd = null;
+                string? workStart = null, workEnd = null, breakStart = null, breakEnd = null, breakLabel = null;
                 bool isOnCall = false;
 
                 if (special != null)
@@ -534,6 +536,7 @@ public class AppointmentsController : ControllerBase
                     workEnd    = sched.EndTime.ToString("HH:mm");
                     breakStart = sched.BreakStart?.ToString("HH:mm");
                     breakEnd   = sched.BreakEnd?.ToString("HH:mm");
+                    breakLabel = sched.BreakLabel;
                 }
 
                 if (onCall != null)
@@ -567,6 +570,7 @@ public class AppointmentsController : ControllerBase
                     WorkEnd:           workEnd,
                     BreakStart:        breakStart,
                     BreakEnd:          breakEnd,
+                    BreakLabel:        breakLabel,
                     IsOnCall:          isOnCall
                 ));
             }
@@ -597,6 +601,7 @@ public record CreateAppointmentRequest(
     long PatientId,
     long DoctorId,
     long? BranchId,
+    int? AppointmentTypeId,
     DateTime StartTime,
     DateTime EndTime,
     string? Notes
@@ -653,5 +658,6 @@ public record DoctorCalendarInfoResponse(
     string? WorkEnd,
     string? BreakStart,
     string? BreakEnd,
+    string? BreakLabel,
     bool    IsOnCall
 );

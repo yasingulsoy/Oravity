@@ -9,7 +9,9 @@ public record AppointmentResponse(
     Guid PublicId,
     long BranchId,
     long? PatientId,
+    string? PatientName,
     long DoctorId,
+    string? DoctorName,
     DateTime StartTime,
     DateTime EndTime,
     int StatusId,
@@ -80,7 +82,10 @@ public interface ICalendarBroadcastService
 public static class AppointmentMappings
 {
     public static AppointmentResponse ToResponse(AppointmentEntity a) => new(
-        a.PublicId, a.BranchId, a.PatientId, a.DoctorId,
+        a.PublicId, a.BranchId, a.PatientId,
+        a.Patient is not null ? $"{a.Patient.FirstName} {a.Patient.LastName}" : null,
+        a.DoctorId,
+        a.Doctor?.FullName,
         a.StartTime, a.EndTime, a.StatusId, StatusLabel(a.StatusId),
         a.Notes, a.RowVersion, a.CreatedAt);
 

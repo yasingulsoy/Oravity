@@ -40,12 +40,26 @@ public class GetAppointmentsByDateQueryHandler
         if (request.DoctorId.HasValue)
             query = query.Where(a => a.DoctorId == request.DoctorId.Value);
 
-        var items = await query
+        var raw = await query
             .OrderBy(a => a.StartTime)
-            .Select(a => AppointmentMappings.ToResponse(a))
+            .Select(a => new
+            {
+                a.PublicId, a.BranchId, a.PatientId, a.DoctorId,
+                PatientName = a.Patient != null
+                    ? a.Patient.FirstName + " " + a.Patient.LastName
+                    : null,
+                DoctorName = a.Doctor.FullName,
+                a.StartTime, a.EndTime, a.StatusId, a.Notes, a.RowVersion, a.CreatedAt,
+            })
             .ToListAsync(cancellationToken);
 
-        return items;
+        return raw.Select(a => new AppointmentResponse(
+            a.PublicId, a.BranchId, a.PatientId, a.PatientName,
+            a.DoctorId, a.DoctorName,
+            a.StartTime, a.EndTime, a.StatusId,
+            AppointmentMappings.StatusLabel(a.StatusId),
+            a.Notes, a.RowVersion, a.CreatedAt
+        )).ToList();
     }
 
     private IQueryable<SharedKernel.Entities.Appointment> ApplyTenantFilter(

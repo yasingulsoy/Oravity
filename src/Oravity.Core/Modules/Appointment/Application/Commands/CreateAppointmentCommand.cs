@@ -15,6 +15,7 @@ public record CreateAppointmentCommand(
     long PatientId,
     long DoctorId,
     long? ExplicitBranchId,
+    int? AppointmentTypeId,
     DateTime StartTime,
     DateTime EndTime,
     string? Notes
@@ -58,13 +59,14 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
             throw new SlotConflictException("Bu slot dolu. Lütfen başka bir zaman seçin.");
 
         var appointment = AppointmentEntity.Create(
-            branchId:  branchId,
-            patientId: request.PatientId,
-            doctorId:  request.DoctorId,
-            statusId:  AppointmentStatus.WellKnownIds.Planned,
-            startTime: request.StartTime,
-            endTime:   request.EndTime,
-            notes:     request.Notes);
+            branchId:          branchId,
+            patientId:         request.PatientId,
+            doctorId:          request.DoctorId,
+            statusId:          AppointmentStatus.WellKnownIds.Planned,
+            startTime:         request.StartTime,
+            endTime:           request.EndTime,
+            appointmentTypeId: request.AppointmentTypeId,
+            notes:             request.Notes);
 
         _db.Appointments.Add(appointment);
 
