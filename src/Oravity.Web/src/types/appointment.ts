@@ -10,6 +10,8 @@ export interface Appointment {
   statusId: number;
   statusLabel: string;
   notes?: string;
+  isUrgent: boolean;
+  isEarlierRequest: boolean;
   rowVersion: number;
   createdAt: string;
 }
@@ -22,6 +24,8 @@ export interface CreateAppointmentRequest {
   startTime: string;
   endTime: string;
   notes?: string;
+  isUrgent?: boolean;
+  isEarlierRequest?: boolean;
 }
 
 export interface UpdateAppointmentRequest {

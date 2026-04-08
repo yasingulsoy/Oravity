@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { Search, X, User } from 'lucide-react';
+import { Search, X, User, UserPlus, ChevronLeft, AlertTriangle, Clock } from 'lucide-react';
 import { patientsApi } from '@/api/patients';
 import { appointmentsApi } from '@/api/appointments';
 import type { AppointmentType } from '@/types/appointment';
@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -40,13 +41,27 @@ interface PatientSearchModalProps {
   onSuccess: () => void;
 }
 
+type ModalMode = 'search' | 'quick-register';
+
 export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientSearchModalProps) {
   const queryClient = useQueryClient();
+  const [mode, setMode] = useState<ModalMode>('search');
+
+  // --- Search state ---
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+
+  // --- Appointment details ---
   const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
+  const [isUrgent, setIsUrgent] = useState(false);
+  const [isEarlierRequest, setIsEarlierRequest] = useState(false);
+
+  // --- Quick register state ---
+  const [quickFirstName, setQuickFirstName] = useState('');
+  const [quickLastName, setQuickLastName] = useState('');
+  const [quickPhone, setQuickPhone] = useState('');
 
   // Debounce search input 300ms
   useEffect(() => {
@@ -62,6 +77,12 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
       setSelectedPatient(null);
       setSelectedTypeId(null);
       setNotes('');
+      setIsUrgent(false);
+      setIsEarlierRequest(false);
+      setMode('search');
+      setQuickFirstName('');
+      setQuickLastName('');
+      setQuickPhone('');
     }
   }, [open]);
 
@@ -84,6 +105,22 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
     select: (res) => res.data?.items ?? [],
   });
 
+  // Quick patient registration
+  const registerMutation = useMutation({
+    mutationFn: () =>
+      patientsApi.create({
+        firstName: quickFirstName.trim(),
+        lastName: quickLastName.trim(),
+        phone: quickPhone.trim() || undefined,
+      }),
+    onSuccess: (res) => {
+      const newPatient = res.data;
+      setSelectedPatient(newPatient);
+      setMode('search');
+      queryClient.invalidateQueries({ queryKey: ['patients'] });
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: () => {
       if (!range || !selectedPatient) throw new Error('Eksik bilgi');
@@ -104,6 +141,8 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
         startTime: startDate.toISOString(),
         endTime: endDate.toISOString(),
         notes: notes.trim() || undefined,
+        isUrgent,
+        isEarlierRequest,
       });
     },
     onSuccess: () => {
@@ -126,7 +165,78 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
   if (!range) return null;
 
   const dateLabel = format(range.date, 'dd.MM.yyyy');
+  const showNoResults = debouncedSearch.length >= 2 && !isFetching && (!patients || patients.length === 0);
 
+  // ─── Quick register form ───────────────────────────────────────────────────
+  if (mode === 'quick-register') {
+    return (
+      <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 -ml-1"
+                onClick={() => setMode('search')}
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+              Hızlı Hasta Kaydı
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="qr-first">Ad <span className="text-destructive">*</span></Label>
+              <Input
+                id="qr-first"
+                placeholder="Ad"
+                value={quickFirstName}
+                onChange={(e) => setQuickFirstName(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="qr-last">Soyad <span className="text-destructive">*</span></Label>
+              <Input
+                id="qr-last"
+                placeholder="Soyad"
+                value={quickLastName}
+                onChange={(e) => setQuickLastName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="qr-phone">Telefon</Label>
+              <Input
+                id="qr-phone"
+                placeholder="05XX XXX XX XX"
+                value={quickPhone}
+                onChange={(e) => setQuickPhone(e.target.value)}
+                type="tel"
+              />
+            </div>
+          </div>
+
+          {registerMutation.isError && (
+            <p className="text-sm text-destructive">Hasta kaydedilemedi. Lütfen tekrar deneyin.</p>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMode('search')}>İptal</Button>
+            <Button
+              disabled={!quickFirstName.trim() || !quickLastName.trim() || registerMutation.isPending}
+              onClick={() => registerMutation.mutate()}
+            >
+              {registerMutation.isPending ? 'Kaydediliyor...' : 'Kaydet ve Seç'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // ─── Main search + create form ─────────────────────────────────────────────
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-md">
@@ -148,6 +258,30 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
             <span className="text-muted-foreground">Saat</span>
             <span className="font-medium">{range.startTime} - {range.endTime}</span>
           </div>
+        </div>
+
+        {/* Urgent / Earlier request flags */}
+        <div className="flex gap-4">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <Checkbox
+              checked={isUrgent}
+              onCheckedChange={(v) => setIsUrgent(!!v)}
+            />
+            <span className="flex items-center gap-1 text-sm font-medium text-red-600">
+              <AlertTriangle className="size-3.5" />
+              Acil randevu
+            </span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <Checkbox
+              checked={isEarlierRequest}
+              onCheckedChange={(v) => setIsEarlierRequest(!!v)}
+            />
+            <span className="flex items-center gap-1 text-sm font-medium text-orange-600">
+              <Clock className="size-3.5" />
+              Erken saat talep
+            </span>
+          </label>
         </div>
 
         {/* Patient search / selected */}
@@ -206,9 +340,25 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
                         )}
                       </button>
                     ))
-                  ) : (
-                    <div className="px-3 py-2 text-sm text-muted-foreground">
-                      Hasta bulunamadı
+                  ) : null}
+
+                  {showNoResults && (
+                    <div className="px-3 py-2.5 flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Hasta bulunamadı</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1 text-xs"
+                        onClick={() => {
+                          // Pre-fill first name from search
+                          setQuickFirstName(search);
+                          setMode('quick-register');
+                        }}
+                      >
+                        <UserPlus className="size-3.5" />
+                        Yeni Hasta Kaydet
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -230,7 +380,11 @@ export function PatientSearchModal({ open, range, onClose, onSuccess }: PatientS
               </SelectTrigger>
               <SelectContent>
                 {appointmentTypes.map((t: AppointmentType) => (
-                  <SelectItem key={t.id} value={t.id.toString()}>
+                  <SelectItem
+                    key={t.id}
+                    value={t.id.toString()}
+                    textValue={t.name}
+                  >
                     <span className="flex items-center gap-2">
                       {t.color && (
                         <span

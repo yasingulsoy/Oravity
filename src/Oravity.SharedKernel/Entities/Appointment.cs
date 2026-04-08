@@ -52,6 +52,7 @@ public class Appointment : AuditableEntity
 
     public string? Notes { get; private set; }
     public bool IsUrgent { get; private set; }
+    public bool IsEarlierRequest { get; private set; }
     public bool IsNewPatient { get; private set; }
     public bool SendSmsNotification { get; private set; } = true;
 
@@ -75,6 +76,7 @@ public class Appointment : AuditableEntity
         string bookingSource = "manual",
         string? notes = null,
         bool isUrgent = false,
+        bool isEarlierRequest = false,
         bool isNewPatient = false)
     {
         if (endTime <= startTime)
@@ -93,6 +95,7 @@ public class Appointment : AuditableEntity
             BookingSource       = bookingSource,
             Notes               = notes,
             IsUrgent            = isUrgent,
+            IsEarlierRequest    = isEarlierRequest,
             IsNewPatient        = isNewPatient,
             SendSmsNotification = true,
             RowVersion          = 1

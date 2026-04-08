@@ -37,25 +37,39 @@ export function AppointmentBlock({
   const endTime = new Date(appointment.endTime);
   const timeStr = `${pad(startTime.getHours())}:${pad(startTime.getMinutes())} - ${pad(endTime.getHours())}:${pad(endTime.getMinutes())}`;
 
+  const borderStyle = appointment.isUrgent
+    ? '2px solid #ef4444'
+    : appointment.isEarlierRequest
+      ? '2px dashed #f97316'
+      : `1px solid ${status?.borderColor ?? '#d1d5db'}`;
+
   return (
     <button
       type="button"
       onClick={() => onClick(appointment)}
       className={cn(
-        'absolute inset-x-1 z-10 overflow-hidden rounded-md border px-1.5 py-0.5 text-left text-xs',
+        'absolute inset-x-1 z-10 overflow-hidden rounded-md px-1.5 py-0.5 text-left text-xs',
         'cursor-pointer hover:opacity-90 transition-opacity'
       )}
       style={{
         top: `${top}px`,
         height: `${height}px`,
-        backgroundColor: status?.containerColor ?? '#e5e7eb',
-        borderColor: status?.borderColor ?? '#d1d5db',
+        backgroundColor: appointment.isUrgent
+          ? '#fef2f2'
+          : status?.containerColor ?? '#e5e7eb',
+        border: borderStyle,
         color: status?.textColor ?? '#374151',
       }}
-      title={`${appointment.patientName ?? 'Hasta'} - ${timeStr}`}
+      title={`${appointment.patientName ?? 'Hasta'} - ${timeStr}${appointment.isUrgent ? ' 🚨 ACİL' : ''}${appointment.isEarlierRequest ? ' ⏰ Erken saat talep' : ''}`}
     >
-      <div className="font-medium truncate leading-tight">
-        {timeStr}
+      <div className="flex items-center gap-1 leading-tight">
+        {appointment.isUrgent && (
+          <span className="shrink-0 text-[9px] font-bold text-red-600 bg-red-100 px-0.5 rounded leading-none">ACİL</span>
+        )}
+        {appointment.isEarlierRequest && !appointment.isUrgent && (
+          <span className="shrink-0 text-[9px] font-bold text-orange-600 bg-orange-100 px-0.5 rounded leading-none">ERKEN</span>
+        )}
+        <span className="font-medium truncate">{timeStr}</span>
       </div>
       <div className="truncate leading-tight">
         {appointment.patientName ?? 'Isimsiz Hasta'}

@@ -18,7 +18,9 @@ public record CreateAppointmentCommand(
     int? AppointmentTypeId,
     DateTime StartTime,
     DateTime EndTime,
-    string? Notes
+    string? Notes,
+    bool IsUrgent = false,
+    bool IsEarlierRequest = false
 ) : IRequest<AppointmentResponse>;
 
 public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointmentCommand, AppointmentResponse>
@@ -66,7 +68,9 @@ public class CreateAppointmentCommandHandler : IRequestHandler<CreateAppointment
             startTime:         request.StartTime,
             endTime:           request.EndTime,
             appointmentTypeId: request.AppointmentTypeId,
-            notes:             request.Notes);
+            notes:             request.Notes,
+            isUrgent:          request.IsUrgent,
+            isEarlierRequest:  request.IsEarlierRequest);
 
         _db.Appointments.Add(appointment);
 

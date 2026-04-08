@@ -49,7 +49,9 @@ public class GetAppointmentsByDateQueryHandler
                     ? a.Patient.FirstName + " " + a.Patient.LastName
                     : null,
                 DoctorName = a.Doctor.FullName,
-                a.StartTime, a.EndTime, a.StatusId, a.Notes, a.RowVersion, a.CreatedAt,
+                a.StartTime, a.EndTime, a.StatusId, a.Notes,
+                a.IsUrgent, a.IsEarlierRequest,
+                a.RowVersion, a.CreatedAt,
             })
             .ToListAsync(cancellationToken);
 
@@ -58,7 +60,7 @@ public class GetAppointmentsByDateQueryHandler
             a.DoctorId, a.DoctorName,
             a.StartTime, a.EndTime, a.StatusId,
             AppointmentMappings.StatusLabel(a.StatusId),
-            a.Notes, a.RowVersion, a.CreatedAt
+            a.Notes, a.IsUrgent, a.IsEarlierRequest, a.RowVersion, a.CreatedAt
         )).ToList();
     }
 

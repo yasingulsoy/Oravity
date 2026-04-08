@@ -17,6 +17,8 @@ public record AppointmentResponse(
     int StatusId,
     string StatusLabel,
     string? Notes,
+    bool IsUrgent,
+    bool IsEarlierRequest,
     int RowVersion,
     DateTime CreatedAt
 );
@@ -87,7 +89,7 @@ public static class AppointmentMappings
         a.DoctorId,
         a.Doctor?.FullName,
         a.StartTime, a.EndTime, a.StatusId, StatusLabel(a.StatusId),
-        a.Notes, a.RowVersion, a.CreatedAt);
+        a.Notes, a.IsUrgent, a.IsEarlierRequest, a.RowVersion, a.CreatedAt);
 
     public static AppointmentBroadcastDto ToBroadcast(AppointmentEntity a) => new(
         a.PublicId, a.BranchId, a.PatientId, a.DoctorId,

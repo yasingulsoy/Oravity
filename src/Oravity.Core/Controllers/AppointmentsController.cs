@@ -140,7 +140,9 @@ public class AppointmentsController : ControllerBase
             request.AppointmentTypeId,
             request.StartTime,
             request.EndTime,
-            request.Notes));
+            request.Notes,
+            request.IsUrgent,
+            request.IsEarlierRequest));
 
         return StatusCode(StatusCodes.Status201Created, result);
     }
@@ -604,7 +606,9 @@ public record CreateAppointmentRequest(
     int? AppointmentTypeId,
     DateTime StartTime,
     DateTime EndTime,
-    string? Notes
+    string? Notes,
+    bool IsUrgent = false,
+    bool IsEarlierRequest = false
 );
 
 public record UpdateStatusRequest(int StatusId);
