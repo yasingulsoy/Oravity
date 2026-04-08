@@ -405,11 +405,10 @@ public class DatabaseSeeder
     // ─── Randevu Durumları ────────────────────────────────────────────────
     private async Task SeedAppointmentStatusesAsync(CancellationToken ct)
     {
-        if (await _db.AppointmentStatuses.AnyAsync(ct))
+        var existing = await _db.AppointmentStatuses.ToListAsync(ct);
+
+        if (existing.Count == 0)
         {
-            _logger.LogDebug("Randevu durumları zaten mevcut, atlanıyor.");
-            return;
-        }
 
         // WellKnownIds sırası: 1-7 ardışık seed, NoShow sonradan ID=8 alır.
         // AppDbContext filter "NOT IN (4, 6, 8)" ile uyumlu olması için
@@ -427,29 +426,30 @@ public class DatabaseSeeder
             MakeStatus("Gelmedi",         "NO_SHOW",     "#E67E22", "#FEF5E7",   "#CA6F1E",  "#1a1a1a", "cl-orange",  true,  8),  // terminal
         };
 
-        await _db.AppointmentStatuses.AddRangeAsync(items, ct);
-        await _db.SaveChangesAsync(ct);
+            await _db.AppointmentStatuses.AddRangeAsync(items, ct);
+            await _db.SaveChangesAsync(ct);
+            existing = await _db.AppointmentStatuses.ToListAsync(ct);
+            _logger.LogInformation("{Count} randevu durumu eklendi.", items.Length);
+        }
 
-        // Geçiş kuralları (AllowedNextStatusIds JSON)
-        var saved = await _db.AppointmentStatuses.ToListAsync(ct);
-        var byCode = saved.ToDictionary(s => s.Code);
+        // Geçiş kurallarını her zaman güncelle (sonradan eklenen kurallara da uyum sağlar)
+        var byCode = existing.ToDictionary(s => s.Code);
 
-        // PLANNED → CONFIRMED, ARRIVED, CANCELLED, NO_SHOW
-        byCode["PLANNED"].SetAllowedNextStatusIds(
-            $"[{byCode["CONFIRMED"].Id},{byCode["ARRIVED"].Id},{byCode["CANCELLED"].Id},{byCode["NO_SHOW"].Id}]");
-        // CONFIRMED → ARRIVED, CANCELLED, NO_SHOW
-        byCode["CONFIRMED"].SetAllowedNextStatusIds(
-            $"[{byCode["ARRIVED"].Id},{byCode["CANCELLED"].Id},{byCode["NO_SHOW"].Id}]");
-        // ARRIVED → IN_ROOM, CANCELLED, NO_SHOW
-        byCode["ARRIVED"].SetAllowedNextStatusIds(
-            $"[{byCode["IN_ROOM"].Id},{byCode["CANCELLED"].Id},{byCode["NO_SHOW"].Id}]");
-        // IN_ROOM → COMPLETED, LEFT
-        byCode["IN_ROOM"].SetAllowedNextStatusIds(
-            $"[{byCode["COMPLETED"].Id},{byCode["LEFT"].Id}]");
-        // Terminal durumlar: geçiş yok
+        if (byCode.ContainsKey("PLANNED") && byCode.ContainsKey("CONFIRMED"))
+        {
+            byCode["PLANNED"].SetAllowedNextStatusIds(
+                $"[{byCode["CONFIRMED"].Id},{byCode["ARRIVED"].Id},{byCode["CANCELLED"].Id},{byCode["NO_SHOW"].Id}]");
+            byCode["CONFIRMED"].SetAllowedNextStatusIds(
+                $"[{byCode["ARRIVED"].Id},{byCode["CANCELLED"].Id},{byCode["NO_SHOW"].Id}]");
+            byCode["ARRIVED"].SetAllowedNextStatusIds(
+                $"[{byCode["IN_ROOM"].Id},{byCode["CANCELLED"].Id},{byCode["NO_SHOW"].Id}]");
+            byCode["IN_ROOM"].SetAllowedNextStatusIds(
+                $"[{byCode["COMPLETED"].Id},{byCode["LEFT"].Id}]");
+            // Terminal: LEFT, CANCELLED, COMPLETED, NO_SHOW → geçiş yok
 
-        await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("{Count} randevu durumu eklendi.", items.Length);
+            await _db.SaveChangesAsync(ct);
+            _logger.LogDebug("Randevu durumu geçiş kuralları güncellendi.");
+        }
 
         static AppointmentStatus MakeStatus(
             string name, string code,
