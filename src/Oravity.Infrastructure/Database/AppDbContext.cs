@@ -274,6 +274,7 @@ public class AppDbContext : DbContext
             // ─── Hekim alanları
             e.Property(x => x.Title).HasMaxLength(50);
             e.Property(x => x.CalendarColor).HasMaxLength(7);
+            e.Property(x => x.IsChiefPhysician).HasDefaultValue(false);
             e.HasOne(x => x.Specialization)
              .WithMany()
              .HasForeignKey(x => x.SpecializationId)

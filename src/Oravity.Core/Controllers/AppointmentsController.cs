@@ -412,7 +412,8 @@ public class AppointmentsController : ControllerBase
                 u.Title,
                 u.CalendarColor,
                 u.SpecializationId,
-                SpecializationName = u.Specialization != null ? u.Specialization.Name : null
+                SpecializationName = u.Specialization != null ? u.Specialization.Name : null,
+                u.IsChiefPhysician
             })
             .ToListAsync();
 
@@ -575,6 +576,7 @@ public class AppointmentsController : ControllerBase
                     BreakEnd:          breakEnd,
                     BreakLabel:        breakLabel,
                     IsOnCall:          isOnCall,
+                    IsChiefPhysician:  doctor.IsChiefPhysician,
                     IsSpecialDay:      special != null,
                     SpecialDayType:    special != null ? (int)special.Type : null,
                     SpecialDayReason:  special?.Reason
@@ -668,6 +670,7 @@ public record DoctorCalendarInfoResponse(
     string? BreakEnd,
     string? BreakLabel,
     bool    IsOnCall,
+    bool    IsChiefPhysician = false,
     bool    IsSpecialDay = false,
     int?    SpecialDayType = null,
     string? SpecialDayReason = null

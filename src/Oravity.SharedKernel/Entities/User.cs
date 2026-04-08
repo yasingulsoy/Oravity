@@ -36,6 +36,9 @@ public class User : BaseEntity
     /// <summary>Varsayılan randevu süresi (dakika). Null = şube ayarına bak.</summary>
     public int? DefaultAppointmentDuration { get; private set; }
 
+    /// <summary>Şubenin başhekimi. Takvimde ilk sırada gösterilir.</summary>
+    public bool IsChiefPhysician { get; private set; }
+
     public ICollection<UserRoleAssignment> RoleAssignments { get; private set; } = [];
     public ICollection<UserPermissionOverride> PermissionOverrides { get; private set; } = [];
 
@@ -86,6 +89,12 @@ public class User : BaseEntity
         SpecializationId = specializationId;
         CalendarColor = calendarColor;
         DefaultAppointmentDuration = defaultAppointmentDuration;
+        MarkUpdated();
+    }
+
+    public void SetChiefPhysician(bool value)
+    {
+        IsChiefPhysician = value;
         MarkUpdated();
     }
 
