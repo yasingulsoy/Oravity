@@ -3,25 +3,14 @@ import { persist } from 'zustand/middleware';
 import { STORAGE_KEYS } from '@/lib/constants';
 
 interface UiState {
-  sidebarOpen: boolean;
   theme: 'light' | 'dark' | 'system';
-
-  toggleSidebar: () => void;
-  setSidebarOpen: (open: boolean) => void;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
 }
 
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
-      sidebarOpen: true,
       theme: 'light',
-
-      toggleSidebar: () =>
-        set((state) => ({ sidebarOpen: !state.sidebarOpen })),
-
-      setSidebarOpen: (open) =>
-        set({ sidebarOpen: open }),
 
       setTheme: (theme) => {
         const root = document.documentElement;
@@ -37,10 +26,7 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: STORAGE_KEYS.UI,
-      partialize: (state) => ({
-        sidebarOpen: state.sidebarOpen,
-        theme: state.theme,
-      }),
+      partialize: (state) => ({ theme: state.theme }),
     },
   ),
 );
