@@ -66,16 +66,57 @@ public enum CalendarEventType
 
     // Slot yönetimi
     SlotBeingEdited,
-    SlotReleased
+    SlotReleased,
+
+    // Vizite & Protokol (SPEC §VİZİTE & PROTOKOL MİMARİSİ §6)
+    VisitCheckedIn,
+    VisitCheckedOut,
+    ProtocolCreated,
+    ProtocolCompleted,
+    ProtocolUpdated,
 }
 
 // ─── Broadcast service arayüzü ────────────────────────────────────────────
+
+public record VisitBroadcastDto(
+    Guid   PublicId,
+    long   BranchId,
+    long   PatientId,
+    string PatientName,
+    bool   IsWalkIn,
+    int    Status
+);
+
+public record ProtocolBroadcastDto(
+    Guid   PublicId,
+    long   BranchId,
+    long   VisitId,
+    long   PatientId,
+    string PatientName,
+    long   DoctorId,
+    string DoctorName,
+    string ProtocolNo,
+    int    ProtocolType,
+    int    Status
+);
 
 public interface ICalendarBroadcastService
 {
     Task BroadcastAsync(
         long branchId,
         AppointmentBroadcastDto appointment,
+        CalendarEventType eventType,
+        CancellationToken ct = default);
+
+    Task BroadcastVisitAsync(
+        long branchId,
+        VisitBroadcastDto visit,
+        CalendarEventType eventType,
+        CancellationToken ct = default);
+
+    Task BroadcastProtocolAsync(
+        long branchId,
+        ProtocolBroadcastDto protocol,
         CalendarEventType eventType,
         CancellationToken ct = default);
 }

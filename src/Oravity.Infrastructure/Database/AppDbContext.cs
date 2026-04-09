@@ -55,6 +55,11 @@ public class AppDbContext : DbContext
     public DbSet<DoctorSpecialDay>     DoctorSpecialDays     => Set<DoctorSpecialDay>();
     public DbSet<DoctorOnCallSettings> DoctorOnCallSettings  => Set<DoctorOnCallSettings>();
 
+    // ─── Visit & Protocol ─────────────────────────────────────────────────
+    public DbSet<Visit>            Visits            => Set<Visit>();
+    public DbSet<Protocol>         Protocols         => Set<Protocol>();
+    public DbSet<ProtocolSequence> ProtocolSequences => Set<ProtocolSequence>();
+
     // ─── Treatment Plans ───────────────────────────────────────────────────
     public DbSet<TreatmentPlan> TreatmentPlans => Set<TreatmentPlan>();
     public DbSet<TreatmentPlanItem> TreatmentPlanItems => Set<TreatmentPlanItem>();
@@ -790,6 +795,12 @@ public class AppDbContext : DbContext
              .WithOne(x => x.Plan)
              .HasForeignKey(x => x.PlanId)
              .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Protocol)
+             .WithMany(x => x.TreatmentPlans)
+             .HasForeignKey(x => x.ProtocolId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── TreatmentPlanItem ──────────────────────────────────────────────
@@ -1029,9 +1040,14 @@ public class AppDbContext : DbContext
             e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
             e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_patient_anamnesis_public_id");
 
-            // Hasta başına tek kayıt
-            e.HasIndex(x => x.PatientId).IsUnique()
-             .HasDatabaseName("ix_patient_anamnesis_patient_unique");
+            // Hasta başına tek kayıt constraint kaldırıldı — her protokolde yeni anamnez yazılabilir
+            e.HasIndex(x => x.PatientId).HasDatabaseName("ix_patient_anamnesis_patient");
+
+            e.HasOne(x => x.Protocol)
+             .WithMany(x => x.Anamneses)
+             .HasForeignKey(x => x.ProtocolId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.SetNull);
 
             e.Property(x => x.BloodType).HasMaxLength(5);
             e.Property(x => x.AnticoagulantDrug).HasMaxLength(200);
@@ -1062,6 +1078,92 @@ public class AppDbContext : DbContext
              .HasForeignKey(x => x.UpdatedBy)
              .IsRequired(false)
              .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── Visit ─────────────────────────────────────────────────────────
+        m.Entity<Visit>(e =>
+        {
+            e.ToTable("visits");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_visits_public_id");
+            e.HasIndex(x => new { x.BranchId, x.VisitDate }).HasDatabaseName("ix_visits_branch_date");
+            e.HasIndex(x => x.PatientId).HasDatabaseName("ix_visits_patient");
+            e.Property(x => x.Status).HasConversion<int>();
+            e.Property(x => x.Notes).HasColumnType("text");
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Appointment)
+             .WithMany()
+             .HasForeignKey(x => x.AppointmentId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasMany(x => x.Protocols)
+             .WithOne(x => x.Visit)
+             .HasForeignKey(x => x.VisitId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── Protocol ──────────────────────────────────────────────────────
+        m.Entity<Protocol>(e =>
+        {
+            e.ToTable("protocols");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_protocols_public_id");
+            e.HasIndex(x => x.VisitId).HasDatabaseName("ix_protocols_visit");
+            e.HasIndex(x => new { x.DoctorId, x.Status }).HasDatabaseName("ix_protocols_doctor_status");
+            e.HasIndex(x => x.PatientId).HasDatabaseName("ix_protocols_patient");
+            e.HasIndex(x => new { x.BranchId, x.ProtocolYear }).HasDatabaseName("ix_protocols_branch_year");
+            e.HasIndex(x => new { x.BranchId, x.ProtocolYear, x.ProtocolSeq })
+             .IsUnique().HasDatabaseName("ix_protocols_no_unique");
+
+            e.Property(x => x.ProtocolNo).HasMaxLength(20).IsRequired();
+            e.Property(x => x.ProtocolType).HasConversion<int>();
+            e.Property(x => x.Status).HasConversion<int>();
+            e.Property(x => x.ChiefComplaint).HasColumnType("text");
+            e.Property(x => x.Diagnosis).HasColumnType("text");
+            e.Property(x => x.Notes).HasColumnType("text");
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Doctor)
+             .WithMany()
+             .HasForeignKey(x => x.DoctorId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── ProtocolSequence ──────────────────────────────────────────────
+        m.Entity<ProtocolSequence>(e =>
+        {
+            e.ToTable("protocol_sequences");
+            e.HasKey(x => new { x.BranchId, x.Year });
+            e.Property(x => x.LastSeq).HasDefaultValue(0);
+
+            e.HasOne<Branch>()
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Cascade);
         });
 
         // ── PatientMedication ──────────────────────────────────────────────

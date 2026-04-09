@@ -16,6 +16,10 @@ public class PatientAnamnesis : BaseEntity
     public long BranchId { get; private set; }
     public Branch Branch { get; private set; } = default!;
 
+    /// <summary>Her protokolde yeni anamnez yazılır. Null = eski kayıt (protokol öncesi).</summary>
+    public long?     ProtocolId { get; private set; }
+    public Protocol? Protocol   { get; private set; }
+
     // ── Genel ──────────────────────────────────────────────────────────────
     public string? BloodType { get; private set; }
     public bool IsPregnant { get; private set; }

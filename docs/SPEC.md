@@ -4895,54 +4895,13 @@ CREATE TABLE treatment_categories (
 );
 
 -- Kurumlar
--- Anlaşmalı sigorta şirketi, kurumsal müşteri vb.
--- CompanyId NULL → platform geneli, NOT NULL → şirkete özel
 CREATE TABLE institutions (
     id SERIAL PRIMARY KEY,
-    public_id UUID NOT NULL DEFAULT gen_random_uuid(),
-    company_id INT REFERENCES companies(id),
-
-    -- Temel
     name VARCHAR(200) NOT NULL,
-    code VARCHAR(50),                -- Kısa kod: SGK, AXA, ALLIANZ
-    type VARCHAR(50),                -- 'sigorta' | 'kurumsal' | 'kamu' | 'uluslararası'
-    market_segment VARCHAR(20),      -- 'domestic' | 'international'
-                                     -- Raporlamada yurtiçi/yurtdışı pazarlama ayrımı için
-
-    -- Fiyatlandırma
-    default_pricing_rule_id INT REFERENCES pricing_rules(id),
-    -- Kurumdan gelen hastalara uygulanacak varsayılan fiyat kuralı.
-    -- NULL → kuruma özel kural yok, genel fiyat listesi uygulanır.
-    -- PricingEngine bu kurala ek olarak diğer eşleşen kuralları da değerlendirir;
-    -- bu alan sadece "ana anlaşma" shortcut'ı olarak kullanılır.
-
-    -- İletişim
-    phone VARCHAR(30),
-    email VARCHAR(200),
-    website VARCHAR(300),
-
-    -- Adres
-    country VARCHAR(100),
-    city VARCHAR(100),
-    district VARCHAR(100),
-    address TEXT,
-
-    -- Yetkili Kişi
-    contact_person VARCHAR(200),
-    contact_phone VARCHAR(30),
-
-    -- Mali / Fatura
-    tax_number VARCHAR(20),
-    tax_office VARCHAR(200),
-
-    -- Ödeme Koşulları
-    payment_days INT DEFAULT 30,     -- Fatura vadesi (gün)
-    payment_terms TEXT,              -- Serbest metin ödeme koşulu notu
-
-    notes TEXT,
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    code VARCHAR(50) UNIQUE,
+    type VARCHAR(50),  -- 'sigorta', 'kurumsal', 'anlaşmalı'
+    tags JSONB,
+    is_active BOOLEAN DEFAULT true
 );
 ```
 
@@ -6164,8 +6123,6 @@ CREATE TABLE patients (
     -- Kişisel Bilgiler
     first_name VARCHAR(200) NOT NULL,
     last_name VARCHAR(200) NOT NULL,
-    mother_name VARCHAR(200),          -- Ana adı
-    father_name VARCHAR(200),          -- Baba adı
     birth_date DATE,
     
     -- İletişim Bilgileri
@@ -14594,8 +14551,6 @@ BORÇ
 Ad                    → first_name
 Hata Numarası         → patient_no (otomatik, readonly)
 Soyad                 → last_name
-Ana Adı               → mother_name
-Baba Adı              → father_name
 Uyruk                 → nationality
 Vatandaşlık Türü      → citizenship_type_id   (Yurt İçi Türk Hasta, vb.)
 TC Kimlik No          → tc_identity_no        [✔ Doğrula] butonu
@@ -15266,7 +15221,7 @@ Eski İnley B
 Kalsifiye Kanal
 Endodontik Fistül
 Eski Kanal Tedavisi
-S�t Dişi Kron
+S�t Dişi Kron
 Eski İnley OL
 Eski İnley OP
 Eski İnley OB
@@ -24562,7 +24517,7 @@ DisinePlus'ın satış sürecine entegrasyonu:
 
 ```
                     SPICE Level 2        CMMI Level 3
-S�re                6-9 ay               12-18 ay
+S�re                6-9 ay               12-18 ay
 Maliyet             Düşük                Yüksek
 Zorunluluk          En az Level 2        En az Level 3
 KTS Kabulü          ✅ Kabul edilir       ✅ Kabul edilir
@@ -31689,9 +31644,11 @@ Güncel karar:
    → React + TypeScript (zaten karar verilmişti)
 
 3. Dosya depolama:
-   → Local disk (sunucuda /app/uploads)
-   → IFileStorageService adapter hazır
-   → İleride MinIO'ya geçiş: sadece adapter değişir
+   → MinIO (Object Storage) ✅ GÜNCELLENDİ
+   → Local disk kararı iptal edildi
+   → Load Balancer arkasında local disk çalışmaz
+   → MinIO ücretsiz, açık kaynak, S3 uyumlu
+   → IFileStorageService → MinioFileStorageService
 
 4. SMS provider:
    → Adapter pattern — Netgsm + Asist
@@ -31703,3 +31660,895 @@ Güncel karar:
    → Manuel override mümkün
    → İnternet yoksa son bilinen kur kullanılır
 ```
+
+---
+
+# 💱 DÖVİZ YÖNETİMİ — KAPSAMLI MİMARİ
+
+## 1. TEMEL KURAL — POINT-IN-TIME
+
+```
+YANLIŞ yaklaşım:
+  → Sadece döviz tutarını sakla (100 EUR)
+  → Raporda güncel kurla çarp → TRY boz
+
+  Sorun: Kur değişince geçmiş veriler bozulur.
+  Ay sonu kasası tutmaz, karlılık analizi yanlış çıkar.
+
+DOĞRU yaklaşım:
+  Her finansal işlemde 3 alan zorunlu:
+  1. amount + currency  → İşlemin orijinal tutarı (100 EUR)
+  2. exchange_rate      → O anki kur (38,50)
+  3. base_amount        → TRY karşılığı (3.850,00 TL)
+
+  base_amount bir kez hesaplanır, sonsuza kadar sabit kalır.
+  Kur değişse bile geçmiş işlemler etkilenmez.
+```
+
+---
+
+## 2. VERİTABANI — ZORUNLU ALANLAR
+
+```sql
+-- Tüm finansal tablolara eklenecek standart döviz kolonları
+
+-- payment_transactions tablosuna ekle
+ALTER TABLE payment_transactions
+    ADD COLUMN exchange_rate   NUMERIC(18,6) NOT NULL DEFAULT 1,
+    -- İşlem anındaki kur (1 EUR = 38.500000 TRY)
+    ADD COLUMN base_amount     NUMERIC(18,4) NOT NULL DEFAULT 0;
+    -- TRY karşılığı (amount * exchange_rate)
+
+-- einvoices tablosuna ekle
+ALTER TABLE einvoices
+    ADD COLUMN exchange_rate   NUMERIC(18,6) NOT NULL DEFAULT 1,
+    ADD COLUMN base_amount     NUMERIC(18,4) NOT NULL DEFAULT 0;
+
+-- doctor_commissions tablosuna ekle
+ALTER TABLE doctor_commissions
+    ADD COLUMN currency        VARCHAR(3) NOT NULL DEFAULT 'TRY',
+    ADD COLUMN exchange_rate   NUMERIC(18,6) NOT NULL DEFAULT 1,
+    ADD COLUMN base_amount     NUMERIC(18,4) NOT NULL DEFAULT 0;
+
+-- lab_orders tablosuna ekle (laboratuvar faturası)
+ALTER TABLE lab_orders
+    ADD COLUMN currency        VARCHAR(3) NOT NULL DEFAULT 'TRY',
+    ADD COLUMN exchange_rate   NUMERIC(18,6) NOT NULL DEFAULT 1,
+    ADD COLUMN base_amount     NUMERIC(18,4) NOT NULL DEFAULT 0;
+
+-- treatment_plan_items tablosuna ekle (fiyat sabitleme)
+ALTER TABLE treatment_plan_items
+    ADD COLUMN price_currency     VARCHAR(3) NOT NULL DEFAULT 'TRY',
+    ADD COLUMN price_exchange_rate NUMERIC(18,6) NOT NULL DEFAULT 1,
+    ADD COLUMN price_base_amount  NUMERIC(18,4) NOT NULL DEFAULT 0,
+    -- Kur sabitleme
+    ADD COLUMN rate_lock_type     INT NOT NULL DEFAULT 1,
+    -- 1 = Tedavi başı kur (sabit)
+    -- 2 = Ödeme günü kuru (değişken)
+    ADD COLUMN rate_locked_at     TIMESTAMP,
+    ADD COLUMN rate_locked_value  NUMERIC(18,6);
+    -- rate_lock_type=1 ise bu değer kullanılır
+
+-- ÖNEMLİ: Tüm tutarlar NUMERIC(18,4) — float/double YASAK
+```
+
+---
+
+## 3. KUR SABİTLEME (RATE LOCK)
+
+```
+Senaryo:
+  Hasta implant tedavisine bugün başladı
+  Fiyat: 500 EUR
+  Bugünkü kur: 38,50 → 19.250 TL borçlandı
+
+  1 ay sonra ödeme yapacak
+  O gün kur: 41,00 oldu
+
+  Soru: 19.250 TL mi alınacak, yoksa 20.500 TL mi?
+
+Çözüm — 2 seçenek kullanıcıya sunulur:
+
+  rate_lock_type = 1 (Tedavi başı sabit kur):
+    → Tedavi başında kur sabitlendi: 38,50
+    → Hasta 19.250 TL öder
+    → Kur farkı klinik üstlenir
+
+  rate_lock_type = 2 (Ödeme günü kuru):
+    → Ödeme yapılırken güncel TCMB kuru alınır
+    → Hasta 20.500 TL öder
+    → Kur farkı hastaya yansır
+```
+
+```sql
+-- Kur sabitleme ayarı — şube bazında varsayılan
+ALTER TABLE branch_settings
+    ADD COLUMN default_rate_lock_type INT NOT NULL DEFAULT 1,
+    ADD COLUMN default_invoice_currency VARCHAR(3) DEFAULT 'TRY';
+```
+
+---
+
+## 4. KUR FARKI HESAPLAMA
+
+```
+Muhasebe terminolojisi:
+  "Kur Farkı Geliri/Gideri"
+
+Senaryo:
+  Hasta 500 EUR borçlandı (kur: 38,50 → 19.250 TL)
+  rate_lock_type = 2 (değişken kur)
+  1 ay sonra ödeme yaptı (kur: 41,00 → 20.500 TL)
+
+  Kur Farkı = 20.500 - 19.250 = 1.250 TL GELİR
+  (Kur artınca klinik lehine)
+
+  Eğer kur düşseydi (36,00 → 18.000 TL):
+  Kur Farkı = 18.000 - 19.250 = -1.250 TL GİDER
+```
+
+```sql
+-- Kur farkı kayıtları
+CREATE TABLE exchange_rate_differences (
+    id SERIAL PRIMARY KEY,
+    company_id          INT NOT NULL REFERENCES companies(id),
+    branch_id           INT NOT NULL REFERENCES branches(id),
+    patient_id          INT REFERENCES patients(id),
+    payment_id          INT REFERENCES payments(id),
+
+    -- Orijinal işlem
+    original_amount     NUMERIC(18,4) NOT NULL,  -- 500 EUR
+    original_currency   VARCHAR(3) NOT NULL,      -- 'EUR'
+    original_rate       NUMERIC(18,6) NOT NULL,   -- 38.50
+    original_try        NUMERIC(18,4) NOT NULL,   -- 19.250 TL
+
+    -- Ödeme anı
+    payment_amount      NUMERIC(18,4) NOT NULL,   -- 500 EUR
+    payment_rate        NUMERIC(18,6) NOT NULL,   -- 41.00
+    payment_try         NUMERIC(18,4) NOT NULL,   -- 20.500 TL
+
+    -- Fark
+    difference_amount   NUMERIC(18,4) NOT NULL,   -- +1.250 TL
+    difference_type     INT NOT NULL,
+    -- 1 = Kur Farkı Geliri (pozitif)
+    -- 2 = Kur Farkı Gideri (negatif)
+
+    created_at          TIMESTAMP NOT NULL DEFAULT NOW()
+);
+```
+
+---
+
+## 5. TCMB ENTEGRASYONU
+
+```csharp
+// Hangfire job — her gün 09:30 ve 15:30'da çalışır
+// (TCMB kurları bu saatlerde güncellenir)
+public class TcmbExchangeRateJob
+{
+    public async Task Execute()
+    {
+        var url = "https://www.tcmb.gov.tr/kurlar/today.xml";
+
+        var xml = await _httpClient.GetStringAsync(url);
+        var rates = ParseTcmbXml(xml);
+
+        foreach (var rate in rates)
+        {
+            // Bugünün kaydı varsa güncelle, yoksa ekle
+            await _db.ExchangeRates.Upsert(new ExchangeRate
+            {
+                FromCurrency = rate.Code,      // 'USD', 'EUR', 'GBP'
+                ToCurrency   = "TRY",
+                BuyingRate   = rate.ForexBuying,
+                SellingRate  = rate.ForexSelling,
+                EffectiveRate = rate.ForexSelling, // İşlemlerde satış kuru
+                RateDate     = DateTime.Today,
+                Source       = "TCMB",
+                FetchedAt    = DateTime.Now
+            });
+        }
+
+        // Cache'i temizle
+        await _cache.RemoveAsync("exchange_rates_today");
+    }
+}
+
+// Manuel override servisi
+public class ExchangeRateService : IExchangeRateService
+{
+    public async Task<decimal> GetRate(
+        string fromCurrency, DateTime date)
+    {
+        // 1. Manuel override var mı?
+        var manual = await _db.ExchangeRateOverrides
+            .FirstOrDefaultAsync(r =>
+                r.Currency == fromCurrency &&
+                r.EffectiveDate == date.Date &&
+                r.IsActive);
+
+        if (manual != null) return manual.Rate;
+
+        // 2. TCMB kaydı var mı?
+        var tcmb = await _db.ExchangeRates
+            .FirstOrDefaultAsync(r =>
+                r.FromCurrency == fromCurrency &&
+                r.ToCurrency == "TRY" &&
+                r.RateDate == date.Date);
+
+        if (tcmb != null) return tcmb.EffectiveRate;
+
+        // 3. En son bilinen kur (internet yok senaryosu)
+        return await _db.ExchangeRates
+            .Where(r => r.FromCurrency == fromCurrency &&
+                        r.ToCurrency == "TRY")
+            .OrderByDescending(r => r.RateDate)
+            .Select(r => r.EffectiveRate)
+            .FirstOrDefaultAsync();
+    }
+}
+```
+
+---
+
+## 6. MANUEL KUR OVERRIDE TABLOSU
+
+```sql
+CREATE TABLE exchange_rate_overrides (
+    id SERIAL PRIMARY KEY,
+    company_id      INT REFERENCES companies(id),
+    -- NULL = tüm sistem için geçerli
+
+    currency        VARCHAR(3) NOT NULL,   -- 'USD', 'EUR'
+    rate            NUMERIC(18,6) NOT NULL,
+    effective_date  DATE NOT NULL,
+    reason          TEXT nullable,
+    is_active       BOOLEAN DEFAULT TRUE,
+    created_by      INT NOT NULL REFERENCES users(id),
+    created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+
+    UNIQUE (company_id, currency, effective_date)
+);
+```
+
+---
+
+## 7. FİNANSAL İŞLEM KAYIT SERVİSİ
+
+```csharp
+// Her ödeme kaydedilirken bu servis kullanılır
+public class FinancialTransactionService
+{
+    public async Task<PaymentResult> RecordPayment(
+        RecordPaymentRequest req)
+    {
+        // 1. Güncel kuru al
+        var rate = req.Currency == "TRY"
+            ? 1m
+            : await _rateService.GetRate(req.Currency, DateTime.Today);
+
+        // 2. TRY karşılığını hesapla
+        var baseAmount = req.Amount * rate;
+
+        // 3. Kaydet
+        var payment = new Payment
+        {
+            Amount       = req.Amount,       // Orijinal tutar
+            Currency     = req.Currency,     // Orijinal para birimi
+            ExchangeRate = rate,             // İşlem anı kuru
+            BaseAmount   = baseAmount,       // TRY karşılığı (sabit kalır)
+            PaidAt       = DateTime.Now
+        };
+
+        await _db.Payments.AddAsync(payment);
+
+        // 4. Kur farkı var mı? (rate_lock_type=2 ise)
+        if (req.TreatmentItemId.HasValue)
+        {
+            await CalculateAndSaveRateDifference(
+                req.TreatmentItemId.Value, payment);
+        }
+
+        return PaymentResult.Success(payment);
+    }
+}
+```
+
+---
+
+## 8. RAPORLAMADA DOĞRU KULLANIM
+
+```sql
+-- DOĞRU: Her işlemin kendi base_amount'u kullanılır
+SELECT
+    DATE_TRUNC('month', created_at) AS month,
+    SUM(base_amount) AS total_try,         -- Her zaman doğru TRY
+    currency,
+    SUM(amount) AS total_foreign           -- Orijinal döviz tutarı
+FROM payment_transactions
+GROUP BY 1, 3;
+
+-- YANLIŞ: Güncel kuru çarpmak (geçmişi bozar)
+-- SELECT amount * current_rate ... YAPMA
+```
+
+---
+
+## 9. TABLO ÖZETİ
+
+| Tablo | Yeni Alan | Açıklama |
+|---|---|---|
+| `payment_transactions` | `exchange_rate`, `base_amount` | İşlem anı kuru + TRY karşılığı |
+| `einvoices` | `exchange_rate`, `base_amount` | Fatura anı kuru |
+| `doctor_commissions` | `currency`, `exchange_rate`, `base_amount` | Hakediş döviz desteği |
+| `lab_orders` | `currency`, `exchange_rate`, `base_amount` | Lab faturası döviz |
+| `treatment_plan_items` | `rate_lock_type`, `rate_locked_value` | Kur sabitleme |
+| `exchange_rate_differences` | Yeni tablo | Kur farkı gelir/gider |
+| `exchange_rate_overrides` | Yeni tablo | Manuel kur override |
+
+---
+
+# 🔧 MİMARİ EK KARARLAR — GELİŞTİRİCİ ÖNERİLERİ
+
+## 1. ORAVITY BRIDGE — LOCAL AGENT
+
+```
+Problem:
+  Tarayıcı güvenlik kısıtlamaları nedeniyle
+  RVG, Panoramik, ağız içi tarayıcı gibi
+  yerel cihazlara doğrudan erişemez.
+
+Çözüm: Oravity Bridge
+  → C# ile yazılmış hafif Windows tray uygulaması
+  → Yerel cihazları (TWAIN sürücüsü) dinler
+  → Görüntü gelince Oravity API'ye upload eder
+  → Web'den SignalR üzerinden tetiklenebilir
+
+Akış:
+  Hekim → "Röntgen Al" butonuna basar
+  → SignalR üzerinden Bridge'e mesaj gider
+  → Bridge TWAIN sürücüsünden görüntüyü alır
+  → /api/patients/{id}/files endpoint'ine upload eder
+  → Web ekranı otomatik güncellenir (SignalR)
+
+Kapsam: Faz 4+ özellik
+  Şimdi: Upload endpoint hazır (IFileStorageService)
+  Faz 4: Bridge uygulaması yazılır
+```
+
+---
+
+## 2. SSO — KURUMSAL KİMLİK ENTEGRASYONU
+
+```
+Hedef kitle: 20+ şube, 400+ kullanıcılı klinik zincirleri
+
+Sorun:
+  Manuel şifre yönetimi → güvenlik açığı
+  Personel ayrılınca hesap kapatmayı unutmak
+  Her sistem için ayrı şifre → kullanıcı yorgunluğu
+
+Çözüm: OIDC/OAuth2 desteği
+  → Microsoft Entra ID (Azure AD)
+  → Okta
+  → Google Workspace
+
+Akış:
+  Kullanıcı "Kurumsal Hesapla Giriş" tıklar
+  → OIDC provider'a yönlendirilir
+  → Token doğrulanır
+  → Oravity JWT'ye çevrilir
+  → Mevcut auth sistemi aynen çalışır
+
+Durum: TEMEL özellik (opsiyonel değil)
+  Büyük klinik zincirleri SSO şart koşar.
+```
+
+```sql
+-- users tablosuna SSO alanları ekle
+ALTER TABLE users
+    ADD COLUMN sso_provider    VARCHAR(50) NULL,
+    -- 'microsoft', 'google', 'okta'
+    ADD COLUMN sso_subject     VARCHAR(200) NULL,
+    -- Provider'dan gelen unique ID
+    ADD COLUMN sso_email       VARCHAR(200) NULL,
+    UNIQUE (sso_provider, sso_subject);
+```
+
+```csharp
+// Program.cs — OIDC desteği
+builder.Services.AddAuthentication()
+    .AddJwtBearer("OravityJwt", options => { ... })
+    .AddOpenIdConnect("Microsoft", options =>
+    {
+        options.Authority =
+            "https://login.microsoftonline.com/{tenantId}/v2.0";
+        options.ClientId     = config["Sso:Microsoft:ClientId"];
+        options.ClientSecret = config["Sso:Microsoft:ClientSecret"];
+        options.CallbackPath = "/auth/microsoft/callback";
+    });
+
+// SSO callback handler
+public class SsoCallbackHandler
+{
+    public async Task<AuthResult> HandleCallback(
+        string provider, ClaimsPrincipal principal)
+    {
+        var email   = principal.FindFirst(ClaimTypes.Email)?.Value;
+        var subject = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        // Kullanıcıyı bul veya oluştur
+        var user = await _userRepo.GetBySso(provider, subject)
+                ?? await _userRepo.GetByEmail(email)
+                ?? await CreateSsoUser(provider, subject, email, principal);
+
+        // Oravity JWT üret
+        return await CreateSession(user);
+    }
+}
+```
+
+---
+
+## 3. IMMUTABLE BACKUP (WORM)
+
+```
+Problem:
+  Ransomware saldırısı → yedekler de şifrelendi/silindi
+  Veri tamamen kayboldu
+
+Çözüm: Write Once Read Many (WORM)
+  → Yedek alındıktan sonra fiziksel olarak silinemez
+  → Belirli süre (10 yıl) boyunca değiştirilemez
+
+Seçenekler:
+  SaaS:       AWS S3 Object Lock
+  On-premise: MinIO WORM modu
+
+MinIO WORM konfigürasyonu:
+  mc retention set --default COMPLIANCE 3650d bucket/backups
+  → 3650 gün (10 yıl) boyunca silinemez
+  → KTS yönetmeliği 10 yıl zorunlu kılıyor
+```
+
+```yaml
+# docker-compose.dev.yml — MinIO WORM
+minio:
+  image: minio/minio
+  command: server /data --console-address ":9001"
+  environment:
+    MINIO_ROOT_USER: oravity
+    MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+  volumes:
+    - minio_data:/data
+  ports:
+    - "9000:9000"
+    - "9001:9001"
+```
+
+---
+
+## 4. SVG ODONTOGRAM PERFORMANS MİMARİSİ
+
+```
+Problem:
+  32 diş × 5 yüzey = 160 SVG element
+  Bir dişe tıklanınca tüm ağaç render edilir
+  → Yavaş, titreme, kötü UX
+
+Çözüm: React.memo + Zustand diş bazlı state
+```
+
+```typescript
+// Diş bazlı Zustand store — sadece değişen diş güncellenir
+interface DentalChartStore {
+  teeth: Record<string, ToothState>
+  // Key: "11", "21", "36" vb. FDI numarası
+
+  updateTooth: (number: string, state: Partial<ToothState>) => void
+  // Sadece o dişin state'i değişir
+  // Diğer 31 diş etkilenmez
+}
+
+// Tek diş komponenti — React.memo ile sarılı
+const ToothComponent = React.memo(
+  ({ toothNumber }: { toothNumber: string }) => {
+    // Sadece bu dişin state'ini dinle
+    const toothState = useDentalChartStore(
+      state => state.teeth[toothNumber])
+
+    return (
+      <g data-tooth={toothNumber}>
+        <SurfaceOcclusal status={toothState.surfaces.O} />
+        <SurfaceMesial   status={toothState.surfaces.M} />
+        <SurfaceDistal   status={toothState.surfaces.D} />
+        <SurfaceVestibular status={toothState.surfaces.V} />
+        <SurfaceLingual  status={toothState.surfaces.L} />
+      </g>
+    )
+  },
+  // Custom comparator — state değişmemişse render etme
+  (prev, next) => prev.toothNumber === next.toothNumber
+)
+
+// Ana diş şeması — sadece grid, her diş ayrı component
+const DentalChart = () => {
+  const toothNumbers = [
+    // Üst çene sağ → sol
+    18,17,16,15,14,13,12,11,
+    21,22,23,24,25,26,27,28,
+    // Alt çene sağ → sol
+    48,47,46,45,44,43,42,41,
+    31,32,33,34,35,36,37,38
+  ]
+
+  return (
+    <svg viewBox="0 0 800 400">
+      {toothNumbers.map(n => (
+        <ToothComponent key={n} toothNumber={String(n)} />
+      ))}
+    </svg>
+  )
+  // Bir diş değişince sadece O diş render edilir
+}
+```
+
+---
+
+## 5. DOSYA DEPOLAMA — KARAR DEĞİŞİKLİĞİ
+
+```
+ESKİ KARAR: Local disk (/app/uploads)
+YENİ KARAR: MinIO (Object Storage)
+
+NEDEN DEĞİŞTİ:
+  Load Balancer arkasında 2 sunucu:
+    Sunucu A'ya upload → Sunucu B'de görünmez
+    → Sistem çöker
+
+  Doğru yaklaşım:
+    Tüm sunucular aynı MinIO'ya bağlı
+    Dosyalar merkezi, sunucu stateless
+    Scale-out sorunsuz
+
+DEPLOYMENT:
+  On-premise: Müşteri kendi MinIO container'ı çalıştırır
+  SaaS:       Merkezi MinIO cluster
+
+IFileStorageService implementasyonu güncellenir:
+  LocalFileStorageService → KALDIRILDI
+  MinioFileStorageService → AKTİF
+```
+
+```csharp
+public class MinioFileStorageService : IFileStorageService
+{
+    private readonly IMinioClient _minio;
+
+    public async Task<string> UploadAsync(
+        Stream stream, string fileName, string contentType)
+    {
+        var objectName = $"{DateTime.Now:yyyy/MM/dd}/{Guid.NewGuid()}_{fileName}";
+
+        await _minio.PutObjectAsync(new PutObjectArgs()
+            .WithBucket("oravity-files")
+            .WithObject(objectName)
+            .WithStreamData(stream)
+            .WithObjectSize(stream.Length)
+            .WithContentType(contentType));
+
+        return objectName; // DB'ye bu path kaydedilir
+    }
+
+    public async Task<Stream> DownloadAsync(string objectName)
+    {
+        var ms = new MemoryStream();
+        await _minio.GetObjectAsync(new GetObjectArgs()
+            .WithBucket("oravity-files")
+            .WithObject(objectName)
+            .WithCallbackStream(s => s.CopyTo(ms)));
+        ms.Position = 0;
+        return ms;
+    }
+}
+```
+
+```yaml
+# docker-compose.dev.yml'e ekle
+minio:
+  image: minio/minio:latest
+  command: server /data --console-address ":9001"
+  environment:
+    MINIO_ROOT_USER: ${MINIO_USER}
+    MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+  volumes:
+    - minio_data:/data
+  ports:
+    - "9000:9000"   # API
+    - "9001:9001"   # Console (yönetim paneli)
+  restart: unless-stopped
+```
+
+---
+
+# 🏥 VİZİTE & PROTOKOL MİMARİSİ
+
+## 1. TEMEL KONSEPT
+
+```
+Appointment → Sadece rezervasyon (tarih/saat)
+Visit       → Hastanın fiziksel girişi (o günkü)
+Protocol    → Vizite içinde her hekim için ayrı kayıt
+
+İlişki:
+  Appointment (1) → Visit (1)
+  Visit (1)       → Protocol (N)
+  Protocol (1)    → Anamnez (1)
+  Protocol (1)    → TreatmentPlan (N)
+```
+
+---
+
+## 2. VERİTABANI
+
+```sql
+-- Hastanın fiziksel girişi
+CREATE TABLE visits (
+    id          BIGSERIAL PRIMARY KEY,
+    public_id   UUID DEFAULT gen_random_uuid() NOT NULL,
+    branch_id   BIGINT NOT NULL REFERENCES branches(id),
+    company_id  BIGINT NOT NULL REFERENCES companies(id),
+    patient_id  BIGINT NOT NULL REFERENCES patients(id),
+    appointment_id BIGINT NULL REFERENCES appointments(id),
+    -- NULL = walk-in
+
+    is_walkin   BOOLEAN DEFAULT false NOT NULL,
+    visit_date  DATE NOT NULL,
+    check_in_at TIMESTAMP NOT NULL,
+    check_out_at TIMESTAMP NULL,
+
+    status INT NOT NULL DEFAULT 1,
+    -- 1=Bekliyor
+    -- 2=Protokol Açıldı
+    -- 3=Tamamlandı
+    -- 4=İptal
+
+    notes TEXT NULL,
+    created_by BIGINT NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NULL,
+    is_deleted BOOLEAN DEFAULT false NOT NULL
+);
+
+CREATE INDEX idx_visits_branch_date
+    ON visits(branch_id, visit_date);
+CREATE INDEX idx_visits_patient
+    ON visits(patient_id);
+CREATE UNIQUE INDEX idx_visits_public_id
+    ON visits(public_id);
+
+-- Vizite içinde her hekim için protokol
+CREATE TABLE protocols (
+    id          BIGSERIAL PRIMARY KEY,
+    public_id   UUID DEFAULT gen_random_uuid() NOT NULL,
+    visit_id    BIGINT NOT NULL REFERENCES visits(id),
+    branch_id   BIGINT NOT NULL REFERENCES branches(id),
+    company_id  BIGINT NOT NULL REFERENCES companies(id),
+    patient_id  BIGINT NOT NULL REFERENCES patients(id),
+    doctor_id   BIGINT NOT NULL REFERENCES users(id),
+
+    -- Protokol numarası
+    protocol_year INT NOT NULL,         -- 2026
+    protocol_seq  INT NOT NULL,         -- 1452
+    protocol_no   VARCHAR(20) NOT NULL, -- "2026/1452"
+    -- Şube bazlı, yıllık sıra no
+
+    protocol_type INT NOT NULL,
+    -- 1=Muayene
+    -- 2=Tedavi
+    -- 3=Konsültasyon
+    -- 4=Kontrol
+    -- 5=Acil
+
+    status INT NOT NULL DEFAULT 1,
+    -- 1=Açık
+    -- 2=Tamamlandı
+    -- 3=İptal
+
+    chief_complaint TEXT NULL,  -- Ana şikayet
+    diagnosis       TEXT NULL,  -- Tanı
+    notes           TEXT NULL,
+
+    started_at    TIMESTAMP NULL,
+    completed_at  TIMESTAMP NULL,
+
+    created_by BIGINT NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NULL,
+    is_deleted BOOLEAN DEFAULT false NOT NULL,
+
+    UNIQUE (branch_id, protocol_year, protocol_seq)
+);
+
+CREATE INDEX idx_protocols_visit
+    ON protocols(visit_id);
+CREATE INDEX idx_protocols_doctor
+    ON protocols(doctor_id, status);
+CREATE INDEX idx_protocols_patient
+    ON protocols(patient_id);
+CREATE UNIQUE INDEX idx_protocols_public_id
+    ON protocols(public_id);
+CREATE INDEX idx_protocols_branch_year
+    ON protocols(branch_id, protocol_year);
+
+-- Protokol sıra no sayacı (şube + yıl bazlı)
+CREATE TABLE protocol_sequences (
+    branch_id BIGINT NOT NULL REFERENCES branches(id),
+    year      INT NOT NULL,
+    last_seq  INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (branch_id, year)
+);
+
+-- TreatmentPlan → Protocol bağlantısı
+ALTER TABLE treatment_plans
+    ADD COLUMN protocol_id BIGINT NULL
+    REFERENCES protocols(id);
+
+-- PatientAnamnesis → Protocol bağlantısı
+-- Her protokolde yeni anamnez yazılır
+-- Eski UNIQUE(patient_id) constraint kaldırılır
+ALTER TABLE patient_anamnesis
+    ADD COLUMN protocol_id BIGINT NULL
+    REFERENCES protocols(id);
+```
+
+---
+
+## 3. TAM İŞ AKIŞI
+
+```
+ADIM 1 — Randevu oluşturma
+  Resepsiyon takvimde boş slota tıklar
+  Hasta + Hekim + Saat seçer
+  appointments.status = 1 (Planlandı)
+  SignalR → tüm takvim ekranları güncellenir
+
+ADIM 2 — Hasta geldi (Check-in)
+  Resepsiyon "Hasta Geldi" basar
+  appointments.status = 3 (Geldi)
+  visits tablosuna kayıt oluşur
+  visits.status = 1 (Bekliyor)
+  SignalR → bekleme listesi güncellenir
+
+ADIM 3 — Walk-in hasta
+  Resepsiyon "Walk-in Hasta" basar
+  Hasta seçer/oluşturur
+  visits.appointment_id = NULL
+  visits.is_walkin = true
+  Bekleme listesine "Walk-in" etiketiyle düşer
+
+ADIM 4 — Protokol oluşturma
+  Resepsiyon bekleme listesinde
+  hastaya sağ tık → "Protokol Oluştur"
+  Modal: Branş + Hekim + Tip seçilir
+
+  Sistem:
+  1. protocol_sequences'tan seq al (last_seq + 1)
+  2. protocols kaydı oluşturulur
+     protocol_no = "2026/1452"
+  3. visits.status = 2 (Protokol Açıldı)
+  4. appointments.status = 4 (Odaya Alındı)
+  5. SignalR → Hekime bildirim:
+     "Yeni protokol: Ali Yılmaz — 2026/1452"
+
+ADIM 5 — Hekim protokolü işler
+  Hekim kendi protokol listesini görür
+  Protokolü açar:
+  → Anamnez yazar (protocol_id bağlı)
+  → Tanı girer
+  → TreatmentPlan oluşturur (protocol_id bağlı)
+  → Tedavi kalemlerini ekler
+  → "Protokolü Tamamla" basar
+  protocols.status = 2 (Tamamlandı)
+
+ADIM 6 — Konsültasyon/Sevk
+  Resepsiyon AYNI visit altında
+  yeni protokol açar (farklı hekim)
+  visit_id = AYNI
+  protocol_no = "2026/1453"
+  2. hekim bağımsız olarak işler
+
+ADIM 7 — Check-out
+  Tüm protokoller tamamlanınca
+  Resepsiyon "Check-out" basar
+  visits.status = 3 (Tamamlandı)
+  visits.check_out_at = now
+  appointments.status = 5 (Tamamlandı)
+  SignalR → bekleme listesinden çıkar
+```
+
+---
+
+## 4. BEKLEME LİSTESİ EKRANI
+
+```
+┌─────────────────────────────────────────────────┐
+│  BEKLEME LİSTESİ                    3 hasta     │
+├─────────────────┬──────────┬────────┬───────────┤
+│ Hasta           │ Randevu  │ Bekl.  │ İşlem     │
+├─────────────────┼──────────┼────────┼───────────┤
+│ Ali Yılmaz      │ 09:30    │ 12 dk  │ [⋮]      │
+│ 🔵 Protokol var │          │        │           │
+├─────────────────┼──────────┼────────┼───────────┤
+│ Fatma Kaya      │ 10:00    │ 5 dk   │ [⋮]      │
+│ ⚪ Bekliyor     │          │        │           │
+├─────────────────┼──────────┼────────┼───────────┤
+│ Hasan Öztürk    │ Walk-in  │ 2 dk   │ [⋮]      │
+│ ⚪ Bekliyor     │          │        │           │
+└─────────────────┴──────────┴────────┴───────────┘
+
+Sağ tık menüsü [⋮]:
+  → Protokol Oluştur
+  → Hasta Dosyasına Git
+  → Check-out
+  → İptal
+```
+
+---
+
+## 5. HEKİM PROTOKOL EKRANI
+
+```
+┌──────────────────────────────────────────────────┐
+│  Protokollerim                        2 bekliyor │
+├─────────────────┬──────────┬──────────────────────┤
+│ Hasta           │ Protokol │ Tip                  │
+├─────────────────┼──────────┼──────────────────────┤
+│ Ali Yılmaz      │ 2026/1452│ Muayene    [Aç →]   │
+│ Fatma Kaya      │ 2026/1451│ Tedavi     [Aç →]   │
+└─────────────────┴──────────┴──────────────────────┘
+
+Protokol Detay:
+┌──────────────────────────────────────────────────┐
+│ 2026/1452 — Ali Yılmaz                           │
+│ Dr. Ahmet │ Ortodonti │ Muayene                  │
+├──────────────────────────────────────────────────┤
+│ [Anamnez] [Tanı] [Tedavi Planı] [Dosyalar]      │
+├──────────────────────────────────────────────────┤
+│ Şikayet: [________________________________]      │
+│ Anamnez: [________________________________]      │
+│ Tanı:    [________________________________]      │
+│                                                  │
+│ Diş Şeması ↓                                    │
+│ [32 diş SVG komponenti]                          │
+│                                                  │
+│ Tedavi Planı ↓                                  │
+│ [+ Tedavi Ekle]                                  │
+│                                                  │
+│                  [Protokolü Tamamla →]           │
+└──────────────────────────────────────────────────┘
+```
+
+---
+
+## 6. SİNYALR EVENTS
+
+```
+VisitCheckedIn      → Bekleme listesi güncellenir
+VisitCheckedOut     → Bekleme listesinden çıkar
+ProtocolCreated     → Hekime bildirim + liste güncellenir
+ProtocolCompleted   → İlgili ekranlar güncellenir
+ProtocolUpdated     → Anlık güncelleme
+```
+
+---
+
+## 7. TABLO ÖZETİ
+
+| Tablo | Açıklama |
+|---|---|
+| `visits` | Hastanın fiziksel girişi |
+| `protocols` | Vizite içinde hekim bazlı kayıt |
+| `protocol_sequences` | Şube+yıl bazlı sıra no sayacı |
+| `treatment_plans.protocol_id` | Plana protokol bağlantısı |
+| `patient_anamnesis.protocol_id` | Anamneze protokol bağlantısı |

@@ -30,6 +30,10 @@ public class TreatmentPlan : AuditableEntity
     public TreatmentPlanStatus Status { get; private set; } = TreatmentPlanStatus.Draft;
     public string? Notes { get; private set; }
 
+    /// <summary>Bağlı protokol (opsiyonel). Null = protokolsüz plan.</summary>
+    public long?     ProtocolId { get; private set; }
+    public Protocol? Protocol   { get; private set; }
+
     public ICollection<TreatmentPlanItem> Items { get; private set; } = [];
 
     private TreatmentPlan() { }

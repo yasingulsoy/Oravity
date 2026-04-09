@@ -5,8 +5,7 @@ namespace Oravity.Core.Modules.Appointment.Infrastructure.Hubs;
 
 /// <summary>
 /// Merkezi broadcast servisi (SPEC §TAKVİM REAL-TIME BÖLÜM 2).
-/// Tüm randevu handler'ları bu servis üzerinden SignalR mesajı gönderir.
-/// CalendarUpdated event'i — frontend tek handler ile tüm tipleri karşılar.
+/// Randevu, vizite ve protokol değişikliklerini SignalR üzerinden yayınlar.
 /// </summary>
 public class CalendarBroadcastService : ICalendarBroadcastService
 {
@@ -30,6 +29,38 @@ public class CalendarBroadcastService : ICalendarBroadcastService
                 EventType   = eventType.ToString(),
                 Appointment = appointment,
                 Timestamp   = DateTime.UtcNow
+            }, ct);
+    }
+
+    public async Task BroadcastVisitAsync(
+        long branchId,
+        VisitBroadcastDto visit,
+        CalendarEventType eventType,
+        CancellationToken ct = default)
+    {
+        await _hub.Clients
+            .Group($"calendar_{branchId}")
+            .SendAsync("VisitUpdated", new
+            {
+                EventType = eventType.ToString(),
+                Visit     = visit,
+                Timestamp = DateTime.UtcNow
+            }, ct);
+    }
+
+    public async Task BroadcastProtocolAsync(
+        long branchId,
+        ProtocolBroadcastDto protocol,
+        CalendarEventType eventType,
+        CancellationToken ct = default)
+    {
+        await _hub.Clients
+            .Group($"calendar_{branchId}")
+            .SendAsync("ProtocolUpdated", new
+            {
+                EventType = eventType.ToString(),
+                Protocol  = protocol,
+                Timestamp = DateTime.UtcNow
             }, ct);
     }
 }

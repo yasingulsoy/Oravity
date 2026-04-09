@@ -151,6 +151,14 @@ public class DatabaseSeeder
             ("appointment",      "cancel",           false),
             ("appointment",      "delete",           true),
 
+            // Visit & Protocol
+            ("visit",            "view",             false),
+            ("visit",            "create",           false),
+            ("visit",            "update",           false),
+            ("protocol",         "view",             false),
+            ("protocol",         "create",           false),
+            ("protocol",         "update",           false),
+
             // Treatment Plan
             ("treatment_plan",   "view",             false),
             ("treatment_plan",   "create",           false),
