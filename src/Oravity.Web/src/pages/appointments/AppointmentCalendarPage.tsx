@@ -20,6 +20,7 @@ import { APPOINTMENT_STATUS_COLORS } from '@/lib/constants';
 import { MultiSelect } from './components/MultiSelect';
 import { CalendarGrid } from './components/CalendarGrid';
 import { PatientSearchModal } from './components/PatientSearchModal';
+import { WaitingList } from './components/WaitingList';
 import type { Appointment, DoctorCalendarInfo, CalendarSettings } from '@/types/appointment';
 
 interface SelectedRange {
@@ -204,7 +205,7 @@ export function AppointmentCalendarPage() {
   // --- Render ---
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-3">
       {/* Header row */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
@@ -273,25 +274,36 @@ export function AppointmentCalendarPage() {
         </div>
       </div>
 
-      {/* Calendar grid */}
-      {doctorsLoading || appointmentsLoading ? (
-        <div className="space-y-2">
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-96 w-full" />
+      {/* Main area: waiting list + calendar */}
+      <div className="flex gap-3 items-start">
+        {/* Waiting list panel */}
+        <div className="w-52 shrink-0 border rounded-lg overflow-hidden flex flex-col sticky top-0"
+             style={{ maxHeight: 'calc(100svh - 11rem)' }}>
+          <WaitingList />
         </div>
-      ) : (
-        <CalendarGrid
-          doctors={visibleDoctors}
-          appointments={appointments}
-          statuses={statuses}
-          slotIntervalMinutes={settings.slotIntervalMinutes}
-          dayStartHour={settings.dayStartHour}
-          dayEndHour={settings.dayEndHour}
-          viewDate={currentDate}
-          onRangeSelect={handleRangeSelect}
-          onAppointmentClick={handleAppointmentClick}
-        />
-      )}
+
+        {/* Calendar */}
+        <div className="flex-1 min-w-0 overflow-x-auto">
+          {doctorsLoading || appointmentsLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-96 w-full" />
+            </div>
+          ) : (
+            <CalendarGrid
+              doctors={visibleDoctors}
+              appointments={appointments}
+              statuses={statuses}
+              slotIntervalMinutes={settings.slotIntervalMinutes}
+              dayStartHour={settings.dayStartHour}
+              dayEndHour={settings.dayEndHour}
+              viewDate={currentDate}
+              onRangeSelect={handleRangeSelect}
+              onAppointmentClick={handleAppointmentClick}
+            />
+          )}
+        </div>
+      </div>
 
       {/* Patient search + create appointment modal */}
       <PatientSearchModal
