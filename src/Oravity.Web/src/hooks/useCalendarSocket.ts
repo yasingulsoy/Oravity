@@ -60,15 +60,21 @@ export function useCalendarSocket(onEvent: (event: CalendarEvent) => void) {
       onEventRef.current(event);
     });
 
+    let stopped = false;
     connection
       .start()
-      .catch((err) => console.warn('SignalR bağlantısı kurulamadı (backend çalışıyor mu?):', err.message));
-
-    connectionRef.current = connection;
+      .catch((err) => {
+        if (!stopped) {
+          console.warn('SignalR bağlantısı kurulamadı:', err.message);
+        }
+      });
 
     return () => {
+      stopped = true;
       connection.stop();
     };
+
+    connectionRef.current = connection;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return connectionRef;

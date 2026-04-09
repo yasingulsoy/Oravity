@@ -156,6 +156,7 @@ export function AppointmentCalendarPage() {
   // --- Socket ---
   const handleCalendarEvent = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['appointments'] });
+    queryClient.invalidateQueries({ queryKey: ['visits', 'waiting'] });
   }, [queryClient]);
 
   useCalendarSocket(handleCalendarEvent);
@@ -346,7 +347,8 @@ export function AppointmentCalendarPage() {
                         backgroundColor: activeStatus?.containerColor,
                         borderColor: activeStatus?.borderColor,
                         color: activeStatus?.textColor,
-                        border: `1px solid`,
+                        borderWidth: '1px',
+                        borderStyle: 'solid',
                       }}
                     >
                       {activeStatus?.name ?? selectedAppointment.statusLabel}

@@ -45,6 +45,26 @@ public class UpdateAppointmentStatusCommandHandler
         // Geçiş kontrolü uygulama katmanında yapılır (AllowedNextStatusIds JSON'u okunarak).
         appointment.SetStatus(request.NewStatusId);
 
+        // "Geldi" statüsüne geçince otomatik Visit (check-in) oluştur — yoksa
+        if (request.NewStatusId == AppointmentStatus.WellKnownIds.Arrived)
+        {
+            var alreadyCheckedIn = await _db.Visits
+                .AnyAsync(v => v.AppointmentId == appointment.Id && !v.IsDeleted, cancellationToken);
+
+            if (!alreadyCheckedIn && _tenant.CompanyId.HasValue)
+            {
+                var visit = SharedKernel.Entities.Visit.Create(
+                    branchId:      appointment.BranchId,
+                    companyId:     _tenant.CompanyId.Value,
+                    patientId:     appointment.PatientId!.Value,
+                    appointmentId: appointment.Id,
+                    isWalkIn:      false,
+                    notes:         null,
+                    createdBy:     _tenant.UserId);
+                _db.Visits.Add(visit);
+            }
+        }
+
         // Outbox: AppointmentCompleted → hakediş hesaplama + anket planlaması
         if (request.NewStatusId == AppointmentStatus.WellKnownIds.Completed)
         {
