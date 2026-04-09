@@ -51,11 +51,12 @@ public class UpdateAppointmentStatusCommandHandler
             var alreadyCheckedIn = await _db.Visits
                 .AnyAsync(v => v.AppointmentId == appointment.Id && !v.IsDeleted, cancellationToken);
 
-            if (!alreadyCheckedIn && _tenant.CompanyId.HasValue)
+            var companyId = appointment.Branch?.CompanyId ?? _tenant.CompanyId ?? 0;
+            if (!alreadyCheckedIn && companyId > 0)
             {
                 var visit = SharedKernel.Entities.Visit.Create(
                     branchId:      appointment.BranchId,
-                    companyId:     _tenant.CompanyId.Value,
+                    companyId:     companyId,
                     patientId:     appointment.PatientId!.Value,
                     appointmentId: appointment.Id,
                     isWalkIn:      false,
