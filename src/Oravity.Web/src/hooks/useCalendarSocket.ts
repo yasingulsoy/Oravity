@@ -15,9 +15,7 @@ async function getFreshToken(): Promise<string> {
   if (accessToken) {
     const payload = parseJwt(accessToken);
     const nowSec = Math.floor(Date.now() / 1000);
-    if (payload && payload.exp > nowSec + 30) {
-      return accessToken;
-    }
+    if (payload && payload.exp > nowSec + 30) return accessToken;
   }
 
   if (!refreshToken) {
@@ -46,21 +44,18 @@ export function useCalendarSocket(onEvent: (event: CalendarEvent) => void) {
     const { accessToken } = useAuthStore.getState();
     if (!accessToken) return;
 
-    // React StrictMode'da cleanup bazen negotiation sırasında çağrılır.
-    // dismounted flag ile bağlantı başlamadan önce iptal istenirse stop çağırmıyoruz.
-    let dismounted = false;
+    let active = true;
 
     const connection = new signalR.HubConnectionBuilder()
       .withUrl('/hubs/calendar', { accessTokenFactory: getFreshToken })
       .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
-      .configureLogging(signalR.LogLevel.Warning)
+      // Suppress SignalR's own console output — we handle errors ourselves
+      .configureLogging(signalR.LogLevel.None)
       .build();
 
     connection.on('AppointmentChanged', (event: CalendarEvent) => {
       onEventRef.current(event);
     });
-
-    // VisitUpdated / ProtocolUpdated events (backend broadcasts these)
     connection.on('VisitUpdated', () => {
       onEventRef.current({ type: 'updated', appointmentId: '' });
     });
@@ -70,22 +65,29 @@ export function useCalendarSocket(onEvent: (event: CalendarEvent) => void) {
 
     connectionRef.current = connection;
 
-    connection.start().catch((err) => {
-      if (!dismounted) {
-        console.warn('SignalR bağlanamadı:', err.message);
+    // Async start: if React StrictMode unmounts before start() completes,
+    // we let start() finish naturally then stop — avoiding "stopped during negotiation".
+    const connect = async () => {
+      try {
+        await connection.start();
+        if (!active) {
+          // Effect was cleaned up while we were connecting — stop cleanly now
+          await connection.stop();
+        }
+      } catch {
+        // Either connect failed or was stopped during negotiation — ignore
       }
-    });
+    };
+
+    connect();
 
     return () => {
-      dismounted = true;
-      // Yalnızca bağlı veya bağlanıyor durumdaysa durdur
-      if (
-        connection.state !== signalR.HubConnectionState.Disconnected &&
-        connection.state !== signalR.HubConnectionState.Disconnecting
-      ) {
+      active = false;
+      connectionRef.current = null;
+      // Only stop if fully connected; if still Connecting, connect() handles it above
+      if (connection.state === signalR.HubConnectionState.Connected) {
         connection.stop();
       }
-      connectionRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
