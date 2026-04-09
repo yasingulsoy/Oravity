@@ -223,7 +223,7 @@ export function CalendarGrid({
             {/* Red dot on time axis */}
             {nowLineTop !== null && (
               <span
-                className="absolute right-0 size-2 rounded-full bg-red-500 z-30 translate-x-1/2 -translate-y-1/2"
+                className="absolute right-0 size-2.5 rounded-full bg-red-500 z-30 translate-x-1/2 -translate-y-1/2"
                 style={{ top: `${nowLineTop}px` }}
               />
             )}
@@ -305,7 +305,7 @@ export function CalendarGrid({
                     className="absolute left-0 right-0 z-20 pointer-events-none"
                     style={{ top: `${nowLineTop}px` }}
                   >
-                    <div className="h-px bg-red-500 opacity-80" />
+                    <div className="h-0.5 bg-red-500" />
                   </div>
                 )}
                 {timeSlots.map((minutes) => {

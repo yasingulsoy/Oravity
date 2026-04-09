@@ -9,11 +9,9 @@ interface CalendarEvent {
   appointmentId: string;
 }
 
-/** Returns a valid (non-expired) access token, refreshing if needed. */
 async function getFreshToken(): Promise<string> {
   const { accessToken, refreshToken, setTokens, logout } = useAuthStore.getState();
 
-  // Check if current token is still valid (with 30s buffer)
   if (accessToken) {
     const payload = parseJwt(accessToken);
     const nowSec = Math.floor(Date.now() / 1000);
@@ -22,7 +20,6 @@ async function getFreshToken(): Promise<string> {
     }
   }
 
-  // Token expired or near-expiry — try refresh
   if (!refreshToken) {
     logout();
     window.location.href = '/';
@@ -49,32 +46,47 @@ export function useCalendarSocket(onEvent: (event: CalendarEvent) => void) {
     const { accessToken } = useAuthStore.getState();
     if (!accessToken) return;
 
+    // React StrictMode'da cleanup bazen negotiation sırasında çağrılır.
+    // dismounted flag ile bağlantı başlamadan önce iptal istenirse stop çağırmıyoruz.
+    let dismounted = false;
+
     const connection = new signalR.HubConnectionBuilder()
-      .withUrl('/hubs/calendar', {
-        accessTokenFactory: getFreshToken,
-      })
+      .withUrl('/hubs/calendar', { accessTokenFactory: getFreshToken })
       .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
+      .configureLogging(signalR.LogLevel.Warning)
       .build();
 
     connection.on('AppointmentChanged', (event: CalendarEvent) => {
       onEventRef.current(event);
     });
 
-    let stopped = false;
-    connection
-      .start()
-      .catch((err) => {
-        if (!stopped) {
-          console.warn('SignalR bağlantısı kurulamadı:', err.message);
-        }
-      });
-
-    return () => {
-      stopped = true;
-      connection.stop();
-    };
+    // VisitUpdated / ProtocolUpdated events (backend broadcasts these)
+    connection.on('VisitUpdated', () => {
+      onEventRef.current({ type: 'updated', appointmentId: '' });
+    });
+    connection.on('ProtocolUpdated', () => {
+      onEventRef.current({ type: 'updated', appointmentId: '' });
+    });
 
     connectionRef.current = connection;
+
+    connection.start().catch((err) => {
+      if (!dismounted) {
+        console.warn('SignalR bağlanamadı:', err.message);
+      }
+    });
+
+    return () => {
+      dismounted = true;
+      // Yalnızca bağlı veya bağlanıyor durumdaysa durdur
+      if (
+        connection.state !== signalR.HubConnectionState.Disconnected &&
+        connection.state !== signalR.HubConnectionState.Disconnecting
+      ) {
+        connection.stop();
+      }
+      connectionRef.current = null;
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return connectionRef;
