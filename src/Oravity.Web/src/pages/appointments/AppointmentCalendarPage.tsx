@@ -193,6 +193,7 @@ export function AppointmentCalendarPage() {
       setSelectedAppointment(res.data as Appointment);
       setPendingStatusId(null);
       queryClient.invalidateQueries({ queryKey: ['appointments'] });
+      queryClient.invalidateQueries({ queryKey: ['visits', 'waiting'] });
     },
   });
 
