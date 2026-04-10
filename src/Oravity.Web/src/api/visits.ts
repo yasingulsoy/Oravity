@@ -16,3 +16,11 @@ export const visitsApi = {
   checkOut: (visitPublicId: string) =>
     apiClient.post(`/visits/${visitPublicId}/checkout`),
 };
+
+export const protocolsApi = {
+  create: (visitPublicId: string, doctorId: number, protocolType: number) =>
+    apiClient.post('/protocols', { visitPublicId, doctorId, protocolType }),
+
+  complete: (protocolPublicId: string, diagnosis?: string, notes?: string) =>
+    apiClient.post(`/protocols/${protocolPublicId}/complete`, { diagnosis, notes }),
+};
