@@ -10,6 +10,8 @@ export interface WaitingListItem {
   appointmentTime: string | null;
   hasOpenProtocol: boolean;
   waitingMinutes: number;
+  appointmentDoctorId: number | null;
+  appointmentSpecializationId: number | null;
 }
 
 export enum VisitStatus {

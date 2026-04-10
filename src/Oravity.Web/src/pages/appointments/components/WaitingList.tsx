@@ -160,6 +160,8 @@ export function WaitingList() {
           visitPublicId={protocolTarget.publicId}
           patientName={protocolTarget.patientName}
           checkInAt={protocolTarget.checkInAt}
+          defaultDoctorId={protocolTarget.appointmentDoctorId}
+          defaultSpecializationId={protocolTarget.appointmentSpecializationId}
           onClose={() => setProtocolTarget(null)}
           onSuccess={() => setProtocolTarget(null)}
         />

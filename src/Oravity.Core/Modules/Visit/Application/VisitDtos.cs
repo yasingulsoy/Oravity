@@ -13,7 +13,9 @@ public record WaitingListItemResponse(
     string  StatusLabel,
     string? AppointmentTime,  // HH:mm formatında randevu saati, null=walk-in
     bool    HasOpenProtocol,
-    int     WaitingMinutes
+    int     WaitingMinutes,
+    long?   AppointmentDoctorId,      // Randevuyu alan hekim (walk-in=null)
+    int?    AppointmentSpecializationId // Randevunun uzmanlığı (walk-in=null)
 );
 
 public record VisitResponse(

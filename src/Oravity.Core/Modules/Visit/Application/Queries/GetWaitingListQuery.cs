@@ -49,8 +49,10 @@ public class GetWaitingListQueryHandler : IRequestHandler<GetWaitingListQuery, I
                 v.CheckInAt,
                 v.IsWalkIn,
                 v.Status,
-                AppointmentStart = v.Appointment != null ? (DateTime?)v.Appointment.StartTime : null,
-                HasOpenProtocol  = v.Protocols.Any(p => (int)p.Status == (int)ProtocolStatus.Open),
+                AppointmentStart          = v.Appointment != null ? (DateTime?)v.Appointment.StartTime : null,
+                HasOpenProtocol           = v.Protocols.Any(p => (int)p.Status == (int)ProtocolStatus.Open),
+                AppointmentDoctorId       = v.Appointment != null ? (long?)v.Appointment.DoctorId : null,
+                AppointmentSpecializationId = v.Appointment != null ? v.Appointment.SpecializationId : null,
             })
             .OrderBy(v => v.CheckInAt)
             .ToListAsync(ct);
@@ -70,7 +72,9 @@ public class GetWaitingListQueryHandler : IRequestHandler<GetWaitingListQuery, I
                 ? v.AppointmentStart.Value.ToString("HH:mm")
                 : null,
             v.HasOpenProtocol,
-            (int)(now - v.CheckInAt).TotalMinutes
+            (int)(now - v.CheckInAt).TotalMinutes,
+            v.AppointmentDoctorId,
+            v.AppointmentSpecializationId
         )).ToList();
     }
 }

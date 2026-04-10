@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { protocolsApi } from '@/api/visits';
@@ -19,6 +19,8 @@ interface Props {
   visitPublicId: string;
   patientName: string;
   checkInAt: string;
+  defaultDoctorId?: number | null;
+  defaultSpecializationId?: number | null;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -28,6 +30,8 @@ export function CreateProtocolDialog({
   visitPublicId,
   patientName,
   checkInAt,
+  defaultDoctorId,
+  defaultSpecializationId,
   onClose,
   onSuccess,
 }: Props) {
@@ -35,8 +39,17 @@ export function CreateProtocolDialog({
   const { user } = useAuthStore();
 
   const [protocolTypeId, setProtocolTypeId] = useState<number | null>(null);
-  const [selectedSpecId, setSelectedSpecId] = useState<number | ''>('');
-  const [doctorId, setDoctorId] = useState<number | null>(null);
+  const [selectedSpecId, setSelectedSpecId] = useState<number | ''>(defaultSpecializationId ?? '');
+  const [doctorId, setDoctorId] = useState<number | null>(defaultDoctorId ?? null);
+
+  // Dialog her açıldığında default değerleri uygula
+  useEffect(() => {
+    if (open) {
+      setProtocolTypeId(null);
+      setSelectedSpecId(defaultSpecializationId ?? '');
+      setDoctorId(defaultDoctorId ?? null);
+    }
+  }, [open, defaultDoctorId, defaultSpecializationId]);
 
   const today = format(new Date(), 'yyyy-MM-dd');
 
@@ -85,9 +98,11 @@ export function CreateProtocolDialog({
     return doctors.filter((d) => d.specializationId === Number(selectedSpecId));
   }, [doctors, selectedSpecId]);
 
-  // Giriş yapan kullanıcı hekim listesinde varsa otomatik seç
+  // Öncelik: 1) kullanıcı seçimi, 2) randevunun doktoru, 3) giriş yapan kullanıcı
   const currentUserId = user?.id ? Number(user.id) : null;
-  const effectiveDoctorId = doctorId ?? filteredDoctors.find((d) => d.doctorId === currentUserId)?.doctorId ?? null;
+  const effectiveDoctorId =
+    doctorId ??
+    (filteredDoctors.find((d) => d.doctorId === (defaultDoctorId ?? currentUserId))?.doctorId ?? null);
 
   const mutation = useMutation({
     mutationFn: () => protocolsApi.create(visitPublicId, effectiveDoctorId!, effectiveTypeId!),
@@ -101,8 +116,8 @@ export function CreateProtocolDialog({
   function handleClose() {
     mutation.reset();
     setProtocolTypeId(null);
-    setSelectedSpecId('');
-    setDoctorId(null);
+    setSelectedSpecId(defaultSpecializationId ?? '');
+    setDoctorId(defaultDoctorId ?? null);
     onClose();
   }
 
