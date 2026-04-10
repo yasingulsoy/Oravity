@@ -17,7 +17,17 @@ export const visitsApi = {
     apiClient.post(`/visits/${visitPublicId}/checkout`),
 };
 
+export interface ProtocolTypeSetting {
+  id: number;
+  name: string;
+  code: string;
+  color: string;
+  description: string | null;
+}
+
 export const protocolsApi = {
+  getTypes: () => apiClient.get<ProtocolTypeSetting[]>('/protocols/types'),
+
   create: (visitPublicId: string, doctorId: number, protocolType: number) =>
     apiClient.post('/protocols', { visitPublicId, doctorId, protocolType }),
 

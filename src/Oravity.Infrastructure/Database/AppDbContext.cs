@@ -59,6 +59,7 @@ public class AppDbContext : DbContext
     public DbSet<Visit>            Visits            => Set<Visit>();
     public DbSet<Protocol>         Protocols         => Set<Protocol>();
     public DbSet<ProtocolSequence> ProtocolSequences => Set<ProtocolSequence>();
+    public DbSet<ProtocolTypeSetting> ProtocolTypes => Set<ProtocolTypeSetting>();
 
     // ─── Treatment Plans ───────────────────────────────────────────────────
     public DbSet<TreatmentPlan> TreatmentPlans => Set<TreatmentPlan>();
@@ -640,6 +641,19 @@ public class AppDbContext : DbContext
             e.Property(x => x.TextColor).HasMaxLength(7).HasDefaultValue("#ffffff");
             e.Property(x => x.ClassName).HasMaxLength(50).HasDefaultValue("cl-white");
             e.Property(x => x.AllowedNextStatusIds).HasColumnType("text").HasDefaultValue("[]");
+        });
+
+        // ── ProtocolType ──────────────────────────────────────────────────
+        m.Entity<ProtocolTypeSetting>(e =>
+        {
+            e.ToTable("protocol_types");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever(); // ID'ler sabit (1-5)
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            e.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            e.Property(x => x.Description).HasMaxLength(500);
+            e.Property(x => x.Color).HasMaxLength(7).HasDefaultValue("#6366f1");
+            e.HasIndex(x => x.Code).IsUnique().HasDatabaseName("ix_protocol_types_code");
         });
 
         // ── AppointmentType ───────────────────────────────────────────────

@@ -37,6 +37,7 @@ public class DatabaseSeeder
         await SeedSpecializationsAsync(ct);
         await SeedAppointmentStatusesAsync(ct);
         await SeedAppointmentTypesAsync(ct);
+        await SeedProtocolTypesAsync(ct);
 
         if (_env.IsDevelopment())
         {
@@ -796,6 +797,28 @@ public class DatabaseSeeder
         await _db.Users.AddAsync(admin, ct);
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation("Platform admin kullanıcısı oluşturuldu: {Email}", adminEmail);
+    }
+
+    private async Task SeedProtocolTypesAsync(CancellationToken ct)
+    {
+        var seeds = new[]
+        {
+            ProtocolTypeSetting.Create(1, "Muayene",      "EXAMINATION",  "#6366f1", 1, "İlk veya rutin muayene"),
+            ProtocolTypeSetting.Create(2, "Tedavi",        "TREATMENT",    "#0ea5e9", 2, "Tedavi seansı"),
+            ProtocolTypeSetting.Create(3, "Konsültasyon",  "CONSULTATION", "#8b5cf6", 3, "Uzman görüşü"),
+            ProtocolTypeSetting.Create(4, "Kontrol",       "FOLLOW_UP",    "#10b981", 4, "Kontrol muayenesi"),
+            ProtocolTypeSetting.Create(5, "Acil",          "EMERGENCY",    "#ef4444", 5, "Acil tedavi"),
+        };
+
+        foreach (var seed in seeds)
+        {
+            var existing = await _db.ProtocolTypes.FindAsync([seed.Id], ct);
+            if (existing is null)
+                await _db.ProtocolTypes.AddAsync(seed, ct);
+        }
+
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("Protokol tipleri seed edildi.");
     }
 }
 

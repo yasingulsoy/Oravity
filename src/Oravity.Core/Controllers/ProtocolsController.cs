@@ -1,10 +1,12 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Oravity.Core.Filters;
 using Oravity.Core.Modules.Visit.Application;
 using Oravity.Core.Modules.Visit.Application.Commands;
 using Oravity.Core.Modules.Visit.Application.Queries;
+using Oravity.Infrastructure.Database;
 
 namespace Oravity.Core.Controllers;
 
@@ -15,8 +17,26 @@ namespace Oravity.Core.Controllers;
 public class ProtocolsController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly AppDbContext _db;
 
-    public ProtocolsController(IMediator mediator) => _mediator = mediator;
+    public ProtocolsController(IMediator mediator, AppDbContext db)
+    {
+        _mediator = mediator;
+        _db       = db;
+    }
+
+    /// <summary>Aktif protokol tiplerini döner.</summary>
+    [HttpGet("types")]
+    [ProducesResponseType(typeof(IReadOnlyList<ProtocolTypeResponse>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetTypes(CancellationToken ct)
+    {
+        var items = await _db.ProtocolTypes
+            .Where(t => t.IsActive)
+            .OrderBy(t => t.SortOrder)
+            .Select(t => new ProtocolTypeResponse(t.Id, t.Name, t.Code, t.Color, t.Description))
+            .ToListAsync(ct);
+        return Ok(items);
+    }
 
     /// <summary>Vizite için yeni protokol oluşturur.</summary>
     [HttpPost]
@@ -63,3 +83,4 @@ public class ProtocolsController : ControllerBase
 // ─── Request DTO ──────────────────────────────────────────────────────────
 
 public record CreateProtocolRequest(Guid VisitPublicId, long DoctorId, int ProtocolType);
+public record ProtocolTypeResponse(int Id, string Name, string Code, string Color, string? Description);

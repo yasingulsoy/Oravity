@@ -14,15 +14,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/store/authStore';
 
-// Backend Protocol enum'u ile birebir eşleşir (değiştirme)
-const PROTOCOL_TYPES = [
-  { value: 1, label: 'Muayene' },
-  { value: 2, label: 'Tedavi' },
-  { value: 3, label: 'Konsültasyon' },
-  { value: 4, label: 'Kontrol' },
-  { value: 5, label: 'Acil' },
-];
-
 interface Props {
   open: boolean;
   visitPublicId: string;
@@ -43,24 +34,31 @@ export function CreateProtocolDialog({
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
 
-  const [protocolType, setProtocolType] = useState(1);
-  const [selectedSpecId, setSelectedSpecId] = useState<number | null>(null);
+  const [protocolTypeId, setProtocolTypeId] = useState<number | null>(null);
+  const [selectedSpecId, setSelectedSpecId] = useState<number | ''>('');
   const [doctorId, setDoctorId] = useState<number | null>(null);
 
   const today = format(new Date(), 'yyyy-MM-dd');
 
-  // Bugün çalışma saati olan tüm hekimler (izinliler hariç)
+  // Protokol tipleri — DB'den
+  const { data: typesData } = useQuery({
+    queryKey: ['protocol-types'],
+    queryFn: () => protocolsApi.getTypes(),
+    select: (res) => res.data ?? [],
+    staleTime: Infinity,
+  });
+  const protocolTypes = typesData ?? [];
+  const effectiveTypeId = protocolTypeId ?? protocolTypes[0]?.id ?? null;
+
+  // Bugün çalışan hekimler (izinliler ve programsızlar hariç)
   const { data: doctorsRaw, isLoading: doctorsLoading } = useQuery({
     queryKey: ['appointments', 'calendar-doctors', today],
     queryFn: () => appointmentsApi.getCalendarDoctors({ date: today }),
     select: (res) => {
       const seen = new Set<number>();
       return (res.data ?? []).filter((d) => {
-        // İzinli doktorları dışla
         if (d.isSpecialDay && d.specialDayType === DoctorSpecialDayType.DayOff) return false;
-        // Çalışma saati tanımlı olmalı
         if (!d.workStart) return false;
-        // Aynı doktor birden fazla şubede varsa bir kez göster
         if (seen.has(d.doctorId)) return false;
         seen.add(d.doctorId);
         return true;
@@ -71,13 +69,12 @@ export function CreateProtocolDialog({
   });
   const doctors = doctorsRaw ?? [];
 
-  // Uzmanlik listesi (mevcut doktorlardan türet)
+  // Uzmanlık listesi
   const specializations = useMemo(() => {
     const map = new Map<number, string>();
     for (const d of doctors) {
-      if (d.specializationId && d.specializationName && !map.has(d.specializationId)) {
+      if (d.specializationId && d.specializationName && !map.has(d.specializationId))
         map.set(d.specializationId, d.specializationName);
-      }
     }
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
   }, [doctors]);
@@ -85,18 +82,15 @@ export function CreateProtocolDialog({
   // Seçili uzmanlığa göre filtrelenmiş hekimler
   const filteredDoctors = useMemo(() => {
     if (!selectedSpecId) return doctors;
-    return doctors.filter((d) => d.specializationId === selectedSpecId);
+    return doctors.filter((d) => d.specializationId === Number(selectedSpecId));
   }, [doctors, selectedSpecId]);
 
-  // Giriş yapan kullanıcı hekimse otomatik seç
+  // Giriş yapan kullanıcı hekim listesinde varsa otomatik seç
   const currentUserId = user?.id ? Number(user.id) : null;
-  const effectiveDoctorId = doctorId ?? (() => {
-    const found = filteredDoctors.find((d) => d.doctorId === currentUserId);
-    return found?.doctorId ?? null;
-  })();
+  const effectiveDoctorId = doctorId ?? filteredDoctors.find((d) => d.doctorId === currentUserId)?.doctorId ?? null;
 
   const mutation = useMutation({
-    mutationFn: () => protocolsApi.create(visitPublicId, effectiveDoctorId!, protocolType),
+    mutationFn: () => protocolsApi.create(visitPublicId, effectiveDoctorId!, effectiveTypeId!),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['visits', 'waiting'] });
       queryClient.invalidateQueries({ queryKey: ['appointments'] });
@@ -104,20 +98,15 @@ export function CreateProtocolDialog({
     },
   });
 
-  function handleSpecChange(specId: number | null) {
-    setSelectedSpecId(specId);
-    setDoctorId(null); // uzmanlık değişince hekim sıfırla
-  }
-
   function handleClose() {
     mutation.reset();
-    setProtocolType(1);
-    setSelectedSpecId(null);
+    setProtocolTypeId(null);
+    setSelectedSpecId('');
     setDoctorId(null);
     onClose();
   }
 
-  const canSubmit = !!effectiveDoctorId && !mutation.isPending;
+  const canSubmit = !!effectiveDoctorId && !!effectiveTypeId && !mutation.isPending;
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -133,63 +122,50 @@ export function CreateProtocolDialog({
           {/* Hasta */}
           <div className="rounded-md bg-muted px-3 py-2 text-sm">
             <p className="font-medium">{patientName}</p>
-            <p className="text-muted-foreground text-xs">
+            <p className="text-xs text-muted-foreground">
               Giriş: {format(new Date(checkInAt), 'HH:mm')}
             </p>
           </div>
 
-          {/* Protokol tipi */}
+          {/* Protokol tipi — DB'den */}
           <div className="space-y-1.5">
             <label className="text-sm font-medium">Protokol Tipi</label>
             <div className="grid grid-cols-3 gap-1.5">
-              {PROTOCOL_TYPES.map((pt) => (
+              {protocolTypes.map((pt) => (
                 <button
-                  key={pt.value}
+                  key={pt.id}
                   type="button"
-                  onClick={() => setProtocolType(pt.value)}
-                  className={`rounded-md border px-2 py-1.5 text-xs transition-colors ${
-                    protocolType === pt.value
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-border hover:bg-muted'
-                  }`}
+                  onClick={() => setProtocolTypeId(pt.id)}
+                  className="rounded-md border px-2 py-1.5 text-xs transition-colors"
+                  style={
+                    effectiveTypeId === pt.id
+                      ? { backgroundColor: pt.color, borderColor: pt.color, color: '#fff' }
+                      : { borderColor: pt.color, color: pt.color }
+                  }
                 >
-                  {pt.label}
+                  {pt.name}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Uzmanlık */}
+          {/* Uzmanlık — dropdown */}
           {specializations.length > 1 && (
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Uzmanlık</label>
-              <div className="flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => handleSpecChange(null)}
-                  className={`rounded-md border px-2 py-1 text-xs transition-colors ${
-                    !selectedSpecId
-                      ? 'border-primary bg-primary text-primary-foreground'
-                      : 'border-border hover:bg-muted'
-                  }`}
-                >
-                  Tümü
-                </button>
+              <select
+                value={selectedSpecId}
+                onChange={(e) => {
+                  setSelectedSpecId(e.target.value ? Number(e.target.value) : '');
+                  setDoctorId(null);
+                }}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="">Tüm uzmanlıklar</option>
                 {specializations.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => handleSpecChange(s.id)}
-                    className={`rounded-md border px-2 py-1 text-xs transition-colors ${
-                      selectedSpecId === s.id
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border hover:bg-muted'
-                    }`}
-                  >
-                    {s.name}
-                  </button>
+                  <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
-              </div>
+              </select>
             </div>
           )}
 
@@ -210,7 +186,9 @@ export function CreateProtocolDialog({
                 {filteredDoctors.map((d) => (
                   <option key={d.doctorId} value={d.doctorId}>
                     {d.title ? `${d.title} ` : ''}{d.fullName}
-                    {d.workStart && d.workEnd ? ` (${d.workStart.slice(0, 5)}–${d.workEnd.slice(0, 5)})` : ''}
+                    {d.workStart && d.workEnd
+                      ? ` (${d.workStart.slice(0, 5)}–${d.workEnd.slice(0, 5)})`
+                      : ''}
                   </option>
                 ))}
               </select>
@@ -222,9 +200,7 @@ export function CreateProtocolDialog({
           )}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={handleClose}>
-              Vazgeç
-            </Button>
+            <Button type="button" variant="outline" onClick={handleClose}>Vazgeç</Button>
             <Button type="submit" disabled={!canSubmit}>
               {mutation.isPending ? 'Açılıyor...' : 'Protokol Aç'}
             </Button>
