@@ -32,8 +32,8 @@ public class Visit : BaseEntity
     public DateTime  CheckInAt   { get; private set; }
     public DateTime? CheckOutAt  { get; private set; }
 
-    /// <summary>Hekimin "Çağır" butonuna bastığı zaman. Null = henüz çağırılmadı.</summary>
-    public DateTime? CalledAt { get; private set; }
+    // CalledAt — AddVisitCalledAt migration çalıştırıldıktan sonra açılacak
+    // public DateTime? CalledAt { get; private set; }
 
     public VisitStatus Status { get; private set; } = VisitStatus.Waiting;
     public string?     Notes  { get; private set; }
@@ -66,7 +66,7 @@ public class Visit : BaseEntity
 
     public void MarkCalled()
     {
-        CalledAt = DateTime.UtcNow;
+        // CalledAt = DateTime.UtcNow; // AddVisitCalledAt migration sonrası açılacak
         MarkUpdated();
     }
 

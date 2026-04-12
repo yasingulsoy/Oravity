@@ -59,7 +59,6 @@ public class GetWaitingListQueryHandler : IRequestHandler<GetWaitingListQuery, I
                 HasOpenProtocol             = v.Protocols.Any(p => (int)p.Status == (int)ProtocolStatus.Open && !p.IsDeleted),
                 AppointmentDoctorId         = v.Appointment != null ? (long?)v.Appointment.DoctorId : null,
                 AppointmentSpecializationId = v.Appointment != null ? v.Appointment.SpecializationId : null,
-                v.CalledAt,
                 Protocols = v.Protocols
                     .Where(p => !p.IsDeleted)
                     .OrderBy(p => p.CreatedAt)
@@ -95,7 +94,7 @@ public class GetWaitingListQueryHandler : IRequestHandler<GetWaitingListQuery, I
             v.AppointmentSpecializationId,
             v.PatientBirthDate,
             v.PatientGender,
-            IsBeingCalled: v.CalledAt.HasValue && (now - v.CalledAt.Value).TotalMinutes < 3,
+            IsBeingCalled: false, // CalledAt migration bekliyor — AddVisitCalledAt çalıştırılınca aktif olacak
             v.Protocols.Select(p =>
             {
                 var typeId = (int)p.ProtocolType;
