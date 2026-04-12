@@ -685,8 +685,8 @@ function ProtokolTab({
   });
 
   const removeDxMutation = useMutation({
-    mutationFn: (diagnosisPublicId: string) =>
-      protocolsApi.removeDiagnosis(diagnosisPublicId),
+    mutationFn: (entryId: string) =>
+      protocolsApi.removeDiagnosis(protocolPublicId, entryId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['protocol-detail', protocolPublicId] }),
     onError: () => toast.error('Tanı silinemedi.'),
   });
@@ -913,50 +913,30 @@ function CloseProtocolDialog({
   isPending,
 }: {
   protocol: DoctorProtocol;
-  onConfirm: (diagnosis: string, notes: string) => void;
+  onConfirm: () => void;
   onCancel: () => void;
   isPending: boolean;
 }) {
-  const [diagnosis, setDiagnosis] = useState('');
-  const [notes, setNotes] = useState('');
-
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onCancel(); }}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Protokolü Kapat</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3 py-2">
+        <div className="py-2">
           <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
             <span className="font-medium">{protocol.patientName}</span>
             <span className="text-muted-foreground ml-2 text-xs">{protocol.protocolNo}</span>
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="diagnosis">Tanı</Label>
-            <Textarea
-              id="diagnosis"
-              placeholder="Tanı / ICD kodu..."
-              rows={2}
-              value={diagnosis}
-              onChange={(e) => setDiagnosis(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="notes">Notlar</Label>
-            <Textarea
-              id="notes"
-              placeholder="Muayene notları..."
-              rows={3}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </div>
+          <p className="text-sm text-muted-foreground mt-3">
+            Protokol kapatılacak. Seçilen ICD tanıları kaydedilmiş durumda, tekrar girmenize gerek yok.
+          </p>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onCancel} disabled={isPending}>
             İptal
           </Button>
-          <Button onClick={() => onConfirm(diagnosis, notes)} disabled={isPending}>
+          <Button onClick={onConfirm} disabled={isPending}>
             {isPending ? 'Kaydediliyor...' : 'Protokolü Kapat'}
           </Button>
         </DialogFooter>
@@ -996,8 +976,7 @@ export function ExaminationPage() {
   } : null;
 
   const completeMutation = useMutation({
-    mutationFn: ({ diagnosis, notes }: { diagnosis: string; notes: string }) =>
-      protocolsApi.complete(publicId!, diagnosis || undefined, notes || undefined),
+    mutationFn: () => protocolsApi.complete(publicId!),
     onSuccess: () => {
       toast.success('Protokol kapatıldı.');
       qc.invalidateQueries({ queryKey: ['doctor-protocols'] });
@@ -1145,7 +1124,7 @@ export function ExaminationPage() {
       {closeOpen && protocol && (
         <CloseProtocolDialog
           protocol={protocol}
-          onConfirm={(diagnosis, notes) => completeMutation.mutate({ diagnosis, notes })}
+          onConfirm={() => completeMutation.mutate()}
           onCancel={() => setCloseOpen(false)}
           isPending={completeMutation.isPending}
         />

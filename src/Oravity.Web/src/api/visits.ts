@@ -65,8 +65,8 @@ export const protocolsApi = {
   addDiagnosis: (publicId: string, icdCodeId: number, isPrimary: boolean, note?: string | null) =>
     apiClient.post(`/protocols/${publicId}/diagnoses`, { icdCodeId, isPrimary, note }),
 
-  removeDiagnosis: (diagnosisPublicId: string) =>
-    apiClient.delete(`/protocols/diagnoses/${diagnosisPublicId}`),
+  removeDiagnosis: (protocolPublicId: string, entryId: string) =>
+    apiClient.delete(`/protocols/${protocolPublicId}/diagnoses/${entryId}`),
 
   getPatientHistory: (patientPublicId: string, limit = 20) =>
     apiClient.get<ProtocolHistoryItem[]>(`/protocols/patient/${patientPublicId}/history`, { params: { limit } }),
