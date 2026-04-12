@@ -149,7 +149,17 @@ public class PatientsController : ControllerBase
         return result == null ? NoContent() : Ok(result);
     }
 
-    /// <summary>Anamnez formunu kaydet (upsert)</summary>
+    /// <summary>Hastanın anamnez geçmişini döner — tüm kayıtlar, yeniden eskiye</summary>
+    [HttpGet("{publicId:guid}/anamnesis/history")]
+    [RequirePermission("patient:view")]
+    [ProducesResponseType(typeof(IReadOnlyList<AnamnesisHistoryItem>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAnamnesisHistory(Guid publicId, [FromQuery] int limit = 50)
+    {
+        var result = await _mediator.Send(new GetPatientAnamnesisHistoryQuery(publicId, limit));
+        return Ok(result);
+    }
+
+    /// <summary>Anamnez formunu kaydet — her kayıt yeni satır olarak eklenir (geçmiş korunur)</summary>
     [HttpPut("{publicId:guid}/anamnesis")]
     [RequirePermission("patient:edit_basic")]
     [ProducesResponseType(typeof(PatientAnamnesisResponse), StatusCodes.Status200OK)]

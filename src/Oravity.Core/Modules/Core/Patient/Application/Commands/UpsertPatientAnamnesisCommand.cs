@@ -32,19 +32,14 @@ public class UpsertPatientAnamnesisCommandHandler
             .FirstOrDefaultAsync(p => p.PublicId == request.PatientPublicId && !p.IsDeleted, ct)
             ?? throw new NotFoundException($"Hasta bulunamadı: {request.PatientPublicId}");
 
-        var anamnesis = await _db.PatientAnamneses
-            .Where(a => !a.IsDeleted && a.PatientId == patient.Id)
-            .OrderByDescending(a => a.FilledAt)
-            .FirstOrDefaultAsync(ct);
-
-        if (anamnesis == null)
-        {
-            anamnesis = PatientAnamnesis.Create(patient.Id, patient.BranchId, _tenant.UserId);
-            _db.PatientAnamneses.Add(anamnesis);
-        }
-
+        // Her kayıt yeni satır olarak eklenir — geçmiş saklanır.
+        var anamnesis = PatientAnamnesis.Create(patient.Id, patient.BranchId, _tenant.UserId);
         anamnesis.Update(request.Data, _tenant.UserId);
+        _db.PatientAnamneses.Add(anamnesis);
         await _db.SaveChangesAsync(ct);
+
+        // FilledByUser navigation yükle
+        await _db.Entry(anamnesis).Reference(x => x.FilledByUser).LoadAsync(ct);
 
         return GetPatientAnamnesisQueryHandler.Map(anamnesis);
     }

@@ -17,6 +17,7 @@ public class GetPatientAnamnesisQueryHandler : IRequestHandler<GetPatientAnamnes
     {
         var a = await _db.PatientAnamneses
             .AsNoTracking()
+            .Include(x => x.FilledByUser)
             .Where(x => !x.IsDeleted && x.Patient.PublicId == request.PatientPublicId)
             .OrderByDescending(x => x.FilledAt)
             .FirstOrDefaultAsync(ct);
@@ -38,5 +39,6 @@ public class GetPatientAnamnesisQueryHandler : IRequestHandler<GetPatientAnamnes
         a.SmokingStatus, a.SmokingAmount, a.AlcoholUse,
         a.AdditionalNotes,
         a.HasCriticalAlert,
-        a.FilledAt);
+        a.FilledAt,
+        a.FilledByUser?.FullName ?? "");
 }

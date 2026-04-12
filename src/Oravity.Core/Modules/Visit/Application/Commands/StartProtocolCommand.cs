@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Oravity.Core.Modules.Appointment.Application;
 using Oravity.Core.Modules.Visit.Application;
+using Oravity.Core.Modules.Visit.Application.Queries;
 using Oravity.Infrastructure.Database;
 using Oravity.SharedKernel.Entities;
 using Oravity.SharedKernel.Exceptions;
@@ -57,14 +58,7 @@ public class StartProtocolCommandHandler : IRequestHandler<StartProtocolCommand,
                 protocol.ProtocolNo, (int)protocol.ProtocolType, (int)protocol.Status),
             CalendarEventType.ProtocolUpdated, ct);
 
-        return new ProtocolDetailResponse(
-            protocol.PublicId, protocol.ProtocolNo,
-            protocol.VisitId, protocol.PatientId, patientName,
-            protocol.DoctorId, protocol.Doctor.FullName,
-            protocol.BranchId,
-            (int)protocol.ProtocolType, VisitLabels.ProtocolType((int)protocol.ProtocolType),
-            (int)protocol.Status, VisitLabels.ProtocolStatus((int)protocol.Status),
-            protocol.ChiefComplaint, protocol.Diagnosis, protocol.Notes,
-            protocol.StartedAt, protocol.CompletedAt, protocol.CreatedAt);
+        return await new GetProtocolDetailQueryHandler(_db)
+            .Handle(new GetProtocolDetailQuery(request.ProtocolPublicId), ct);
     }
 }

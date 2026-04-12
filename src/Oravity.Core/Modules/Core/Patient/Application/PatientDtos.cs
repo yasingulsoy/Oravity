@@ -42,7 +42,18 @@ public record PatientAnamnesisResponse(
     int?    AlcoholUse,
     string? AdditionalNotes,
     bool    HasCriticalAlert,
-    DateTime FilledAt
+    DateTime FilledAt,
+    string  FilledByName
+);
+
+public record AnamnesisHistoryItem(
+    Guid     PublicId,
+    DateTime FilledAt,
+    string   FilledByName,
+    bool     HasCriticalAlert,
+    string?  BloodType,
+    int?     SmokingStatus,
+    int?     AlcoholUse
 );
 
 public record PatientResponse(
