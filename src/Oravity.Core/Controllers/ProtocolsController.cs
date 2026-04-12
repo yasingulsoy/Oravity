@@ -49,6 +49,16 @@ public class ProtocolsController : ControllerBase
         return CreatedAtAction(nameof(GetDetail), new { publicId = result.PublicId }, result);
     }
 
+    /// <summary>Hekim hastayı odaya çağırır — started_at set edilir, randevu "Odaya Alındı" olur.</summary>
+    [HttpPost("{publicId:guid}/start")]
+    [RequirePermission("protocol:update")]
+    [ProducesResponseType(typeof(ProtocolDetailResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Start(Guid publicId, CancellationToken ct)
+    {
+        var result = await _mediator.Send(new StartProtocolCommand(publicId), ct);
+        return Ok(result);
+    }
+
     /// <summary>Protokolü tamamlar.</summary>
     [HttpPost("{publicId:guid}/complete")]
     [RequirePermission("protocol:update")]

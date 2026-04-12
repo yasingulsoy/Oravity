@@ -3,19 +3,34 @@ namespace Oravity.Core.Modules.Visit.Application;
 // ─── Visit ────────────────────────────────────────────────────────────────
 
 public record WaitingListItemResponse(
-    Guid    PublicId,
-    long    PatientId,
-    string  PatientName,
-    string? Phone,
+    Guid     PublicId,
+    long     PatientId,
+    string   PatientName,
+    string?  Phone,
     DateTime CheckInAt,
-    bool    IsWalkIn,
+    bool     IsWalkIn,
+    int      Status,
+    string   StatusLabel,
+    string?  AppointmentTime,
+    bool     HasOpenProtocol,
+    int      WaitingMinutes,
+    long?    AppointmentDoctorId,
+    int?     AppointmentSpecializationId,
+    DateOnly? PatientBirthDate,
+    string?  PatientGender,
+    IReadOnlyList<WaitingProtocolItem> Protocols
+);
+
+public record WaitingProtocolItem(
+    Guid    PublicId,
+    string  ProtocolNo,
+    int     ProtocolTypeId,
+    string  TypeName,
+    string  TypeColor,
     int     Status,
-    string  StatusLabel,
-    string? AppointmentTime,  // HH:mm formatında randevu saati, null=walk-in
-    bool    HasOpenProtocol,
-    int     WaitingMinutes,
-    long?   AppointmentDoctorId,      // Randevuyu alan hekim (walk-in=null)
-    int?    AppointmentSpecializationId // Randevunun uzmanlığı (walk-in=null)
+    string  StatusName,
+    string  DoctorName,
+    string? Diagnosis
 );
 
 public record VisitResponse(

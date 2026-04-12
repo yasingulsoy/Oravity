@@ -46,18 +46,19 @@ public class UpdateAppointmentStatusCommandHandler
         appointment.SetStatus(request.NewStatusId);
 
         // "Geldi" statüsüne geçince otomatik Visit (check-in) oluştur — yoksa
+        // "Onaylandı" (Confirmed=2) geçişi Visit oluşturmaz; sadece "Geldi" (Arrived=3) oluşturur.
         if (request.NewStatusId == AppointmentStatus.WellKnownIds.Arrived)
         {
             var alreadyCheckedIn = await _db.Visits
                 .AnyAsync(v => v.AppointmentId == appointment.Id && !v.IsDeleted, cancellationToken);
 
             var companyId = appointment.Branch?.CompanyId ?? _tenant.CompanyId ?? 0;
-            if (!alreadyCheckedIn && companyId > 0)
+            if (!alreadyCheckedIn && companyId > 0 && appointment.PatientId.HasValue)
             {
                 var visit = SharedKernel.Entities.Visit.Create(
                     branchId:      appointment.BranchId,
                     companyId:     companyId,
-                    patientId:     appointment.PatientId!.Value,
+                    patientId:     appointment.PatientId.Value,
                     appointmentId: appointment.Id,
                     isWalkIn:      false,
                     notes:         null,

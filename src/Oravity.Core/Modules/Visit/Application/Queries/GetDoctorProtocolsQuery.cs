@@ -26,13 +26,17 @@ public class GetDoctorProtocolsQueryHandler : IRequestHandler<GetDoctorProtocols
         var doctorId = request.DoctorId ?? _tenant.UserId;
         var today    = DateTime.UtcNow.Date;
 
-        var protocols = await _db.Protocols
+        var rows = await _db.Protocols
             .AsNoTracking()
+            .Include(p => p.Patient)
             .Where(p => !p.IsDeleted
                         && p.DoctorId == doctorId
                         && ((int)p.Status == (int)ProtocolStatus.Open
                             || (p.StartedAt.HasValue && p.StartedAt.Value.Date == today)))
-            .Select(p => new DoctorProtocolResponse(
+            .OrderBy(p => p.StartedAt)
+            .ToListAsync(ct);
+
+        var protocols = rows.Select(p => new DoctorProtocolResponse(
                 p.PublicId,
                 p.ProtocolNo,
                 p.PatientId,
@@ -43,8 +47,7 @@ public class GetDoctorProtocolsQueryHandler : IRequestHandler<GetDoctorProtocols
                 (int)p.Status,
                 VisitLabels.ProtocolStatus((int)p.Status),
                 p.StartedAt))
-            .OrderBy(p => p.StartedAt)
-            .ToListAsync(ct);
+            .ToList();
 
         return protocols;
     }

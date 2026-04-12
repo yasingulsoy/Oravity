@@ -48,11 +48,16 @@ public class GetAppointmentsByDateQueryHandler
                 PatientName = a.Patient != null
                     ? a.Patient.FirstName + " " + a.Patient.LastName
                     : null,
+                PatientBirthDate = a.Patient != null ? a.Patient.BirthDate : null,
+                PatientGender    = a.Patient != null ? a.Patient.Gender    : null,
                 DoctorName = a.Doctor.FullName,
                 AppointmentTypeName = a.AppointmentType != null ? a.AppointmentType.Name : null,
                 a.StartTime, a.EndTime, a.StatusId, a.Notes,
                 a.IsUrgent, a.IsEarlierRequest,
                 a.RowVersion, a.CreatedAt,
+                HasOpenProtocol = _db.Visits
+                    .Any(v => v.AppointmentId == a.Id && !v.IsDeleted &&
+                              v.Protocols.Any(p => p.Status == SharedKernel.Entities.ProtocolStatus.Open && !p.IsDeleted)),
             })
             .ToListAsync(cancellationToken);
 
@@ -62,7 +67,8 @@ public class GetAppointmentsByDateQueryHandler
             a.StartTime, a.EndTime, a.StatusId,
             AppointmentMappings.StatusLabel(a.StatusId),
             a.Notes, a.IsUrgent, a.IsEarlierRequest, a.RowVersion, a.CreatedAt,
-            a.AppointmentTypeName
+            a.AppointmentTypeName,
+            a.PatientBirthDate, a.PatientGender, a.HasOpenProtocol
         )).ToList();
     }
 

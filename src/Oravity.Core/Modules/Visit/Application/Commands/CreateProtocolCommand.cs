@@ -32,6 +32,7 @@ public class CreateProtocolCommandHandler : IRequestHandler<CreateProtocolComman
     {
         var visit = await _db.Visits
             .Include(v => v.Patient)
+            .Include(v => v.Branch)
             .FirstOrDefaultAsync(v => v.PublicId == request.VisitPublicId && !v.IsDeleted, ct)
             ?? throw new NotFoundException("Vizite bulunamadı.");
 
@@ -46,7 +47,7 @@ public class CreateProtocolCommandHandler : IRequestHandler<CreateProtocolComman
             .FirstOrDefaultAsync(u => u.Id == request.DoctorId && u.IsActive, ct)
             ?? throw new NotFoundException("Hekim bulunamadı.");
 
-        var companyId = _tenant.CompanyId
+        var companyId = visit.Branch?.CompanyId ?? _tenant.CompanyId
             ?? throw new ForbiddenException("Şirket bağlamı gereklidir.");
 
         // ─── Sıra no al (FOR UPDATE ile race condition önle) ──────────────

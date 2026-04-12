@@ -48,6 +48,19 @@ public class VisitsController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Hekim hastayı çağırır.
+    /// Açık protokol varsa başlatır; yoksa resepsiyona bildirim gönderir.
+    /// </summary>
+    [HttpPost("request-call")]
+    [RequirePermission("visit:update")]
+    [ProducesResponseType(typeof(RequestPatientCallResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RequestCall([FromBody] RequestCallRequest req, CancellationToken ct)
+    {
+        var result = await _mediator.Send(new RequestPatientCallCommand(req.AppointmentPublicId), ct);
+        return Ok(result);
+    }
+
     /// <summary>Güncel bekleme listesi (bugün, aktif viziteler).</summary>
     [HttpGet("waiting")]
     [RequirePermission("visit:view")]
@@ -63,3 +76,4 @@ public class VisitsController : ControllerBase
 
 public record CheckInPatientRequest(Guid AppointmentPublicId, string? Notes);
 public record CheckInWalkInRequest(long PatientId, string? Notes);
+public record RequestCallRequest(Guid AppointmentPublicId);

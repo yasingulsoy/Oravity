@@ -80,9 +80,19 @@ public class Protocol : BaseEntity
         ProtocolSeq  = seq,
         ProtocolNo   = $"{year}/{seq}",
         Status       = ProtocolStatus.Open,
-        StartedAt    = DateTime.UtcNow,
         CreatedBy    = createdBy,
     };
+
+    /// <summary>Hekim hastayı odaya çağırdığında çağrılır (odaya alındı).</summary>
+    public void Start()
+    {
+        if (Status != ProtocolStatus.Open)
+            throw new InvalidOperationException("Sadece açık protokoller başlatılabilir.");
+        if (StartedAt.HasValue)
+            throw new InvalidOperationException("Protokol zaten başlatılmış.");
+        StartedAt = DateTime.UtcNow;
+        MarkUpdated();
+    }
 
     public void UpdateDetails(string? chiefComplaint, string? diagnosis, string? notes)
     {

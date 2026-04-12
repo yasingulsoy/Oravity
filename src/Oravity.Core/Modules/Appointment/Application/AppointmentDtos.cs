@@ -21,7 +21,10 @@ public record AppointmentResponse(
     bool IsEarlierRequest,
     int RowVersion,
     DateTime CreatedAt,
-    string? AppointmentTypeName = null
+    string? AppointmentTypeName = null,
+    DateOnly? PatientBirthDate = null,
+    string? PatientGender = null,
+    bool HasOpenProtocol = false
 );
 
 /// <summary>SignalR broadcast için hafif DTO</summary>

@@ -32,6 +32,10 @@ public class CheckOutVisitCommandHandler : IRequestHandler<CheckOutVisitCommand,
             .FirstOrDefaultAsync(v => v.PublicId == request.VisitPublicId && !v.IsDeleted, ct)
             ?? throw new NotFoundException("Vizite bulunamadı.");
 
+        var openProtocols = visit.Protocols.Count(p => p.Status == ProtocolStatus.Open && !p.IsDeleted);
+        if (openProtocols > 0)
+            throw new InvalidOperationException($"Taburcu edilemiyor: {openProtocols} açık protokol var. Önce protokolleri tamamlayın.");
+
         visit.CheckOut();
 
         // Bağlı randevu varsa durumunu "Tamamlandı" yap
