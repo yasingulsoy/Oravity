@@ -41,6 +41,7 @@ export interface DoctorProtocol {
   publicId: string;
   protocolNo: string;
   patientId: number;
+  patientPublicId: string;
   patientName: string;
   phone: string | null;
   protocolType: number;

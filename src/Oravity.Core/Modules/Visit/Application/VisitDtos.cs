@@ -88,6 +88,7 @@ public record DoctorProtocolResponse(
     Guid    PublicId,
     string  ProtocolNo,
     long    PatientId,
+    Guid    PatientPublicId,
     string  PatientName,
     string? Phone,
     int     ProtocolType,

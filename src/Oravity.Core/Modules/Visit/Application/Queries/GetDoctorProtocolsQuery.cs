@@ -40,6 +40,7 @@ public class GetDoctorProtocolsQueryHandler : IRequestHandler<GetDoctorProtocols
                 p.PublicId,
                 p.ProtocolNo,
                 p.PatientId,
+                p.Patient != null ? p.Patient.PublicId : Guid.Empty,
                 p.Patient != null ? $"{p.Patient.FirstName} {p.Patient.LastName}".Trim() : "",
                 p.Patient != null ? p.Patient.Phone : null,
                 (int)p.ProtocolType,

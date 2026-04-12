@@ -497,7 +497,7 @@ export function DoctorDashboardPage() {
     const params = new URLSearchParams({
       patient: p.patientName,
       no: p.protocolNo,
-      patientId: p.patientId.toString(),
+      patientPublicId: p.patientPublicId,
       type: p.protocolTypeName,
     });
     navigate(`/muayene/${p.publicId}?${params.toString()}`);

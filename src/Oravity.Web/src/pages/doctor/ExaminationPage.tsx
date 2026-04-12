@@ -5,9 +5,8 @@ import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import {
   ArrowLeft, User, ClipboardList, ScanLine,
-  Stethoscope, CheckCheck, FileText, AlertTriangle,
-  Phone, Mail, MapPin, Calendar, Heart, Pill,
-  ChevronRight,
+  CheckCheck,
+  Phone, Mail, MapPin, Calendar, Heart,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -22,28 +21,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { protocolsApi } from '@/api/visits';
+import { patientsApi } from '@/api/patients';
 import type { DoctorProtocol } from '@/types/visit';
-import apiClient from '@/api/client';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface PatientDetail {
-  id: number;
-  publicId: string;
-  firstName: string;
-  lastName: string;
-  fullName: string;
-  phone: string | null;
-  email: string | null;
-  birthDate: string | null;
-  gender: string | null;
-  address: string | null;
-  bloodType: string | null;
-  allergies: string | null;
-  chronicDiseases: string | null;
-  currentMedications: string | null;
-  notes: string | null;
-}
+import type { Patient } from '@/types/patient';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -74,29 +54,12 @@ function InfoRow({ label, value, icon: Icon }: {
   );
 }
 
-function AlertCard({ icon: Icon, label, value, color }: {
-  icon: React.ElementType;
-  label: string;
-  value: string;
-  color: string;
-}) {
-  return (
-    <div className={cn('flex items-start gap-2 rounded-lg border p-3', color)}>
-      <Icon className="size-4 mt-0.5 shrink-0" />
-      <div>
-        <p className="text-xs font-semibold">{label}</p>
-        <p className="text-sm">{value}</p>
-      </div>
-    </div>
-  );
-}
-
 // ─── Tab: Hasta Bilgileri ─────────────────────────────────────────────────────
 
-function PatientInfoTab({ patientId }: { patientId: number }) {
-  const { data: patient, isLoading } = useQuery({
-    queryKey: ['patient-detail', patientId],
-    queryFn: () => apiClient.get<PatientDetail>(`/patients/${patientId}`).then((r) => r.data),
+function PatientInfoTab({ patientPublicId }: { patientPublicId: string }) {
+  const { data: patient, isLoading } = useQuery<Patient>({
+    queryKey: ['patient-detail', patientPublicId],
+    queryFn: () => patientsApi.getById(patientPublicId).then((r) => r.data),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -119,60 +82,32 @@ function PatientInfoTab({ patientId }: { patientId: number }) {
     );
   }
 
-  const age = calcAge(patient.birthDate);
-  const genderLabel = patient.gender === 'Male' || patient.gender === 'M' ? 'Erkek'
+  const fullName = `${patient.firstName} ${patient.lastName}`.trim();
+  const age = calcAge(patient.birthDate?.toString() ?? null);
+  const gender = patient.gender === 'Male' || patient.gender === 'M' ? 'Erkek'
     : patient.gender === 'Female' || patient.gender === 'F' ? 'Kadın' : patient.gender;
 
   return (
     <div className="space-y-4">
-      {/* Kritik uyarılar */}
-      {(patient.allergies || patient.chronicDiseases || patient.currentMedications) && (
-        <div className="space-y-2">
-          {patient.allergies && (
-            <AlertCard
-              icon={AlertTriangle}
-              label="Alerji"
-              value={patient.allergies}
-              color="border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300"
-            />
-          )}
-          {patient.chronicDiseases && (
-            <AlertCard
-              icon={Heart}
-              label="Kronik Hastalık"
-              value={patient.chronicDiseases}
-              color="border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
-            />
-          )}
-          {patient.currentMedications && (
-            <AlertCard
-              icon={Pill}
-              label="Kullandığı İlaçlar"
-              value={patient.currentMedications}
-              color="border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300"
-            />
-          )}
-        </div>
-      )}
-
       {/* Kişisel bilgiler */}
       <div>
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Kişisel Bilgiler</p>
         <div className="rounded-lg border divide-y">
-          <InfoRow label="Ad Soyad" value={patient.fullName} icon={User} />
+          <InfoRow label="Ad Soyad" value={fullName} icon={User} />
           <InfoRow
             label="Yaş / Cinsiyet"
-            value={[age != null ? `${age} yaş` : null, genderLabel].filter(Boolean).join(' · ')}
+            value={[age != null ? `${age} yaş` : null, gender].filter(Boolean).join(' · ')}
             icon={User}
           />
           {patient.birthDate && (
             <InfoRow
               label="Doğum Tarihi"
-              value={format(new Date(patient.birthDate), 'd MMMM yyyy', { locale: tr })}
+              value={format(new Date(patient.birthDate.toString()), 'd MMMM yyyy', { locale: tr })}
               icon={Calendar}
             />
           )}
           <InfoRow label="Kan Grubu" value={patient.bloodType} icon={Heart} />
+          <InfoRow label="Meslek" value={patient.occupation} icon={User} />
         </div>
       </div>
 
@@ -181,6 +116,7 @@ function PatientInfoTab({ patientId }: { patientId: number }) {
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">İletişim</p>
         <div className="rounded-lg border divide-y">
           <InfoRow label="Telefon" value={patient.phone} icon={Phone} />
+          <InfoRow label="Ev Telefonu" value={patient.homePhone} icon={Phone} />
           <InfoRow label="E-posta" value={patient.email} icon={Mail} />
           <InfoRow label="Adres" value={patient.address} icon={MapPin} />
         </div>
@@ -381,18 +317,16 @@ export function ExaminationPage() {
   const [activeTab, setActiveTab] = useState('hasta-bilgileri');
 
   // Protocol info passed via query params for instant display
-  const patientName = searchParams.get('patient') ?? 'Hasta';
-  const protocolNo  = searchParams.get('no') ?? '';
+  const patientName      = searchParams.get('patient') ?? 'Hasta';
+  const protocolNo       = searchParams.get('no') ?? '';
+  const patientPublicId  = searchParams.get('patientPublicId') ?? '';
 
-  // patientId passed via query param for now; full protocol endpoint can be added later
-  const patientIdParam = searchParams.get('patientId');
-  const patientId = patientIdParam ? Number(patientIdParam) : null;
-
-  // Placeholder protocol object from URL params — replaced by real API call when endpoint exists
-  const protocol: DoctorProtocol | null = patientId ? {
+  // Placeholder protocol object from URL params
+  const protocol: DoctorProtocol | null = patientPublicId ? {
     publicId: publicId ?? '',
     protocolNo: protocolNo,
-    patientId,
+    patientId: 0,
+    patientPublicId,
     patientName,
     phone: null,
     protocolType: 1,
@@ -496,8 +430,8 @@ export function ExaminationPage() {
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-2xl mx-auto p-4">
             <TabsContent value="hasta-bilgileri" className="mt-0">
-              {protocol?.patientId ? (
-                <PatientInfoTab patientId={protocol.patientId} />
+              {protocol?.patientPublicId ? (
+                <PatientInfoTab patientPublicId={protocol.patientPublicId} />
               ) : (
                 <div className="space-y-3">
                   {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
@@ -506,8 +440,8 @@ export function ExaminationPage() {
             </TabsContent>
 
             <TabsContent value="anamnez" className="mt-0">
-              {protocol?.patientId ? (
-                <AnamnezTab patientId={protocol.patientId} />
+              {protocol?.patientPublicId ? (
+                <AnamnezTab patientId={0} />
               ) : (
                 <div className="space-y-3">
                   {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
@@ -516,8 +450,8 @@ export function ExaminationPage() {
             </TabsContent>
 
             <TabsContent value="oral-diagnoz" className="mt-0">
-              {protocol?.patientId ? (
-                <OralDiagnozTab patientId={protocol.patientId} />
+              {protocol?.patientPublicId ? (
+                <OralDiagnozTab patientId={0} />
               ) : (
                 <div className="space-y-3">
                   {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
