@@ -14,6 +14,7 @@ import { ReportsPage } from '@/pages/reports/ReportsPage';
 import { TreatmentPlansPage } from '@/pages/treatments/TreatmentPlansPage';
 import { NotificationsPage } from '@/pages/notifications/NotificationsPage';
 import { BookingRequestsPage } from '@/pages/bookings/BookingRequestsPage';
+import { DoctorDashboardPage } from '@/pages/doctor/DoctorDashboardPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,6 +36,7 @@ function App() {
           <Route element={<PrivateRoute />}>
             <Route element={<Layout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/doctor" element={<DoctorDashboardPage />} />
               <Route path="/patients" element={<PatientListPage />} />
               <Route path="/patients/:id" element={<PatientDetailPage />} />
               <Route path="/appointments" element={<AppointmentCalendarPage />} />

@@ -15,6 +15,9 @@ export interface Appointment {
   appointmentTypeName: string | null;
   rowVersion: number;
   createdAt: string;
+  patientBirthDate?: string | null;
+  patientGender?: string | null;
+  hasOpenProtocol?: boolean;
 }
 
 export interface CreateAppointmentRequest {

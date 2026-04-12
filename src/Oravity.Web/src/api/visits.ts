@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { WaitingListItem } from '@/types/visit';
+import type { WaitingListItem, DoctorProtocol } from '@/types/visit';
 
 export const visitsApi = {
   getWaitingList: (branchId?: number) =>
@@ -15,6 +15,12 @@ export const visitsApi = {
 
   checkOut: (visitPublicId: string) =>
     apiClient.post(`/visits/${visitPublicId}/checkout`),
+
+  requestCall: (appointmentPublicId: string) =>
+    apiClient.post<{ protocolStarted: boolean; patientName: string }>(
+      '/visits/request-call',
+      { appointmentPublicId },
+    ),
 };
 
 export interface ProtocolTypeSetting {
@@ -26,10 +32,18 @@ export interface ProtocolTypeSetting {
 }
 
 export const protocolsApi = {
+  getMyProtocols: (doctorId?: number) =>
+    apiClient.get<DoctorProtocol[]>('/protocols/my', {
+      params: doctorId ? { doctorId } : undefined,
+    }),
+
   getTypes: () => apiClient.get<ProtocolTypeSetting[]>('/protocols/types'),
 
   create: (visitPublicId: string, doctorId: number, protocolType: number) =>
     apiClient.post('/protocols', { visitPublicId, doctorId, protocolType }),
+
+  start: (protocolPublicId: string) =>
+    apiClient.post(`/protocols/${protocolPublicId}/start`, {}),
 
   complete: (protocolPublicId: string, diagnosis?: string, notes?: string) =>
     apiClient.post(`/protocols/${protocolPublicId}/complete`, { diagnosis, notes }),

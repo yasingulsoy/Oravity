@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LogOut, Moon, Sun,
   LayoutDashboard, Users, Calendar, CreditCard,
-  BarChart3, ClipboardList, Bell, CalendarPlus,
+  BarChart3, ClipboardList, Bell, CalendarPlus, Stethoscope,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useUiStore } from '@/store/uiStore';
@@ -21,6 +21,7 @@ import { PatientSearch } from './PatientSearch';
 
 const navItems = [
   { to: '/dashboard',        label: 'Dashboard',      icon: LayoutDashboard },
+  { to: '/doctor',           label: 'Hekim Ekranı',   icon: Stethoscope     },
   { to: '/patients',         label: 'Hastalar',        icon: Users           },
   { to: '/appointments',     label: 'Randevular',      icon: Calendar        },
   { to: '/treatments',       label: 'Tedaviler',       icon: ClipboardList   },

@@ -42,15 +42,6 @@ export function CreateProtocolDialog({
   const [selectedSpecId, setSelectedSpecId] = useState<number | ''>(defaultSpecializationId ?? '');
   const [doctorId, setDoctorId] = useState<number | null>(defaultDoctorId ?? null);
 
-  // Dialog her açıldığında default değerleri uygula
-  useEffect(() => {
-    if (open) {
-      setProtocolTypeId(null);
-      setSelectedSpecId(defaultSpecializationId ?? '');
-      setDoctorId(defaultDoctorId ?? null);
-    }
-  }, [open, defaultDoctorId, defaultSpecializationId]);
-
   const today = format(new Date(), 'yyyy-MM-dd');
 
   // Protokol tipleri — DB'den
@@ -82,6 +73,24 @@ export function CreateProtocolDialog({
   });
   const doctors = doctorsRaw ?? [];
 
+  // Dialog her açıldığında default değerleri uygula
+  // Uzmanlık: önce randevunun specializationId'si, yoksa hekimin takvimden gelen uzmanlığı
+  useEffect(() => {
+    if (open) {
+      setProtocolTypeId(null);
+      setDoctorId(defaultDoctorId ?? null);
+
+      if (defaultSpecializationId) {
+        setSelectedSpecId(defaultSpecializationId);
+      } else if (defaultDoctorId && doctorsRaw) {
+        const doc = doctorsRaw.find((d) => d.doctorId === defaultDoctorId);
+        setSelectedSpecId(doc?.specializationId ?? '');
+      } else {
+        setSelectedSpecId('');
+      }
+    }
+  }, [open, defaultDoctorId, defaultSpecializationId, doctorsRaw]);
+
   // Uzmanlık listesi
   const specializations = useMemo(() => {
     const map = new Map<number, string>();
@@ -93,10 +102,25 @@ export function CreateProtocolDialog({
   }, [doctors]);
 
   // Seçili uzmanlığa göre filtrelenmiş hekimler
+  // Kullanıcı tarafından seçilmiş hekim filtrede yoksa yine de listeye ekle
+  // (defaultDoctorId kullanılmaz — uzmanlık değişince listeyi temizle)
   const filteredDoctors = useMemo(() => {
-    if (!selectedSpecId) return doctors;
-    return doctors.filter((d) => d.specializationId === Number(selectedSpecId));
-  }, [doctors, selectedSpecId]);
+    const base = selectedSpecId
+      ? doctors.filter((d) => d.specializationId === Number(selectedSpecId))
+      : doctors;
+    if (doctorId && !base.some((d) => d.doctorId === doctorId)) {
+      const current = doctors.find((d) => d.doctorId === doctorId);
+      if (current) return [...base, current];
+    }
+    return base;
+  }, [doctors, selectedSpecId, doctorId]);
+
+  // Filtrede tek hekim varsa otomatik seç
+  useEffect(() => {
+    if (filteredDoctors.length === 1 && !doctorId) {
+      setDoctorId(filteredDoctors[0].doctorId);
+    }
+  }, [filteredDoctors, doctorId]);
 
   // Öncelik: 1) kullanıcı seçimi, 2) randevunun doktoru, 3) giriş yapan kullanıcı
   const currentUserId = user?.id ? Number(user.id) : null;

@@ -2,7 +2,11 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { format, addDays, subDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  ChevronLeft, ChevronRight,
+  CalendarDays, PhoneCall, UserCheck, Stethoscope, CheckCheck,
+  XCircle, Ban, LogOut, Trash2,
+} from 'lucide-react';
 import { appointmentsApi } from '@/api/appointments';
 import { useCalendarSocket } from '@/hooks/useCalendarSocket';
 import { Button } from '@/components/ui/button';
@@ -17,6 +21,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { APPOINTMENT_STATUS_COLORS } from '@/lib/constants';
+import { cn } from '@/lib/utils';
 import { MultiSelect } from './components/MultiSelect';
 import { CalendarGrid } from './components/CalendarGrid';
 import { PatientSearchModal } from './components/PatientSearchModal';
@@ -32,6 +37,108 @@ interface SelectedRange {
   date: Date;
   dayStartHour: number;
   dayEndHour: number;
+}
+
+// ─── Appointment Journey Tracker ──────────────────────────────────────────
+
+const JOURNEY_STEPS = [
+  { id: 1, label: 'Planlandı',   icon: CalendarDays  },
+  { id: 2, label: 'Onaylandı',   icon: PhoneCall     },
+  { id: 3, label: 'Geldi',       icon: UserCheck     },
+  { id: 5, label: 'Odada',       icon: Stethoscope   },
+  { id: 7, label: 'Tamamlandı',  icon: CheckCheck    },
+] as const;
+
+// Terminal durumlar: adım sırası yok, özel badge gösterilir
+const TERMINAL: Record<number, { label: string; icon: typeof XCircle; color: string }> = {
+  6: { label: 'İptal',   icon: Ban,     color: 'text-red-500'    },
+  8: { label: 'Gelmedi', icon: XCircle, color: 'text-orange-500' },
+  4: { label: 'Ayrıldı', icon: LogOut,  color: 'text-slate-500'  },
+};
+
+function AppointmentJourney({ statusId }: { statusId: number }) {
+  const terminal = TERMINAL[statusId];
+
+  // Terminal durumda son tamamlanan adımı bul
+  const currentStepIndex = JOURNEY_STEPS.findIndex((s) => s.id === statusId);
+
+  if (terminal) {
+    // Kaçıncı adıma kadar gelindi — 4 (Left) = 3.adımdan sonra, 6/8 = başlangıçta
+    const lastCompleted = statusId === 4 ? 2 : statusId === 8 ? 0 : -1;
+    const TerminalIcon = terminal.icon;
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          {JOURNEY_STEPS.map((step, i) => {
+            const Icon = step.icon;
+            const done = i <= lastCompleted;
+            return (
+              <div key={step.id} className="flex items-center gap-1 flex-1 min-w-0">
+                <div className={cn(
+                  'h-5 w-5 rounded-full flex items-center justify-center shrink-0',
+                  done ? 'bg-emerald-500' : 'bg-muted',
+                )}>
+                  <Icon className={cn('h-3 w-3', done ? 'text-white' : 'text-muted-foreground')} />
+                </div>
+                {i < JOURNEY_STEPS.length - 1 && (
+                  <div className={cn('h-px flex-1', done ? 'bg-emerald-400' : 'bg-border')} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className={cn('flex items-center gap-1.5 text-xs font-medium', terminal.color)}>
+          <TerminalIcon className="h-3.5 w-3.5" />
+          {terminal.label}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      {JOURNEY_STEPS.map((step, i) => {
+        const Icon = step.icon;
+        const done    = i < currentStepIndex;
+        const current = i === currentStepIndex;
+        const future  = i > currentStepIndex;
+
+        return (
+          <div key={step.id} className="flex items-center gap-1 flex-1 min-w-0">
+            <div className="flex flex-col items-center gap-0.5 shrink-0">
+              <div className={cn(
+                'h-6 w-6 rounded-full flex items-center justify-center transition-colors',
+                done    && 'bg-emerald-500',
+                current && 'bg-primary ring-2 ring-primary/30',
+                future  && 'bg-muted',
+              )}>
+                <Icon className={cn(
+                  'h-3.5 w-3.5',
+                  done    && 'text-white',
+                  current && 'text-primary-foreground',
+                  future  && 'text-muted-foreground/50',
+                )} />
+              </div>
+              <span className={cn(
+                'text-[10px] leading-none text-center whitespace-nowrap',
+                done    && 'text-emerald-600 dark:text-emerald-400',
+                current && 'text-primary font-semibold',
+                future  && 'text-muted-foreground/50',
+              )}>
+                {step.label}
+              </span>
+            </div>
+            {i < JOURNEY_STEPS.length - 1 && (
+              <div className={cn(
+                'h-px flex-1 mb-3 transition-colors',
+                done ? 'bg-emerald-400' : 'bg-border',
+              )} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export function AppointmentCalendarPage() {
@@ -197,6 +304,18 @@ export function AppointmentCalendarPage() {
     },
   });
 
+  const [cancelConfirm, setCancelConfirm] = useState(false);
+  const cancelMutation = useMutation({
+    mutationFn: (publicId: string) => appointmentsApi.cancel(publicId),
+    onSuccess: () => {
+      setCancelConfirm(false);
+      setDetailOpen(false);
+      setPendingStatusId(null);
+      queryClient.invalidateQueries({ queryKey: ['appointments'] });
+      queryClient.invalidateQueries({ queryKey: ['visits', 'waiting'] });
+    },
+  });
+
   // --- Date helpers ---
   const displayDate = format(currentDate, "dd MMMM yyyy - EEEE", { locale: tr });
 
@@ -339,6 +458,11 @@ export function AppointmentCalendarPage() {
 
             return (
               <div className="space-y-4">
+                {/* Yolculuk adımları */}
+                <AppointmentJourney statusId={activeStatusId} />
+
+                <Separator />
+
                 {/* Durum + geçiş */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -426,21 +550,54 @@ export function AppointmentCalendarPage() {
             );
           })()}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setDetailOpen(false); setPendingStatusId(null); }}>
-              Kapat
-            </Button>
-            {pendingStatusId !== null && (
-              <Button
-                onClick={() => statusMutation.mutate({
-                  publicId: selectedAppointment!.publicId,
-                  statusId: pendingStatusId,
-                })}
-                disabled={statusMutation.isPending}
-              >
-                {statusMutation.isPending ? 'Kaydediliyor...' : 'Durumu Güncelle'}
-              </Button>
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+            {/* Sol: iptal butonu — terminal durumda gösterme */}
+            {selectedAppointment && ![4, 6, 7, 8].includes(selectedAppointment.statusId) && (
+              !cancelConfirm ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10 sm:mr-auto"
+                  onClick={() => setCancelConfirm(true)}
+                >
+                  <Trash2 className="size-3.5 mr-1" />
+                  İptal Et
+                </Button>
+              ) : (
+                <div className="flex items-center gap-2 sm:mr-auto">
+                  <span className="text-xs text-destructive">Emin misiniz?</span>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => cancelMutation.mutate(selectedAppointment.publicId)}
+                    disabled={cancelMutation.isPending}
+                  >
+                    {cancelMutation.isPending ? 'İptal ediliyor...' : 'Evet, İptal Et'}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setCancelConfirm(false)}>
+                    Vazgeç
+                  </Button>
+                </div>
+              )
             )}
+
+            {/* Sağ: kapat + güncelle */}
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => { setDetailOpen(false); setPendingStatusId(null); setCancelConfirm(false); }}>
+                Kapat
+              </Button>
+              {pendingStatusId !== null && (
+                <Button
+                  onClick={() => statusMutation.mutate({
+                    publicId: selectedAppointment!.publicId,
+                    statusId: pendingStatusId,
+                  })}
+                  disabled={statusMutation.isPending}
+                >
+                  {statusMutation.isPending ? 'Kaydediliyor...' : 'Durumu Güncelle'}
+                </Button>
+              )}
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,6 +1,31 @@
 import { useMemo } from 'react';
+import { Stethoscope } from 'lucide-react';
 import type { Appointment, AppointmentStatus } from '@/types/appointment';
 import { cn } from '@/lib/utils';
+import { getAppointmentStep } from '@/lib/appointmentJourney';
+import {
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from '@/components/ui/tooltip';
+
+function calcAge(birthDate?: string | null): number | null {
+  if (!birthDate) return null;
+  const today = new Date();
+  const bd = new Date(birthDate);
+  let age = today.getFullYear() - bd.getFullYear();
+  if (
+    today.getMonth() < bd.getMonth() ||
+    (today.getMonth() === bd.getMonth() && today.getDate() < bd.getDate())
+  ) age--;
+  return age;
+}
+
+function genderLabel(gender?: string | null): string {
+  if (!gender) return '';
+  const g = gender.toLowerCase();
+  if (g === 'male' || g === 'erkek' || g === 'm') return 'E';
+  if (g === 'female' || g === 'kadın' || g === 'kadin' || g === 'f') return 'K';
+  return '';
+}
 
 interface AppointmentBlockProps {
   appointment: Appointment;
@@ -24,6 +49,8 @@ export function AppointmentBlock({
   onClick,
 }: AppointmentBlockProps) {
   const status = statuses.find((s) => s.id === appointment.statusId);
+  const journeyStep = getAppointmentStep(appointment.statusId);
+  const JourneyIcon = journeyStep.icon;
 
   const { top, height } = useMemo(() => {
     const start = new Date(appointment.startTime);
@@ -77,9 +104,35 @@ export function AppointmentBlock({
         )}
         <span className="font-medium truncate">{timeStr}</span>
       </div>
-      <div className="truncate leading-tight">
-        {appointment.patientName ?? 'Isimsiz Hasta'}
+      <div className="flex items-center gap-1 leading-tight">
+        <span className="truncate">{appointment.patientName ?? 'İsimsiz Hasta'}</span>
+        <div className="flex items-center gap-0.5 shrink-0 ml-auto">
+          {/* Protokol açık ama zaten journey icon'u bunu göstermiyorsa (InRoom=5 hariç) */}
+          {appointment.hasOpenProtocol && appointment.statusId !== 5 && (
+            <Stethoscope className="size-2.5 opacity-80" />
+          )}
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <JourneyIcon className={cn('size-2.5', journeyStep.color)} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                {journeyStep.label}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
       </div>
+      {(() => {
+        const age = calcAge(appointment.patientBirthDate);
+        const gender = genderLabel(appointment.patientGender);
+        const info = [age !== null ? `${age}y` : null, gender].filter(Boolean).join(' ');
+        return info ? (
+          <div className="text-[10px] opacity-60 leading-tight">{info}</div>
+        ) : null;
+      })()}
       {appointment.appointmentTypeName && (
         <div className="truncate text-[10px] opacity-70 leading-tight">
           {appointment.appointmentTypeName}

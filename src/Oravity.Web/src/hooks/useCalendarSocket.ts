@@ -53,6 +53,11 @@ export function useCalendarSocket(onEvent: (event: CalendarEvent) => void) {
       .configureLogging(signalR.LogLevel.None)
       .build();
 
+    // Backend sends "CalendarUpdated" (appointment created/moved/status-changed/cancelled)
+    connection.on('CalendarUpdated', (event: CalendarEvent) => {
+      onEventRef.current(event);
+    });
+    // Legacy alias — kept for backwards compatibility
     connection.on('AppointmentChanged', (event: CalendarEvent) => {
       onEventRef.current(event);
     });
