@@ -32,6 +32,9 @@ public class Visit : BaseEntity
     public DateTime  CheckInAt   { get; private set; }
     public DateTime? CheckOutAt  { get; private set; }
 
+    /// <summary>Hekimin "Çağır" butonuna bastığı zaman. Null = henüz çağırılmadı.</summary>
+    public DateTime? CalledAt { get; private set; }
+
     public VisitStatus Status { get; private set; } = VisitStatus.Waiting;
     public string?     Notes  { get; private set; }
     public long        CreatedBy { get; private set; }
@@ -60,6 +63,12 @@ public class Visit : BaseEntity
         Notes         = notes,
         CreatedBy     = createdBy,
     };
+
+    public void MarkCalled()
+    {
+        CalledAt = DateTime.UtcNow;
+        MarkUpdated();
+    }
 
     public void OpenProtocol()
     {

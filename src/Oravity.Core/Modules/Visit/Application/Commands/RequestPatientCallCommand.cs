@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Oravity.Core.Modules.Appointment.Application;
 using Oravity.Core.Modules.Notification.Application;
 using Oravity.Core.Modules.Notification.Infrastructure.Services;
 using Oravity.Infrastructure.Database;
@@ -22,18 +23,21 @@ public record RequestPatientCallResult(bool ProtocolStarted, string PatientName)
 public class RequestPatientCallCommandHandler
     : IRequestHandler<RequestPatientCallCommand, RequestPatientCallResult>
 {
-    private readonly AppDbContext            _db;
-    private readonly ITenantContext          _tenant;
-    private readonly INotificationHubService _hub;
+    private readonly AppDbContext              _db;
+    private readonly ITenantContext            _tenant;
+    private readonly INotificationHubService   _notifHub;
+    private readonly ICalendarBroadcastService _calendarBroadcast;
 
     public RequestPatientCallCommandHandler(
         AppDbContext db,
         ITenantContext tenant,
-        INotificationHubService hub)
+        INotificationHubService notifHub,
+        ICalendarBroadcastService calendarBroadcast)
     {
-        _db     = db;
-        _tenant = tenant;
-        _hub    = hub;
+        _db                = db;
+        _tenant            = tenant;
+        _notifHub          = notifHub;
+        _calendarBroadcast = calendarBroadcast;
     }
 
     public async Task<RequestPatientCallResult> Handle(
@@ -73,9 +77,14 @@ public class RequestPatientCallCommandHandler
             if (openProtocol != null)
             {
                 openProtocol.Start();
+                visit.MarkCalled();
                 await _db.SaveChangesAsync(ct);
+                await BroadcastVisitCalledAsync(visit, patientName, ct);
                 return new RequestPatientCallResult(true, patientName);
             }
+
+            // Açık protokol yok ama visit var → çağrıyı işaretle
+            visit.MarkCalled();
         }
 
         // Açık protokol yok → resepsiyona bildirim gönder
@@ -95,7 +104,7 @@ public class RequestPatientCallCommandHandler
         _db.Notifications.Add(notification);
         await _db.SaveChangesAsync(ct);
 
-        await _hub.SendToBranch(
+        await _notifHub.SendToBranch(
             appointment.BranchId,
             new NotificationPayload(
                 notification.PublicId,
@@ -109,6 +118,17 @@ public class RequestPatientCallCommandHandler
                 notification.CreatedAt),
             ct);
 
+        // Waiting list'te isBeingCalled göstermek için VisitUpdated yayınla
+        if (visit != null)
+            await BroadcastVisitCalledAsync(visit, patientName, ct);
+
         return new RequestPatientCallResult(false, patientName);
     }
+
+    private Task BroadcastVisitCalledAsync(SharedKernel.Entities.Visit visit, string patientName, CancellationToken ct)
+        => _calendarBroadcast.BroadcastVisitAsync(
+            visit.BranchId,
+            new VisitBroadcastDto(visit.PublicId, visit.BranchId, visit.PatientId, patientName, visit.IsWalkIn, (int)visit.Status),
+            CalendarEventType.Updated,
+            ct);
 }

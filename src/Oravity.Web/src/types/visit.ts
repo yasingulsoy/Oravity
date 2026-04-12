@@ -26,6 +26,7 @@ export interface WaitingListItem {
   appointmentSpecializationId: number | null;
   patientBirthDate: string | null;
   patientGender: string | null;
+  isBeingCalled: boolean;
   protocols: WaitingProtocolItem[];
 }
 

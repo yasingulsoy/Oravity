@@ -18,6 +18,7 @@ public record WaitingListItemResponse(
     int?     AppointmentSpecializationId,
     DateOnly? PatientBirthDate,
     string?  PatientGender,
+    bool     IsBeingCalled,
     IReadOnlyList<WaitingProtocolItem> Protocols
 );
 

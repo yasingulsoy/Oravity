@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Clock, UserCheck, LogOut, Stethoscope, WifiOff, User } from 'lucide-react';
+import { Clock, UserCheck, LogOut, Stethoscope, WifiOff, User, PhoneCall } from 'lucide-react';
 import { getVisitStep } from '@/lib/appointmentJourney';
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
@@ -166,6 +166,9 @@ export function WaitingList() {
                         <span className="text-sm font-medium leading-tight line-clamp-1">
                           {item.patientName}
                         </span>
+                        {item.isBeingCalled && (
+                          <PhoneCall className="size-3.5 text-emerald-500 shrink-0 animate-pulse" />
+                        )}
                       </div>
                       {(() => {
                         const age = calcAge(item.patientBirthDate);
