@@ -3,9 +3,6 @@ import { Stethoscope } from 'lucide-react';
 import type { Appointment, AppointmentStatus } from '@/types/appointment';
 import { cn } from '@/lib/utils';
 import { getAppointmentStep } from '@/lib/appointmentJourney';
-import {
-  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
-} from '@/components/ui/tooltip';
 
 function calcAge(birthDate?: string | null): number | null {
   if (!birthDate) return null;
@@ -111,18 +108,10 @@ export function AppointmentBlock({
           {appointment.hasOpenProtocol && appointment.statusId !== 5 && (
             <Stethoscope className="size-2.5 opacity-80" />
           )}
-          <TooltipProvider delayDuration={300}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <JourneyIcon className={cn('size-2.5', journeyStep.color)} />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-xs">
-                {journeyStep.label}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          {/* title attribute kullanıyoruz — button içinde button olamaz */}
+          <span title={journeyStep.label}>
+            <JourneyIcon className={cn('size-2.5', journeyStep.color)} />
+          </span>
         </div>
       </div>
       {(() => {
