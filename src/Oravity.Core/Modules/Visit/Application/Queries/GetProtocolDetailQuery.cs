@@ -20,6 +20,8 @@ public class GetProtocolDetailQueryHandler : IRequestHandler<GetProtocolDetailQu
             .AsNoTracking()
             .Include(x => x.Patient)
             .Include(x => x.Doctor)
+            .Include(x => x.Diagnoses.Where(d => !d.IsDeleted))
+                .ThenInclude(d => d.IcdCode)
             .FirstOrDefaultAsync(x => x.PublicId == request.PublicId && !x.IsDeleted, ct)
             ?? throw new NotFoundException("Protokol bulunamadı.");
 
@@ -37,10 +39,18 @@ public class GetProtocolDetailQueryHandler : IRequestHandler<GetProtocolDetailQu
             (int)p.Status,
             VisitLabels.ProtocolStatus((int)p.Status),
             p.ChiefComplaint,
+            p.ExaminationFindings,
             p.Diagnosis,
+            p.TreatmentPlan,
             p.Notes,
             p.StartedAt,
             p.CompletedAt,
-            p.CreatedAt);
+            p.CreatedAt,
+            p.Diagnoses.OrderByDescending(d => d.IsPrimary).ThenBy(d => d.Id)
+                .Select(d => new ProtocolDiagnosisResponse(
+                    d.PublicId, d.IcdCodeId,
+                    d.IcdCode.Code, d.IcdCode.Description, d.IcdCode.Category,
+                    d.IsPrimary, d.Note))
+                .ToList());
     }
 }

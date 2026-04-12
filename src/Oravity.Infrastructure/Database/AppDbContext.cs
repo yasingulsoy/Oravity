@@ -56,10 +56,14 @@ public class AppDbContext : DbContext
     public DbSet<DoctorOnCallSettings> DoctorOnCallSettings  => Set<DoctorOnCallSettings>();
 
     // ─── Visit & Protocol ─────────────────────────────────────────────────
-    public DbSet<Visit>            Visits            => Set<Visit>();
-    public DbSet<Protocol>         Protocols         => Set<Protocol>();
-    public DbSet<ProtocolSequence> ProtocolSequences => Set<ProtocolSequence>();
-    public DbSet<ProtocolTypeSetting> ProtocolTypes => Set<ProtocolTypeSetting>();
+    public DbSet<Visit>               Visits               => Set<Visit>();
+    public DbSet<Protocol>            Protocols            => Set<Protocol>();
+    public DbSet<ProtocolSequence>    ProtocolSequences    => Set<ProtocolSequence>();
+    public DbSet<ProtocolTypeSetting> ProtocolTypes        => Set<ProtocolTypeSetting>();
+    public DbSet<ProtocolDiagnosis>   ProtocolDiagnoses    => Set<ProtocolDiagnosis>();
+
+    // ─── ICD Kodu ─────────────────────────────────────────────────────────
+    public DbSet<IcdCode> IcdCodes => Set<IcdCode>();
 
     // ─── Treatment Plans ───────────────────────────────────────────────────
     public DbSet<TreatmentPlan> TreatmentPlans => Set<TreatmentPlan>();
@@ -1148,8 +1152,15 @@ public class AppDbContext : DbContext
             e.Property(x => x.ProtocolType).HasConversion<int>();
             e.Property(x => x.Status).HasConversion<int>();
             e.Property(x => x.ChiefComplaint).HasColumnType("text");
+            e.Property(x => x.ExaminationFindings).HasColumnType("text");
             e.Property(x => x.Diagnosis).HasColumnType("text");
+            e.Property(x => x.TreatmentPlan).HasColumnType("text");
             e.Property(x => x.Notes).HasColumnType("text");
+
+            e.HasMany(x => x.Diagnoses)
+             .WithOne(x => x.Protocol)
+             .HasForeignKey(x => x.ProtocolId)
+             .OnDelete(DeleteBehavior.Cascade);
 
             e.HasOne(x => x.Patient)
              .WithMany()
@@ -1178,6 +1189,37 @@ public class AppDbContext : DbContext
              .WithMany()
              .HasForeignKey(x => x.BranchId)
              .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── IcdCode ───────────────────────────────────────────────────────
+        m.Entity<IcdCode>(e =>
+        {
+            e.ToTable("icd_codes");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_icd_codes_public_id");
+            e.Property(x => x.Code).HasMaxLength(20).IsRequired();
+            e.HasIndex(x => x.Code).IsUnique().HasDatabaseName("ix_icd_codes_code");
+            e.Property(x => x.Description).HasMaxLength(500).IsRequired();
+            e.Property(x => x.Category).HasMaxLength(20).IsRequired();
+        });
+
+        // ── ProtocolDiagnosis ─────────────────────────────────────────────
+        m.Entity<ProtocolDiagnosis>(e =>
+        {
+            e.ToTable("protocol_diagnoses");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_protocol_diagnoses_public_id");
+            e.HasIndex(x => x.ProtocolId).HasDatabaseName("ix_protocol_diagnoses_protocol");
+            e.Property(x => x.Note).HasMaxLength(500);
+
+            e.HasOne(x => x.IcdCode)
+             .WithMany()
+             .HasForeignKey(x => x.IcdCodeId)
+             .OnDelete(DeleteBehavior.Restrict);
         });
 
         // ── PatientMedication ──────────────────────────────────────────────

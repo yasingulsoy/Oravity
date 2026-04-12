@@ -79,7 +79,7 @@ public class ProtocolsController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>Protokol detayı.</summary>
+    /// <summary>Protokol detayı (tanılar dahil).</summary>
     [HttpGet("{publicId:guid}")]
     [RequirePermission("protocol:view")]
     [ProducesResponseType(typeof(ProtocolDetailResponse), StatusCodes.Status200OK)]
@@ -88,9 +88,63 @@ public class ProtocolsController : ControllerBase
         var result = await _mediator.Send(new GetProtocolDetailQuery(publicId), ct);
         return Ok(result);
     }
+
+    /// <summary>Protokol notlarını güncelle (şikayet, muayene bulguları, tanı, tedavi planı).</summary>
+    [HttpPut("{publicId:guid}/details")]
+    [RequirePermission("protocol:update")]
+    [ProducesResponseType(typeof(ProtocolDetailResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateDetails(Guid publicId, [FromBody] UpdateProtocolDetailsRequest req, CancellationToken ct)
+    {
+        var result = await _mediator.Send(
+            new UpdateProtocolDetailsCommand(publicId, req.ChiefComplaint, req.ExaminationFindings, req.Diagnosis, req.TreatmentPlan, req.Notes), ct);
+        return Ok(result);
+    }
+
+    /// <summary>ICD kodu arama (autocomplete).</summary>
+    [HttpGet("icd/search")]
+    [RequirePermission("protocol:view")]
+    [ProducesResponseType(typeof(IReadOnlyList<IcdCodeResponse>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> SearchIcd([FromQuery] string? q, [FromQuery] int? type, [FromQuery] int limit = 20, CancellationToken ct = default)
+    {
+        var result = await _mediator.Send(new SearchIcdCodesQuery(q, type, Math.Min(limit, 50)), ct);
+        return Ok(result);
+    }
+
+    /// <summary>Protokole ICD tanı kodu ekle.</summary>
+    [HttpPost("{publicId:guid}/diagnoses")]
+    [RequirePermission("protocol:update")]
+    [ProducesResponseType(typeof(ProtocolDiagnosisResponse), StatusCodes.Status201Created)]
+    public async Task<IActionResult> AddDiagnosis(Guid publicId, [FromBody] AddDiagnosisRequest req, CancellationToken ct)
+    {
+        var result = await _mediator.Send(
+            new AddProtocolDiagnosisCommand(publicId, req.IcdCodeId, req.IsPrimary, req.Note), ct);
+        return StatusCode(StatusCodes.Status201Created, result);
+    }
+
+    /// <summary>Protokol tanısını sil.</summary>
+    [HttpDelete("diagnoses/{diagnosisPublicId:guid}")]
+    [RequirePermission("protocol:update")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> RemoveDiagnosis(Guid diagnosisPublicId, CancellationToken ct)
+    {
+        await _mediator.Send(new RemoveProtocolDiagnosisCommand(diagnosisPublicId), ct);
+        return NoContent();
+    }
+
+    /// <summary>Hastanın protokol geçmişi.</summary>
+    [HttpGet("patient/{patientPublicId:guid}/history")]
+    [RequirePermission("protocol:view")]
+    [ProducesResponseType(typeof(IReadOnlyList<ProtocolHistoryItem>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetPatientHistory(Guid patientPublicId, [FromQuery] int limit = 20, CancellationToken ct = default)
+    {
+        var result = await _mediator.Send(new GetPatientProtocolHistoryQuery(patientPublicId, limit), ct);
+        return Ok(result);
+    }
 }
 
 // ─── Request DTO ──────────────────────────────────────────────────────────
 
 public record CreateProtocolRequest(Guid VisitPublicId, long DoctorId, int ProtocolType);
 public record ProtocolTypeResponse(int Id, string Name, string Code, string Color, string? Description);
+public record UpdateProtocolDetailsRequest(string? ChiefComplaint, string? ExaminationFindings, string? Diagnosis, string? TreatmentPlan, string? Notes);
+public record AddDiagnosisRequest(long IcdCodeId, bool IsPrimary, string? Note);

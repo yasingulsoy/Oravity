@@ -63,6 +63,16 @@ public record ProtocolSummaryResponse(
     DateTime? CompletedAt
 );
 
+public record ProtocolDiagnosisResponse(
+    Guid    PublicId,
+    long    IcdCodeId,
+    string  Code,
+    string  Description,
+    string  Category,
+    bool    IsPrimary,
+    string? Note
+);
+
 public record ProtocolDetailResponse(
     Guid     PublicId,
     string   ProtocolNo,
@@ -77,11 +87,22 @@ public record ProtocolDetailResponse(
     int      Status,
     string   StatusName,
     string?  ChiefComplaint,
+    string?  ExaminationFindings,
     string?  Diagnosis,
+    string?  TreatmentPlan,
     string?  Notes,
     DateTime? StartedAt,
     DateTime? CompletedAt,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    IReadOnlyList<ProtocolDiagnosisResponse> Diagnoses
+);
+
+public record IcdCodeResponse(
+    long   Id,
+    string Code,
+    string Description,
+    string Category,
+    int    Type
 );
 
 public record DoctorProtocolResponse(

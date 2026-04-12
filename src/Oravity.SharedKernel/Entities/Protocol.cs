@@ -45,17 +45,20 @@ public class Protocol : BaseEntity
     public ProtocolType   ProtocolType { get; private set; }
     public ProtocolStatus Status       { get; private set; } = ProtocolStatus.Open;
 
-    public string? ChiefComplaint { get; private set; }
-    public string? Diagnosis      { get; private set; }
-    public string? Notes          { get; private set; }
+    public string? ChiefComplaint       { get; private set; }
+    public string? ExaminationFindings  { get; private set; }
+    public string? Diagnosis            { get; private set; }
+    public string? TreatmentPlan        { get; private set; }
+    public string? Notes                { get; private set; }
 
     public DateTime? StartedAt   { get; private set; }
     public DateTime? CompletedAt { get; private set; }
 
     public long CreatedBy { get; private set; }
 
-    public ICollection<TreatmentPlan>    TreatmentPlans { get; private set; } = [];
-    public ICollection<PatientAnamnesis> Anamneses      { get; private set; } = [];
+    public ICollection<TreatmentPlan>      TreatmentPlans     { get; private set; } = [];
+    public ICollection<PatientAnamnesis>   Anamneses          { get; private set; } = [];
+    public ICollection<ProtocolDiagnosis>  Diagnoses          { get; private set; } = [];
 
     private Protocol() { }
 
@@ -94,11 +97,18 @@ public class Protocol : BaseEntity
         MarkUpdated();
     }
 
-    public void UpdateDetails(string? chiefComplaint, string? diagnosis, string? notes)
+    public void UpdateDetails(
+        string? chiefComplaint,
+        string? examinationFindings,
+        string? diagnosis,
+        string? treatmentPlan,
+        string? notes)
     {
-        ChiefComplaint = chiefComplaint;
-        Diagnosis      = diagnosis;
-        Notes          = notes;
+        ChiefComplaint      = chiefComplaint;
+        ExaminationFindings = examinationFindings;
+        Diagnosis           = diagnosis;
+        TreatmentPlan       = treatmentPlan;
+        Notes               = notes;
         MarkUpdated();
     }
 
