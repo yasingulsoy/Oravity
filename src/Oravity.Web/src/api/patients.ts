@@ -25,8 +25,14 @@ export const patientsApi = {
   getAnamnesis: (publicId: string) =>
     apiClient.get<PatientAnamnesis>(`/patients/${publicId}/anamnesis`),
 
-  upsertAnamnesis: (publicId: string, data: Omit<PatientAnamnesis, 'publicId' | 'hasCriticalAlert' | 'filledAt' | 'filledByName'>) =>
-    apiClient.put<PatientAnamnesis>(`/patients/${publicId}/anamnesis`, data),
+  upsertAnamnesis: (
+    publicId: string,
+    data: Omit<PatientAnamnesis, 'publicId' | 'hasCriticalAlert' | 'filledAt' | 'filledByName'>,
+    protocolPublicId?: string,
+  ) =>
+    apiClient.put<PatientAnamnesis>(`/patients/${publicId}/anamnesis`, data, {
+      params: protocolPublicId ? { protocolPublicId } : undefined,
+    }),
 
   getAnamnesisHistory: (publicId: string, limit = 50) =>
     apiClient.get<AnamnesisHistoryItem[]>(`/patients/${publicId}/anamnesis/history`, { params: { limit } }),

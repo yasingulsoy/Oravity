@@ -175,7 +175,10 @@ public class PatientsController : ControllerBase
     [RequirePermission("patient:edit_basic")]
     [ProducesResponseType(typeof(PatientAnamnesisResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> UpsertAnamnesis(Guid publicId, [FromBody] UpsertAnamnesisRequest request)
+    public async Task<IActionResult> UpsertAnamnesis(
+        Guid publicId,
+        [FromBody] UpsertAnamnesisRequest request,
+        [FromQuery] Guid? protocolPublicId = null)
     {
         var data = new SharedKernel.Entities.PatientAnamnesisData(
             request.BloodType, request.IsPregnant, request.IsBreastfeeding,
@@ -190,7 +193,7 @@ public class PatientsController : ControllerBase
             request.SmokingStatus, request.SmokingAmount, request.AlcoholUse,
             request.AdditionalNotes);
 
-        var result = await _mediator.Send(new UpsertPatientAnamnesisCommand(publicId, data));
+        var result = await _mediator.Send(new UpsertPatientAnamnesisCommand(publicId, data, protocolPublicId));
         return Ok(result);
     }
 

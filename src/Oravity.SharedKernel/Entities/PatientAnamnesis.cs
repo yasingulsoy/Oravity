@@ -86,14 +86,15 @@ public class PatientAnamnesis : BaseEntity
 
     private PatientAnamnesis() { }
 
-    public static PatientAnamnesis Create(long patientId, long branchId, long filledBy)
+    public static PatientAnamnesis Create(long patientId, long branchId, long filledBy, long? protocolId = null)
     {
         return new PatientAnamnesis
         {
-            PatientId = patientId,
-            BranchId  = branchId,
-            FilledBy  = filledBy,
-            FilledAt  = DateTime.UtcNow
+            PatientId  = patientId,
+            BranchId   = branchId,
+            FilledBy   = filledBy,
+            FilledAt   = DateTime.UtcNow,
+            ProtocolId = protocolId,
         };
     }
 

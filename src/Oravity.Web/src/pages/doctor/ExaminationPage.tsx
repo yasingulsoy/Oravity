@@ -190,7 +190,7 @@ function BoolRow({ label, value }: { label: string; value: boolean }) {
   );
 }
 
-function AnamnezTab({ patientPublicId }: { patientPublicId: string }) {
+function AnamnezTab({ patientPublicId, protocolPublicId }: { patientPublicId: string; protocolPublicId: string }) {
   const qc = useQueryClient();
 
   // ── Latest anamnesis (pre-fill) ────────────────────────────────────────────
@@ -279,7 +279,7 @@ function AnamnezTab({ patientPublicId }: { patientPublicId: string }) {
     setDraft((prev) => ({ ...prev, [key]: val || null }));
 
   const saveMutation = useMutation({
-    mutationFn: () => patientsApi.upsertAnamnesis(patientPublicId, draft as any),
+    mutationFn: () => patientsApi.upsertAnamnesis(patientPublicId, draft as any, protocolPublicId),
     onSuccess: (res) => {
       setSelectedHistoryId(res.data.publicId);
       qc.invalidateQueries({ queryKey: ['patient-anamnesis', patientPublicId] });
@@ -1110,7 +1110,7 @@ export function ExaminationPage() {
           <TabsContent value="anamnez" className="mt-0">
             <div className="max-w-5xl mx-auto p-4">
               {protocol?.patientPublicId ? (
-                <AnamnezTab patientPublicId={protocol.patientPublicId} />
+                <AnamnezTab patientPublicId={protocol.patientPublicId} protocolPublicId={protocol.publicId} />
               ) : (
                 <div className="space-y-3">
                   {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}

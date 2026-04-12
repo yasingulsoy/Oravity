@@ -11,7 +11,8 @@ namespace Oravity.Core.Modules.Core.Patient.Application.Commands;
 
 public record UpsertPatientAnamnesisCommand(
     Guid PatientPublicId,
-    PatientAnamnesisData Data
+    PatientAnamnesisData Data,
+    Guid? ProtocolPublicId = null
 ) : IRequest<PatientAnamnesisResponse>;
 
 public class UpsertPatientAnamnesisCommandHandler
@@ -32,8 +33,17 @@ public class UpsertPatientAnamnesisCommandHandler
             .FirstOrDefaultAsync(p => p.PublicId == request.PatientPublicId && !p.IsDeleted, ct)
             ?? throw new NotFoundException($"Hasta bulunamadı: {request.PatientPublicId}");
 
+        long? protocolId = null;
+        if (request.ProtocolPublicId.HasValue)
+        {
+            protocolId = await _db.Protocols
+                .Where(p => p.PublicId == request.ProtocolPublicId.Value && !p.IsDeleted)
+                .Select(p => (long?)p.Id)
+                .FirstOrDefaultAsync(ct);
+        }
+
         // Her kayıt yeni satır olarak eklenir — geçmiş saklanır.
-        var anamnesis = PatientAnamnesis.Create(patient.Id, patient.BranchId, _tenant.UserId);
+        var anamnesis = PatientAnamnesis.Create(patient.Id, patient.BranchId, _tenant.UserId, protocolId);
         anamnesis.Update(request.Data, _tenant.UserId);
         _db.PatientAnamneses.Add(anamnesis);
         await _db.SaveChangesAsync(ct);
