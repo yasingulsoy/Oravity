@@ -473,7 +473,7 @@ function AnamnezTab({ patientPublicId, protocolPublicId }: { patientPublicId: st
           </div>
         ) : (
           <div className="space-y-2">
-            {history.map((h, idx) => (
+            {[...history].sort((a, b) => new Date(b.filledAt).getTime() - new Date(a.filledAt).getTime()).map((h, idx) => (
               <button
                 key={h.publicId}
                 className={cn(
@@ -935,7 +935,7 @@ function ProtokolTab({
           </div>
         ) : (
           <div className="space-y-2">
-            {history.map((h) => {
+            {[...history].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((h) => {
               const isCurrent = h.publicId === protocolPublicId;
               const isViewing = h.publicId === viewingId;
               const isOpen    = h.status === 1 || h.status === 2;
