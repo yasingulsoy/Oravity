@@ -7,7 +7,7 @@ import {
   ArrowLeft, User, ClipboardList, ScanLine,
   CheckCheck, AlertTriangle, Cigarette, Wine,
   Phone, Mail, MapPin, Calendar, Heart, Save,
-  FileText, Search, Trash2, History,
+  FileText, Search, Trash2, History, Lock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -625,12 +625,19 @@ function ProtokolTab({
 }) {
   const qc = useQueryClient();
 
-  // ── Protocol detail ────────────────────────────────────────────────────────
+  // ── Hangi protokolü görüntülüyoruz ────────────────────────────────────────
+  const [viewingId, setViewingId] = useState(protocolPublicId);
+  const isCurrentProtocol = viewingId === protocolPublicId;
+
+  // ── Protocol detail (görüntülenen) ────────────────────────────────────────
   const { data: detail, isLoading: detailLoading } = useQuery<ProtocolDetail>({
-    queryKey: ['protocol-detail', protocolPublicId],
-    queryFn: () => protocolsApi.getDetail(protocolPublicId).then((r) => r.data),
+    queryKey: ['protocol-detail', viewingId],
+    queryFn: () => protocolsApi.getDetail(viewingId).then((r) => r.data),
     staleTime: 30_000,
   });
+
+  // Düzenlenebilir mi? Sadece mevcut açık protokol
+  const isEditable = isCurrentProtocol && detail != null && detail.status === 1;
 
   // ── Patient history ────────────────────────────────────────────────────────
   const { data: history = [], isLoading: histLoading } = useQuery<ProtocolHistoryItem[]>({
@@ -639,20 +646,26 @@ function ProtokolTab({
     staleTime: 60_000,
   });
 
-  // ── Draft state ────────────────────────────────────────────────────────────
+  // ── Draft state (sadece mevcut protokol için) ──────────────────────────────
   const [chiefComplaint, setChiefComplaint]           = useState('');
   const [examinationFindings, setExaminationFindings] = useState('');
   const [treatmentPlan, setTreatmentPlan]             = useState('');
   const [initialized, setInitialized]                 = useState(false);
 
   useEffect(() => {
-    if (detail && !initialized) {
+    if (detail && !initialized && isCurrentProtocol) {
       setChiefComplaint(detail.chiefComplaint ?? '');
       setExaminationFindings(detail.examinationFindings ?? '');
       setTreatmentPlan(detail.treatmentPlan ?? '');
       setInitialized(true);
     }
-  }, [detail, initialized]);
+    if (!isCurrentProtocol && detail) {
+      // Geçmiş protokolde form alanlarını detaydan doldur (read-only gösterim için)
+      setChiefComplaint(detail.chiefComplaint ?? '');
+      setExaminationFindings(detail.examinationFindings ?? '');
+      setTreatmentPlan(detail.treatmentPlan ?? '');
+    }
+  }, [detail, viewingId]);
 
   // ── Save details ───────────────────────────────────────────────────────────
   const saveMutation = useMutation({
@@ -733,6 +746,27 @@ function ProtokolTab({
     <div className="grid grid-cols-[1fr_300px] gap-6 items-start">
       {/* ── Sol: Form ───────────────────────────────────────────────────────── */}
       <div className="space-y-4">
+
+        {/* Geçmiş protokol banner */}
+        {!isCurrentProtocol && detail && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm text-amber-800">
+              <AlertTriangle className="size-4 text-amber-600 shrink-0" />
+              <span>
+                <span className="font-medium">{detail.protocolNo}</span> nolu kapalı protokol görüntülüyorsunuz — salt okunur.
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0 text-xs h-7"
+              onClick={() => setViewingId(protocolPublicId)}
+            >
+              Mevcut Protokole Dön
+            </Button>
+          </div>
+        )}
+
         {/* Şikayet */}
         <div className="space-y-1.5">
           <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Şikayet</Label>
@@ -742,6 +776,7 @@ function ProtokolTab({
             value={chiefComplaint}
             onChange={(e) => setChiefComplaint(e.target.value)}
             className="text-sm resize-none"
+            disabled={!isEditable}
           />
         </div>
 
@@ -754,6 +789,7 @@ function ProtokolTab({
             value={examinationFindings}
             onChange={(e) => setExaminationFindings(e.target.value)}
             className="text-sm resize-none"
+            disabled={!isEditable}
           />
         </div>
 
@@ -768,53 +804,54 @@ function ProtokolTab({
             )}
           </div>
 
-          {/* ICD search input */}
-          <div className="relative" ref={dropdownRef}>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground pointer-events-none" />
-              <Input
-                className="pl-8 text-sm h-9"
-                placeholder="Kod veya açıklama ara... (min. 2 karakter)"
-                value={icdQuery}
-                onChange={(e) => {
-                  setIcdQuery(e.target.value);
-                  setShowDropdown(true);
-                }}
-                onFocus={() => icdQuery.length >= 2 && setShowDropdown(true)}
-              />
+          {/* ICD search — sadece düzenlenebilir modda */}
+          {isEditable && (
+            <div className="relative" ref={dropdownRef}>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground pointer-events-none" />
+                <Input
+                  className="pl-8 text-sm h-9"
+                  placeholder="Kod veya açıklama ara... (min. 2 karakter)"
+                  value={icdQuery}
+                  onChange={(e) => {
+                    setIcdQuery(e.target.value);
+                    setShowDropdown(true);
+                  }}
+                  onFocus={() => icdQuery.length >= 2 && setShowDropdown(true)}
+                />
+              </div>
+
+              {showDropdown && icdResults.length > 0 && (
+                <div className="absolute z-50 w-full mt-1 rounded-md border bg-popover shadow-lg max-h-56 overflow-y-auto">
+                  {icdResults.map((icd) => {
+                    const added = alreadyAdded.has(icd.id);
+                    return (
+                      <button
+                        key={icd.id}
+                        className={cn(
+                          'w-full text-left px-3 py-2 text-sm flex items-center gap-3 hover:bg-accent transition-colors',
+                          added && 'opacity-50 cursor-not-allowed',
+                        )}
+                        disabled={added || addDxMutation.isPending}
+                        onClick={() => !added && addDxMutation.mutate(icd)}
+                      >
+                        <span className="font-mono text-xs shrink-0 text-primary">{icd.code}</span>
+                        <span className="flex-1 truncate text-foreground">{icd.description}</span>
+                        {added && <span className="text-xs text-muted-foreground shrink-0">Eklendi</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {showDropdown && debouncedQ.length >= 2 && icdResults.length === 0 && (
+                <div className="absolute z-50 w-full mt-1 rounded-md border bg-popover shadow-md px-3 py-4 text-center text-sm text-muted-foreground">
+                  Sonuç bulunamadı
+                </div>
+              )}
             </div>
+          )}
 
-            {/* Dropdown */}
-            {showDropdown && icdResults.length > 0 && (
-              <div className="absolute z-50 w-full mt-1 rounded-md border bg-popover shadow-lg max-h-56 overflow-y-auto">
-                {icdResults.map((icd) => {
-                  const added = alreadyAdded.has(icd.id);
-                  return (
-                    <button
-                      key={icd.id}
-                      className={cn(
-                        'w-full text-left px-3 py-2 text-sm flex items-center gap-3 hover:bg-accent transition-colors',
-                        added && 'opacity-50 cursor-not-allowed',
-                      )}
-                      disabled={added || addDxMutation.isPending}
-                      onClick={() => !added && addDxMutation.mutate(icd)}
-                    >
-                      <span className="font-mono text-xs shrink-0 text-primary">{icd.code}</span>
-                      <span className="flex-1 truncate text-foreground">{icd.description}</span>
-                      {added && <span className="text-xs text-muted-foreground shrink-0">Eklendi</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {showDropdown && debouncedQ.length >= 2 && icdResults.length === 0 && (
-              <div className="absolute z-50 w-full mt-1 rounded-md border bg-popover shadow-md px-3 py-4 text-center text-sm text-muted-foreground">
-                Sonuç bulunamadı
-              </div>
-            )}
-          </div>
-
-          {/* Selected diagnoses table */}
+          {/* Diagnoses table */}
           {(detail?.diagnoses?.length ?? 0) > 0 && (
             <div className="rounded-md border overflow-hidden">
               <table className="w-full text-sm">
@@ -823,7 +860,7 @@ function ProtokolTab({
                     <th className="text-left px-3 py-2 font-medium w-20">Kod</th>
                     <th className="text-left px-3 py-2 font-medium">Açıklama</th>
                     <th className="text-center px-2 py-2 font-medium w-16">Birincil</th>
-                    <th className="px-2 py-2 w-10" />
+                    {isEditable && <th className="px-2 py-2 w-10" />}
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -836,15 +873,17 @@ function ProtokolTab({
                           <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">Ana</span>
                         )}
                       </td>
-                      <td className="px-2 py-2 text-right">
-                        <button
-                          className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
-                          onClick={() => removeDxMutation.mutate(dx.publicId)}
-                          disabled={removeDxMutation.isPending}
-                        >
-                          <Trash2 className="size-3.5" />
-                        </button>
-                      </td>
+                      {isEditable && (
+                        <td className="px-2 py-2 text-right">
+                          <button
+                            className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
+                            onClick={() => removeDxMutation.mutate(dx.publicId)}
+                            disabled={removeDxMutation.isPending}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -862,17 +901,20 @@ function ProtokolTab({
             value={treatmentPlan}
             onChange={(e) => setTreatmentPlan(e.target.value)}
             className="text-sm resize-none"
+            disabled={!isEditable}
           />
         </div>
 
-        <Button
-          className="w-full gap-1.5"
-          onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending}
-        >
-          <Save className="size-4" />
-          {saveMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
-        </Button>
+        {isEditable && (
+          <Button
+            className="w-full gap-1.5"
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending}
+          >
+            <Save className="size-4" />
+            {saveMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
+          </Button>
+        )}
       </div>
 
       {/* ── Sağ: Protokol Geçmişi ──────────────────────────────────────────── */}
@@ -893,38 +935,59 @@ function ProtokolTab({
           </div>
         ) : (
           <div className="space-y-2">
-            {history.map((h) => (
-              <div key={h.publicId} className={cn(
-                'rounded-lg border p-3 space-y-1.5 text-xs',
-                h.publicId === protocolPublicId && 'border-primary/30 bg-primary/5',
-              )}>
-                <div className="flex items-center justify-between gap-1">
-                  <span className="font-mono text-primary font-medium">{h.protocolNo}</span>
-                  <span className="text-muted-foreground">
-                    {format(new Date(h.createdAt), 'd MMM yyyy', { locale: tr })}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-muted-foreground">{h.branchName}</span>
-                  <span className="text-muted-foreground">·</span>
-                  <span className="text-muted-foreground">{h.doctorName}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className={cn(
-                    'px-1.5 py-0.5 rounded-full text-[10px] font-medium',
-                    h.status === 3 ? 'bg-emerald-100 text-emerald-700'
-                    : h.status === 4 ? 'bg-red-100 text-red-700'
-                    : 'bg-amber-100 text-amber-700',
-                  )}>
-                    {h.statusName}
-                  </span>
-                  <span className="text-muted-foreground">{h.protocolTypeName}</span>
-                </div>
-                {h.chiefComplaint && (
-                  <p className="text-muted-foreground truncate" title={h.chiefComplaint}>{h.chiefComplaint}</p>
-                )}
-              </div>
-            ))}
+            {history.map((h) => {
+              const isCurrent = h.publicId === protocolPublicId;
+              const isViewing = h.publicId === viewingId;
+              const isOpen    = h.status === 1 || h.status === 2;
+              return (
+                <button
+                  key={h.publicId}
+                  className={cn(
+                    'w-full text-left rounded-lg border p-3 space-y-1.5 text-xs transition-colors hover:bg-accent',
+                    isViewing
+                      ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/20'
+                      : 'border-border',
+                  )}
+                  onClick={() => setViewingId(h.publicId)}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="font-mono text-primary font-medium">{h.protocolNo}</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {isCurrent && (
+                        <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">Mevcut</span>
+                      )}
+                      {isViewing && (
+                        <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">Görüntüleniyor</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 text-muted-foreground">
+                    <span>{format(new Date(h.createdAt), 'd MMM yyyy', { locale: tr })}</span>
+                    <span>·</span>
+                    <span className="truncate">{h.doctorName}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className={cn(
+                      'px-1.5 py-0.5 rounded-full text-[10px] font-medium',
+                      h.status === 3 ? 'bg-emerald-100 text-emerald-700'
+                      : h.status === 4 ? 'bg-red-100 text-red-700'
+                      : 'bg-amber-100 text-amber-700',
+                    )}>
+                      {h.statusName}
+                    </span>
+                    <span className="text-muted-foreground">{h.protocolTypeName}</span>
+                    {!isOpen && (
+                      <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                        <Lock className="size-2.5" /> Salt okunur
+                      </span>
+                    )}
+                  </div>
+                  {h.chiefComplaint && (
+                    <p className="text-muted-foreground truncate" title={h.chiefComplaint}>{h.chiefComplaint}</p>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
