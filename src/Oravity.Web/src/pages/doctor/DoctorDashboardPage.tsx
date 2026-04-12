@@ -5,7 +5,7 @@ import { tr } from 'date-fns/locale';
 import {
   Stethoscope, Clock, CheckCheck,
   AlertCircle, PlayCircle, BellRing, UserCheck,
-  ChevronRight, Check,
+  ChevronRight, Check, DoorOpen,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { appointmentsApi } from '@/api/appointments';
@@ -271,12 +271,12 @@ function WaitingCard({
       <Button
         size="sm"
         variant="outline"
-        className="h-7 text-xs gap-1 shrink-0"
+        className="h-7 text-xs gap-1 shrink-0 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
         disabled={isCalling}
         onClick={() => onCall(protocol)}
       >
-        <BellRing className="h-3.5 w-3.5" />
-        {isCalling ? 'Çağrılıyor...' : 'Çağır'}
+        <DoorOpen className="h-3.5 w-3.5" />
+        {isCalling ? 'Alınıyor...' : 'Odaya Al'}
       </Button>
     </div>
   );
