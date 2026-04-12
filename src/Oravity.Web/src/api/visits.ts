@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { WaitingListItem, DoctorProtocol } from '@/types/visit';
+import type { WaitingListItem, DoctorProtocol, ProtocolDetail, IcdCode, ProtocolHistoryItem } from '@/types/visit';
 
 export const visitsApi = {
   getWaitingList: (branchId?: number) =>
@@ -47,4 +47,27 @@ export const protocolsApi = {
 
   complete: (protocolPublicId: string, diagnosis?: string, notes?: string) =>
     apiClient.post(`/protocols/${protocolPublicId}/complete`, { diagnosis, notes }),
+
+  getDetail: (publicId: string) =>
+    apiClient.get<ProtocolDetail>(`/protocols/${publicId}`),
+
+  updateDetails: (publicId: string, data: {
+    chiefComplaint?: string | null;
+    examinationFindings?: string | null;
+    diagnosis?: string | null;
+    treatmentPlan?: string | null;
+    notes?: string | null;
+  }) => apiClient.put<ProtocolDetail>(`/protocols/${publicId}/details`, data),
+
+  searchIcd: (q?: string, type?: number, limit = 20) =>
+    apiClient.get<IcdCode[]>('/protocols/icd/search', { params: { q, type, limit } }),
+
+  addDiagnosis: (publicId: string, icdCodeId: number, isPrimary: boolean, note?: string | null) =>
+    apiClient.post(`/protocols/${publicId}/diagnoses`, { icdCodeId, isPrimary, note }),
+
+  removeDiagnosis: (diagnosisPublicId: string) =>
+    apiClient.delete(`/protocols/diagnoses/${diagnosisPublicId}`),
+
+  getPatientHistory: (patientPublicId: string, limit = 20) =>
+    apiClient.get<ProtocolHistoryItem[]>(`/protocols/patient/${patientPublicId}/history`, { params: { limit } }),
 };

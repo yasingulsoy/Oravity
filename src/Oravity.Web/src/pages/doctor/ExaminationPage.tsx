@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
@@ -7,6 +7,7 @@ import {
   ArrowLeft, User, ClipboardList, ScanLine,
   CheckCheck, AlertTriangle, Cigarette, Wine,
   Phone, Mail, MapPin, Calendar, Heart, Pencil, Save, X,
+  FileText, Search, Trash2, History,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -18,11 +19,12 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { protocolsApi } from '@/api/visits';
 import { patientsApi } from '@/api/patients';
-import type { DoctorProtocol } from '@/types/visit';
+import type { DoctorProtocol, ProtocolDetail, IcdCode, ProtocolDiagnosis, ProtocolHistoryItem } from '@/types/visit';
 import type { Patient, PatientAnamnesis } from '@/types/patient';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -628,6 +630,324 @@ function OralDiagnozTab({ patientId }: { patientId: number }) {
   );
 }
 
+// ─── Tab: Protokol ────────────────────────────────────────────────────────────
+
+function ProtokolTab({
+  protocolPublicId,
+  patientPublicId,
+}: {
+  protocolPublicId: string;
+  patientPublicId: string;
+}) {
+  const qc = useQueryClient();
+
+  // ── Protocol detail ────────────────────────────────────────────────────────
+  const { data: detail, isLoading: detailLoading } = useQuery<ProtocolDetail>({
+    queryKey: ['protocol-detail', protocolPublicId],
+    queryFn: () => protocolsApi.getDetail(protocolPublicId).then((r) => r.data),
+    staleTime: 30_000,
+  });
+
+  // ── Patient history ────────────────────────────────────────────────────────
+  const { data: history = [], isLoading: histLoading } = useQuery<ProtocolHistoryItem[]>({
+    queryKey: ['protocol-history', patientPublicId],
+    queryFn: () => protocolsApi.getPatientHistory(patientPublicId, 20).then((r) => r.data),
+    staleTime: 60_000,
+  });
+
+  // ── Draft state ────────────────────────────────────────────────────────────
+  const [chiefComplaint, setChiefComplaint]           = useState('');
+  const [examinationFindings, setExaminationFindings] = useState('');
+  const [treatmentPlan, setTreatmentPlan]             = useState('');
+  const [initialized, setInitialized]                 = useState(false);
+
+  useEffect(() => {
+    if (detail && !initialized) {
+      setChiefComplaint(detail.chiefComplaint ?? '');
+      setExaminationFindings(detail.examinationFindings ?? '');
+      setTreatmentPlan(detail.treatmentPlan ?? '');
+      setInitialized(true);
+    }
+  }, [detail, initialized]);
+
+  // ── Save details ───────────────────────────────────────────────────────────
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      protocolsApi.updateDetails(protocolPublicId, {
+        chiefComplaint:      chiefComplaint || null,
+        examinationFindings: examinationFindings || null,
+        treatmentPlan:       treatmentPlan || null,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['protocol-detail', protocolPublicId] });
+      toast.success('Protokol kaydedildi.');
+    },
+    onError: () => toast.error('Kayıt başarısız.'),
+  });
+
+  // ── ICD search ─────────────────────────────────────────────────────────────
+  const [icdQuery, setIcdQuery]       = useState('');
+  const [debouncedQ, setDebouncedQ]   = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(icdQuery), 300);
+    return () => clearTimeout(t);
+  }, [icdQuery]);
+
+  const { data: icdResults = [] } = useQuery<IcdCode[]>({
+    queryKey: ['icd-search', debouncedQ],
+    queryFn: () => protocolsApi.searchIcd(debouncedQ, 1, 20).then((r) => r.data),
+    enabled: debouncedQ.length >= 2,
+    staleTime: 60_000,
+  });
+
+  // click-outside to close dropdown
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  // ── Add / Remove diagnosis ─────────────────────────────────────────────────
+  const addDxMutation = useMutation({
+    mutationFn: (icdCode: IcdCode) => {
+      const isPrimary = (detail?.diagnoses ?? []).length === 0;
+      return protocolsApi.addDiagnosis(protocolPublicId, icdCode.id, isPrimary, null);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['protocol-detail', protocolPublicId] });
+      setIcdQuery('');
+      setShowDropdown(false);
+    },
+    onError: () => toast.error('Tanı eklenemedi.'),
+  });
+
+  const removeDxMutation = useMutation({
+    mutationFn: (diagnosisPublicId: string) =>
+      protocolsApi.removeDiagnosis(diagnosisPublicId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['protocol-detail', protocolPublicId] }),
+    onError: () => toast.error('Tanı silinemedi.'),
+  });
+
+  const alreadyAdded = new Set((detail?.diagnoses ?? []).map((d) => d.icdCodeId));
+
+  if (detailLoading) {
+    return (
+      <div className="space-y-3">
+        {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-[1fr_300px] gap-6 items-start">
+      {/* ── Sol: Form ───────────────────────────────────────────────────────── */}
+      <div className="space-y-4">
+        {/* Şikayet */}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Şikayet</Label>
+          <Textarea
+            rows={3}
+            placeholder="Hastanın şikayetini yazın..."
+            value={chiefComplaint}
+            onChange={(e) => setChiefComplaint(e.target.value)}
+            className="text-sm resize-none"
+          />
+        </div>
+
+        {/* Fiziksel Muayene */}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Fiziksel Muayene Bulguları</Label>
+          <Textarea
+            rows={3}
+            placeholder="Muayene bulgularını yazın..."
+            value={examinationFindings}
+            onChange={(e) => setExaminationFindings(e.target.value)}
+            className="text-sm resize-none"
+          />
+        </div>
+
+        {/* Tanı (ICD) */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Tanı (ICD-10)
+            </Label>
+            {(detail?.diagnoses?.length ?? 0) > 0 && (
+              <span className="text-xs text-muted-foreground">{detail!.diagnoses.length} tanı seçili</span>
+            )}
+          </div>
+
+          {/* ICD search input */}
+          <div className="relative" ref={dropdownRef}>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                className="pl-8 text-sm h-9"
+                placeholder="Kod veya açıklama ara... (min. 2 karakter)"
+                value={icdQuery}
+                onChange={(e) => {
+                  setIcdQuery(e.target.value);
+                  setShowDropdown(true);
+                }}
+                onFocus={() => icdQuery.length >= 2 && setShowDropdown(true)}
+              />
+            </div>
+
+            {/* Dropdown */}
+            {showDropdown && icdResults.length > 0 && (
+              <div className="absolute z-50 w-full mt-1 rounded-md border bg-popover shadow-lg max-h-56 overflow-y-auto">
+                {icdResults.map((icd) => {
+                  const added = alreadyAdded.has(icd.id);
+                  return (
+                    <button
+                      key={icd.id}
+                      className={cn(
+                        'w-full text-left px-3 py-2 text-sm flex items-center gap-3 hover:bg-accent transition-colors',
+                        added && 'opacity-50 cursor-not-allowed',
+                      )}
+                      disabled={added || addDxMutation.isPending}
+                      onClick={() => !added && addDxMutation.mutate(icd)}
+                    >
+                      <span className="font-mono text-xs shrink-0 text-primary">{icd.code}</span>
+                      <span className="flex-1 truncate text-foreground">{icd.description}</span>
+                      {added && <span className="text-xs text-muted-foreground shrink-0">Eklendi</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {showDropdown && debouncedQ.length >= 2 && icdResults.length === 0 && (
+              <div className="absolute z-50 w-full mt-1 rounded-md border bg-popover shadow-md px-3 py-4 text-center text-sm text-muted-foreground">
+                Sonuç bulunamadı
+              </div>
+            )}
+          </div>
+
+          {/* Selected diagnoses table */}
+          {(detail?.diagnoses?.length ?? 0) > 0 && (
+            <div className="rounded-md border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-muted/50 text-xs text-muted-foreground">
+                    <th className="text-left px-3 py-2 font-medium w-20">Kod</th>
+                    <th className="text-left px-3 py-2 font-medium">Açıklama</th>
+                    <th className="text-center px-2 py-2 font-medium w-16">Birincil</th>
+                    <th className="px-2 py-2 w-10" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {detail!.diagnoses.map((dx: ProtocolDiagnosis) => (
+                    <tr key={dx.publicId} className="hover:bg-muted/30">
+                      <td className="px-3 py-2 font-mono text-xs text-primary font-medium">{dx.code}</td>
+                      <td className="px-3 py-2 text-xs">{dx.description}</td>
+                      <td className="px-2 py-2 text-center">
+                        {dx.isPrimary && (
+                          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">Ana</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-2 text-right">
+                        <button
+                          className="p-1 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
+                          onClick={() => removeDxMutation.mutate(dx.publicId)}
+                          disabled={removeDxMutation.isPending}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Tedavi Planı */}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tedavi / Bakım Planı</Label>
+          <Textarea
+            rows={3}
+            placeholder="Tedavi planını yazın..."
+            value={treatmentPlan}
+            onChange={(e) => setTreatmentPlan(e.target.value)}
+            className="text-sm resize-none"
+          />
+        </div>
+
+        <Button
+          className="w-full gap-1.5"
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending}
+        >
+          <Save className="size-4" />
+          {saveMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
+        </Button>
+      </div>
+
+      {/* ── Sağ: Protokol Geçmişi ──────────────────────────────────────────── */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-1.5">
+          <History className="size-3.5 text-muted-foreground" />
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Protokol Geçmişi</p>
+        </div>
+
+        {histLoading ? (
+          <div className="space-y-2">
+            {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+          </div>
+        ) : history.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground rounded-lg border border-dashed">
+            <FileText className="size-6 opacity-30" />
+            <p className="text-xs">Geçmiş protokol yok</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {history.map((h) => (
+              <div key={h.publicId} className={cn(
+                'rounded-lg border p-3 space-y-1.5 text-xs',
+                h.publicId === protocolPublicId && 'border-primary/30 bg-primary/5',
+              )}>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="font-mono text-primary font-medium">{h.protocolNo}</span>
+                  <span className="text-muted-foreground">
+                    {format(new Date(h.createdAt), 'd MMM yyyy', { locale: tr })}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-muted-foreground">{h.branchName}</span>
+                  <span className="text-muted-foreground">·</span>
+                  <span className="text-muted-foreground">{h.doctorName}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className={cn(
+                    'px-1.5 py-0.5 rounded-full text-[10px] font-medium',
+                    h.status === 3 ? 'bg-emerald-100 text-emerald-700'
+                    : h.status === 4 ? 'bg-red-100 text-red-700'
+                    : 'bg-amber-100 text-amber-700',
+                  )}>
+                    {h.statusName}
+                  </span>
+                  <span className="text-muted-foreground">{h.protocolTypeName}</span>
+                </div>
+                {h.chiefComplaint && (
+                  <p className="text-muted-foreground truncate" title={h.chiefComplaint}>{h.chiefComplaint}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Close Protocol Dialog ────────────────────────────────────────────────────
 
 function CloseProtocolDialog({
@@ -737,6 +1057,7 @@ export function ExaminationPage() {
     { value: 'hasta-bilgileri', label: 'Hasta Bilgileri', icon: User },
     { value: 'anamnez',         label: 'Anamnez',         icon: ClipboardList },
     { value: 'oral-diagnoz',    label: 'Oral Diagnoz',    icon: ScanLine },
+    { value: 'protokol',        label: 'Protokol',        icon: FileText },
   ];
 
   return (
@@ -811,8 +1132,8 @@ export function ExaminationPage() {
 
         {/* ── Tab panels ─────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto">
-          <div className="max-w-2xl mx-auto p-4">
-            <TabsContent value="hasta-bilgileri" className="mt-0">
+          <TabsContent value="hasta-bilgileri" className="mt-0">
+            <div className="max-w-2xl mx-auto p-4">
               {protocol?.patientPublicId ? (
                 <PatientInfoTab patientPublicId={protocol.patientPublicId} />
               ) : (
@@ -820,9 +1141,11 @@ export function ExaminationPage() {
                   {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
                 </div>
               )}
-            </TabsContent>
+            </div>
+          </TabsContent>
 
-            <TabsContent value="anamnez" className="mt-0">
+          <TabsContent value="anamnez" className="mt-0">
+            <div className="max-w-2xl mx-auto p-4">
               {protocol?.patientPublicId ? (
                 <AnamnezTab patientPublicId={protocol.patientPublicId} />
               ) : (
@@ -830,9 +1153,11 @@ export function ExaminationPage() {
                   {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
                 </div>
               )}
-            </TabsContent>
+            </div>
+          </TabsContent>
 
-            <TabsContent value="oral-diagnoz" className="mt-0">
+          <TabsContent value="oral-diagnoz" className="mt-0">
+            <div className="max-w-2xl mx-auto p-4">
               {protocol?.patientPublicId ? (
                 <OralDiagnozTab patientId={0} />
               ) : (
@@ -840,8 +1165,23 @@ export function ExaminationPage() {
                   {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
                 </div>
               )}
-            </TabsContent>
-          </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="protokol" className="mt-0">
+            <div className="max-w-5xl mx-auto p-4">
+              {protocol?.patientPublicId && publicId ? (
+                <ProtokolTab
+                  protocolPublicId={publicId}
+                  patientPublicId={protocol.patientPublicId}
+                />
+              ) : (
+                <div className="space-y-3">
+                  {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+                </div>
+              )}
+            </div>
+          </TabsContent>
         </div>
       </Tabs>
 

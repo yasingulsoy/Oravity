@@ -50,3 +50,53 @@ export interface DoctorProtocol {
   statusName: string;
   startedAt: string | null;
 }
+
+export interface ProtocolDiagnosis {
+  publicId: string;
+  icdCodeId: number;
+  code: string;
+  description: string;
+  category: string;
+  isPrimary: boolean;
+  note: string | null;
+}
+
+export interface ProtocolDetail {
+  publicId: string;
+  protocolNo: string;
+  protocolType: number;
+  protocolTypeName: string;
+  status: number;
+  statusName: string;
+  chiefComplaint: string | null;
+  examinationFindings: string | null;
+  diagnosis: string | null;
+  treatmentPlan: string | null;
+  notes: string | null;
+  diagnoses: ProtocolDiagnosis[];
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface IcdCode {
+  id: number;
+  code: string;
+  description: string;
+  category: string;
+  type: number;
+}
+
+export interface ProtocolHistoryItem {
+  publicId: string;
+  protocolNo: string;
+  createdAt: string;
+  branchName: string;
+  protocolType: number;
+  protocolTypeName: string;
+  status: number;
+  statusName: string;
+  doctorName: string;
+  chiefComplaint: string | null;
+  diagnosis: string | null;
+}
