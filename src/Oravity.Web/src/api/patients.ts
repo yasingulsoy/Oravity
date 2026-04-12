@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { Patient, PatientListRequest, CreatePatientRequest, UpdatePatientRequest } from '@/types/patient';
+import type { Patient, PatientAnamnesis, PatientListRequest, CreatePatientRequest, UpdatePatientRequest } from '@/types/patient';
 import type { PaginatedResponse } from '@/types/common';
 
 export const patientsApi = {
@@ -21,4 +21,10 @@ export const patientsApi = {
 
   delete: (id: string) =>
     apiClient.delete(`/patients/${id}`),
+
+  getAnamnesis: (publicId: string) =>
+    apiClient.get<PatientAnamnesis>(`/patients/${publicId}/anamnesis`),
+
+  upsertAnamnesis: (publicId: string, data: Omit<PatientAnamnesis, 'publicId' | 'hasCriticalAlert' | 'filledAt'>) =>
+    apiClient.put<PatientAnamnesis>(`/patients/${publicId}/anamnesis`, data),
 };

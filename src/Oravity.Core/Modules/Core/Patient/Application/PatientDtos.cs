@@ -2,6 +2,49 @@ using PatientEntity = Oravity.SharedKernel.Entities.Patient;
 
 namespace Oravity.Core.Modules.Core.Patient.Application;
 
+public record PatientAnamnesisResponse(
+    Guid    PublicId,
+    // Genel
+    string? BloodType,
+    bool    IsPregnant,
+    bool    IsBreastfeeding,
+    // Sistemik
+    bool    HasDiabetes,
+    bool    HasHypertension,
+    bool    HasHeartDisease,
+    bool    HasPacemaker,
+    bool    HasAsthma,
+    bool    HasEpilepsy,
+    bool    HasKidneyDisease,
+    bool    HasLiverDisease,
+    bool    HasHiv,
+    bool    HasHepatitisB,
+    bool    HasHepatitisC,
+    string? OtherSystemicDiseases,
+    // Diş hekimliği spesifik
+    bool    LocalAnesthesiaAllergy,
+    string? LocalAnesthesiaAllergyNote,
+    bool    BleedingTendency,
+    bool    OnAnticoagulant,
+    string? AnticoagulantDrug,
+    bool    BisphosphonateUse,
+    // Alerjiler
+    bool    HasPenicillinAllergy,
+    bool    HasAspirinAllergy,
+    bool    HasLatexAllergy,
+    string? OtherAllergies,
+    // Diğer
+    string? PreviousSurgeries,
+    int?    BrushingFrequency,
+    bool    UsesFloss,
+    int?    SmokingStatus,
+    string? SmokingAmount,
+    int?    AlcoholUse,
+    string? AdditionalNotes,
+    bool    HasCriticalAlert,
+    DateTime FilledAt
+);
+
 public record PatientResponse(
     long Id,
     Guid PublicId,

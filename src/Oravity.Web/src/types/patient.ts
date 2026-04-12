@@ -46,6 +46,49 @@ export interface Patient {
   createdAt: string;
 }
 
+export interface PatientAnamnesis {
+  publicId: string;
+  // Genel
+  bloodType: string | null;
+  isPregnant: boolean;
+  isBreastfeeding: boolean;
+  // Sistemik
+  hasDiabetes: boolean;
+  hasHypertension: boolean;
+  hasHeartDisease: boolean;
+  hasPacemaker: boolean;
+  hasAsthma: boolean;
+  hasEpilepsy: boolean;
+  hasKidneyDisease: boolean;
+  hasLiverDisease: boolean;
+  hasHiv: boolean;
+  hasHepatitisB: boolean;
+  hasHepatitisC: boolean;
+  otherSystemicDiseases: string | null;
+  // Diş hekimliği spesifik
+  localAnesthesiaAllergy: boolean;
+  localAnesthesiaAllergyNote: string | null;
+  bleedingTendency: boolean;
+  onAnticoagulant: boolean;
+  anticoagulantDrug: string | null;
+  bisphosphonateUse: boolean;
+  // Alerjiler
+  hasPenicillinAllergy: boolean;
+  hasAspirinAllergy: boolean;
+  hasLatexAllergy: boolean;
+  otherAllergies: string | null;
+  // Diğer
+  previousSurgeries: string | null;
+  brushingFrequency: number | null;
+  usesFloss: boolean;
+  smokingStatus: number | null;
+  smokingAmount: string | null;
+  alcoholUse: number | null;
+  additionalNotes: string | null;
+  hasCriticalAlert: boolean;
+  filledAt: string;
+}
+
 export interface PatientListRequest {
   page: number;
   pageSize: number;

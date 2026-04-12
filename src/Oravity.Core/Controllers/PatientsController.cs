@@ -137,6 +137,42 @@ public class PatientsController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Hastanın anamnez formunu getir — kayıt yoksa 204 döner</summary>
+    [HttpGet("{publicId:guid}/anamnesis")]
+    [RequirePermission("patient:view")]
+    [ProducesResponseType(typeof(PatientAnamnesisResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetAnamnesis(Guid publicId)
+    {
+        var result = await _mediator.Send(new GetPatientAnamnesisQuery(publicId));
+        return result == null ? NoContent() : Ok(result);
+    }
+
+    /// <summary>Anamnez formunu kaydet (upsert)</summary>
+    [HttpPut("{publicId:guid}/anamnesis")]
+    [RequirePermission("patient:edit_basic")]
+    [ProducesResponseType(typeof(PatientAnamnesisResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpsertAnamnesis(Guid publicId, [FromBody] UpsertAnamnesisRequest request)
+    {
+        var data = new SharedKernel.Entities.PatientAnamnesisData(
+            request.BloodType, request.IsPregnant, request.IsBreastfeeding,
+            request.HasDiabetes, request.HasHypertension, request.HasHeartDisease, request.HasPacemaker,
+            request.HasAsthma, request.HasEpilepsy, request.HasKidneyDisease, request.HasLiverDisease,
+            request.HasHiv, request.HasHepatitisB, request.HasHepatitisC, request.OtherSystemicDiseases,
+            request.LocalAnesthesiaAllergy, request.LocalAnesthesiaAllergyNote,
+            request.BleedingTendency, request.OnAnticoagulant, request.AnticoagulantDrug, request.BisphosphonateUse,
+            request.HasPenicillinAllergy, request.HasAspirinAllergy, request.HasLatexAllergy, request.OtherAllergies,
+            request.PreviousSurgeries,
+            request.BrushingFrequency, request.UsesFloss,
+            request.SmokingStatus, request.SmokingAmount, request.AlcoholUse,
+            request.AdditionalNotes);
+
+        var result = await _mediator.Send(new UpsertPatientAnamnesisCommand(publicId, data));
+        return Ok(result);
+    }
+
     /// <summary>Hasta kaydını sil (soft delete — fiziksel silme yapılmaz)</summary>
     [HttpDelete("{publicId:guid}")]
     [RequirePermission("patient:delete")]
@@ -167,6 +203,42 @@ public record CreatePatientRequest(
     string? BloodType,
     string? PreferredLanguageCode,
     long? BranchId = null
+);
+
+/// <summary>Anamnez upsert isteği</summary>
+public record UpsertAnamnesisRequest(
+    string? BloodType,
+    bool IsPregnant,
+    bool IsBreastfeeding,
+    bool HasDiabetes,
+    bool HasHypertension,
+    bool HasHeartDisease,
+    bool HasPacemaker,
+    bool HasAsthma,
+    bool HasEpilepsy,
+    bool HasKidneyDisease,
+    bool HasLiverDisease,
+    bool HasHiv,
+    bool HasHepatitisB,
+    bool HasHepatitisC,
+    string? OtherSystemicDiseases,
+    bool LocalAnesthesiaAllergy,
+    string? LocalAnesthesiaAllergyNote,
+    bool BleedingTendency,
+    bool OnAnticoagulant,
+    string? AnticoagulantDrug,
+    bool BisphosphonateUse,
+    bool HasPenicillinAllergy,
+    bool HasAspirinAllergy,
+    bool HasLatexAllergy,
+    string? OtherAllergies,
+    string? PreviousSurgeries,
+    int? BrushingFrequency,
+    bool UsesFloss,
+    int? SmokingStatus,
+    string? SmokingAmount,
+    int? AlcoholUse,
+    string? AdditionalNotes
 );
 
 /// <summary>Hasta güncelleme isteği</summary>
