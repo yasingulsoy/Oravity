@@ -30,4 +30,7 @@ export const patientsApi = {
 
   getAnamnesisHistory: (publicId: string, limit = 50) =>
     apiClient.get<AnamnesisHistoryItem[]>(`/patients/${publicId}/anamnesis/history`, { params: { limit } }),
+
+  getAnamnesisById: (patientPublicId: string, anamnesisPublicId: string) =>
+    apiClient.get<PatientAnamnesis>(`/patients/${patientPublicId}/anamnesis/${anamnesisPublicId}`),
 };

@@ -247,13 +247,30 @@ function AnamnezTab({ patientPublicId }: { patientPublicId: string }) {
 
   const [draft, setDraft] = useState<Partial<PatientAnamnesis>>(emptyDraft);
   const [initialized, setInitialized] = useState(false);
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [loadingHistoryId, setLoadingHistoryId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!initialized && latest !== undefined) {
       setDraft(latest ? fromRecord(latest) : emptyDraft());
+      setSelectedHistoryId(latest?.publicId ?? null);
       setInitialized(true);
     }
   }, [latest, initialized]);
+
+  const loadHistoryRecord = async (anamnesisPublicId: string) => {
+    if (loadingHistoryId) return;
+    setLoadingHistoryId(anamnesisPublicId);
+    try {
+      const r = await patientsApi.getAnamnesisById(patientPublicId, anamnesisPublicId);
+      setDraft(fromRecord(r.data));
+      setSelectedHistoryId(anamnesisPublicId);
+    } catch {
+      toast.error('Kayıt yüklenemedi.');
+    } finally {
+      setLoadingHistoryId(null);
+    }
+  };
 
   const toggle = (key: keyof PatientAnamnesis) =>
     setDraft((prev) => ({ ...prev, [key]: !(prev[key] as boolean) }));
@@ -263,7 +280,8 @@ function AnamnezTab({ patientPublicId }: { patientPublicId: string }) {
 
   const saveMutation = useMutation({
     mutationFn: () => patientsApi.upsertAnamnesis(patientPublicId, draft as any),
-    onSuccess: () => {
+    onSuccess: (res) => {
+      setSelectedHistoryId(res.data.publicId);
       qc.invalidateQueries({ queryKey: ['patient-anamnesis', patientPublicId] });
       qc.invalidateQueries({ queryKey: ['patient-anamnesis-history', patientPublicId] });
       toast.success('Anamnez kaydedildi.');
@@ -285,6 +303,15 @@ function AnamnezTab({ patientPublicId }: { patientPublicId: string }) {
     <div className="grid grid-cols-[1fr_280px] gap-6 items-start">
       {/* ── Sol: Form (her zaman açık) ───────────────────────────────────────── */}
       <div className="space-y-4">
+        {/* Geçmiş kayıt banner */}
+        {selectedHistoryId && history.length > 0 && selectedHistoryId !== history[0]?.publicId && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 flex items-center gap-2 text-sm">
+            <AlertTriangle className="size-4 text-amber-600 shrink-0" />
+            <span className="text-amber-800">
+              Geçmiş bir kayıt görüntülüyorsunuz. Kaydet'e basarsanız bu verilerle yeni kayıt oluşturulur.
+            </span>
+          </div>
+        )}
         {/* Kritik uyarı banner */}
         {CRITICAL_FLAGS.some(({ key }) => !!(d[key])) && (
           <div className="rounded-lg border border-red-200 bg-red-50 p-3 flex items-center gap-2">
@@ -451,27 +478,28 @@ function AnamnezTab({ patientPublicId }: { patientPublicId: string }) {
                 key={h.publicId}
                 className={cn(
                   'w-full text-left rounded-lg border p-3 space-y-1.5 text-xs transition-colors hover:bg-accent',
-                  idx === 0 && 'border-primary/30 bg-primary/5',
+                  selectedHistoryId === h.publicId
+                    ? 'border-primary/50 bg-primary/5 ring-1 ring-primary/20'
+                    : 'border-border',
                 )}
-                onClick={async () => {
-                  try {
-                    const r = await patientsApi.getAnamnesis(patientPublicId);
-                    // Find exact record — for now load latest matching publicId
-                    // Since API only returns latest, we highlight idx=0 as current
-                    if (h.publicId === r.data.publicId) {
-                      setDraft(fromRecord(r.data));
-                      toast.info('Mevcut kayıt formu doldurdu.');
-                    }
-                  } catch { /* ignore */ }
-                }}
+                disabled={loadingHistoryId === h.publicId}
+                onClick={() => loadHistoryRecord(h.publicId)}
               >
                 <div className="flex items-center justify-between gap-1">
                   <span className="font-medium text-foreground">
                     {format(new Date(h.filledAt), 'd MMM yyyy HH:mm', { locale: tr })}
                   </span>
-                  {idx === 0 && (
-                    <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">Güncel</span>
-                  )}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {loadingHistoryId === h.publicId && (
+                      <span className="text-[10px] text-muted-foreground">yükleniyor...</span>
+                    )}
+                    {idx === 0 && (
+                      <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">Son</span>
+                    )}
+                    {selectedHistoryId === h.publicId && (
+                      <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">Görüntüleniyor</span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-1 text-muted-foreground">
                   <User className="size-3 shrink-0" />

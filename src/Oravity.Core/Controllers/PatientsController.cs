@@ -159,6 +159,17 @@ public class PatientsController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Belirli bir anamnez kaydını publicId ile döner.</summary>
+    [HttpGet("{publicId:guid}/anamnesis/{anamnesisPublicId:guid}")]
+    [RequirePermission("patient:view")]
+    [ProducesResponseType(typeof(PatientAnamnesisResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetAnamnesisById(Guid publicId, Guid anamnesisPublicId)
+    {
+        var result = await _mediator.Send(new GetPatientAnamnesisByIdQuery(publicId, anamnesisPublicId));
+        return Ok(result);
+    }
+
     /// <summary>Anamnez formunu kaydet — her kayıt yeni satır olarak eklenir (geçmiş korunur)</summary>
     [HttpPut("{publicId:guid}/anamnesis")]
     [RequirePermission("patient:edit_basic")]
