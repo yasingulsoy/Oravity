@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -185,10 +186,10 @@ function AppointmentCard({ apt, isActive, onCall, isCallingApt }: AppointmentCar
 
 function InRoomCard({
   protocol,
-  onClose,
+  onExamine,
 }: {
   protocol: DoctorProtocol;
-  onClose: (p: DoctorProtocol) => void;
+  onExamine: (p: DoctorProtocol) => void;
 }) {
   const dotColor = protocolTypeDot[protocol.protocolType] ?? 'bg-slate-400';
 
@@ -233,10 +234,10 @@ function InRoomCard({
         <Button
           size="sm"
           className="h-8 text-xs gap-1 shrink-0"
-          onClick={() => onClose(protocol)}
+          onClick={() => onExamine(protocol)}
         >
-          <CheckCheck className="h-3.5 w-3.5" />
-          Kapat
+          <Stethoscope className="h-3.5 w-3.5" />
+          Tedaviye Başla
         </Button>
       </div>
     </div>
@@ -394,6 +395,7 @@ function CompleteDialog({ protocol, onConfirm, onCancel, isPending }: CompleteDi
 
 export function DoctorDashboardPage() {
   const user = useAuthStore((s) => s.user);
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const [selectedDoctorId, setSelectedDoctorId] = useState<number | null>(null);
   const [callingId, setCallingId] = useState<string | null>(null);
@@ -490,6 +492,16 @@ export function DoctorDashboardPage() {
       setCallingAptId(null);
     },
   });
+
+  const handleExamine = (p: DoctorProtocol) => {
+    const params = new URLSearchParams({
+      patient: p.patientName,
+      no: p.protocolNo,
+      patientId: p.patientId.toString(),
+      type: p.protocolTypeName,
+    });
+    navigate(`/muayene/${p.publicId}?${params.toString()}`);
+  };
 
   const handleAptCall = (apt: Appointment) => {
     setCallingAptId(apt.publicId);
@@ -612,7 +624,7 @@ export function DoctorDashboardPage() {
                     <InRoomCard
                       key={p.publicId}
                       protocol={p}
-                      onClose={(p) => setCloseTarget(p)}
+                      onExamine={handleExamine}
                     />
                   ))}
                 </>

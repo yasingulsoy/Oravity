@@ -15,6 +15,7 @@ import { TreatmentPlansPage } from '@/pages/treatments/TreatmentPlansPage';
 import { NotificationsPage } from '@/pages/notifications/NotificationsPage';
 import { BookingRequestsPage } from '@/pages/bookings/BookingRequestsPage';
 import { DoctorDashboardPage } from '@/pages/doctor/DoctorDashboardPage';
+import { ExaminationPage } from '@/pages/doctor/ExaminationPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -37,6 +38,7 @@ function App() {
             <Route element={<Layout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/doctor" element={<DoctorDashboardPage />} />
+              <Route path="/muayene/:publicId" element={<ExaminationPage />} />
               <Route path="/patients" element={<PatientListPage />} />
               <Route path="/patients/:id" element={<PatientDetailPage />} />
               <Route path="/appointments" element={<AppointmentCalendarPage />} />
