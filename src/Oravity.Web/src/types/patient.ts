@@ -87,6 +87,17 @@ export interface PatientAnamnesis {
   additionalNotes: string | null;
   hasCriticalAlert: boolean;
   filledAt: string;
+  filledByName: string;
+}
+
+export interface AnamnesisHistoryItem {
+  publicId: string;
+  filledAt: string;
+  filledByName: string;
+  hasCriticalAlert: boolean;
+  bloodType: string | null;
+  smokingStatus: number | null;
+  alcoholUse: number | null;
 }
 
 export interface PatientListRequest {

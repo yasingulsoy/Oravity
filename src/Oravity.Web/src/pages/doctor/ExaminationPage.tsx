@@ -6,7 +6,7 @@ import { tr } from 'date-fns/locale';
 import {
   ArrowLeft, User, ClipboardList, ScanLine,
   CheckCheck, AlertTriangle, Cigarette, Wine,
-  Phone, Mail, MapPin, Calendar, Heart, Pencil, Save, X,
+  Phone, Mail, MapPin, Calendar, Heart, Save,
   FileText, Search, Trash2, History,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils';
 import { protocolsApi } from '@/api/visits';
 import { patientsApi } from '@/api/patients';
 import type { DoctorProtocol, ProtocolDetail, IcdCode, ProtocolDiagnosis, ProtocolHistoryItem } from '@/types/visit';
-import type { Patient, PatientAnamnesis } from '@/types/patient';
+import type { Patient, PatientAnamnesis, AnamnesisHistoryItem } from '@/types/patient';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -192,10 +192,9 @@ function BoolRow({ label, value }: { label: string; value: boolean }) {
 
 function AnamnezTab({ patientPublicId }: { patientPublicId: string }) {
   const qc = useQueryClient();
-  const [editMode, setEditMode] = useState(false);
-  const [draft, setDraft] = useState<Partial<PatientAnamnesis>>({});
 
-  const { data: anamnesis, isLoading } = useQuery<PatientAnamnesis | null>({
+  // ── Latest anamnesis (pre-fill) ────────────────────────────────────────────
+  const { data: latest, isLoading } = useQuery<PatientAnamnesis | null>({
     queryKey: ['patient-anamnesis', patientPublicId],
     queryFn: async () => {
       try {
@@ -209,61 +208,68 @@ function AnamnezTab({ patientPublicId }: { patientPublicId: string }) {
     staleTime: 5 * 60 * 1000,
   });
 
-  const saveMutation = useMutation({
-    mutationFn: (data: Omit<PatientAnamnesis, 'publicId' | 'hasCriticalAlert' | 'filledAt'>) =>
-      patientsApi.upsertAnamnesis(patientPublicId, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['patient-anamnesis', patientPublicId] });
-      setEditMode(false);
-      toast.success('Anamnez kaydedildi.');
-    },
-    onError: () => toast.error('Kayıt başarısız.'),
+  // ── History ────────────────────────────────────────────────────────────────
+  const { data: history = [] } = useQuery<AnamnesisHistoryItem[]>({
+    queryKey: ['patient-anamnesis-history', patientPublicId],
+    queryFn: () => patientsApi.getAnamnesisHistory(patientPublicId).then((r) => r.data),
+    staleTime: 30_000,
   });
 
-  const startEdit = () => {
-    const base = anamnesis ?? {} as PatientAnamnesis;
-    setDraft({
-      bloodType: base.bloodType ?? null,
-      isPregnant: base.isPregnant ?? false,
-      isBreastfeeding: base.isBreastfeeding ?? false,
-      hasDiabetes: base.hasDiabetes ?? false,
-      hasHypertension: base.hasHypertension ?? false,
-      hasHeartDisease: base.hasHeartDisease ?? false,
-      hasPacemaker: base.hasPacemaker ?? false,
-      hasAsthma: base.hasAsthma ?? false,
-      hasEpilepsy: base.hasEpilepsy ?? false,
-      hasKidneyDisease: base.hasKidneyDisease ?? false,
-      hasLiverDisease: base.hasLiverDisease ?? false,
-      hasHiv: base.hasHiv ?? false,
-      hasHepatitisB: base.hasHepatitisB ?? false,
-      hasHepatitisC: base.hasHepatitisC ?? false,
-      otherSystemicDiseases: base.otherSystemicDiseases ?? null,
-      localAnesthesiaAllergy: base.localAnesthesiaAllergy ?? false,
-      localAnesthesiaAllergyNote: base.localAnesthesiaAllergyNote ?? null,
-      bleedingTendency: base.bleedingTendency ?? false,
-      onAnticoagulant: base.onAnticoagulant ?? false,
-      anticoagulantDrug: base.anticoagulantDrug ?? null,
-      bisphosphonateUse: base.bisphosphonateUse ?? false,
-      hasPenicillinAllergy: base.hasPenicillinAllergy ?? false,
-      hasAspirinAllergy: base.hasAspirinAllergy ?? false,
-      hasLatexAllergy: base.hasLatexAllergy ?? false,
-      otherAllergies: base.otherAllergies ?? null,
-      previousSurgeries: base.previousSurgeries ?? null,
-      brushingFrequency: base.brushingFrequency ?? null,
-      usesFloss: base.usesFloss ?? false,
-      smokingStatus: base.smokingStatus ?? 0,
-      smokingAmount: base.smokingAmount ?? null,
-      alcoholUse: base.alcoholUse ?? 0,
-      additionalNotes: base.additionalNotes ?? null,
-    });
-    setEditMode(true);
-  };
+  // ── Draft — initialised from latest record ─────────────────────────────────
+  const emptyDraft = (): Partial<PatientAnamnesis> => ({
+    bloodType: null, isPregnant: false, isBreastfeeding: false,
+    hasDiabetes: false, hasHypertension: false, hasHeartDisease: false, hasPacemaker: false,
+    hasAsthma: false, hasEpilepsy: false, hasKidneyDisease: false, hasLiverDisease: false,
+    hasHiv: false, hasHepatitisB: false, hasHepatitisC: false, otherSystemicDiseases: null,
+    localAnesthesiaAllergy: false, localAnesthesiaAllergyNote: null,
+    bleedingTendency: false, onAnticoagulant: false, anticoagulantDrug: null, bisphosphonateUse: false,
+    hasPenicillinAllergy: false, hasAspirinAllergy: false, hasLatexAllergy: false, otherAllergies: null,
+    previousSurgeries: null, brushingFrequency: null, usesFloss: false,
+    smokingStatus: 0, smokingAmount: null, alcoholUse: 0, additionalNotes: null,
+  });
+
+  const fromRecord = (a: PatientAnamnesis): Partial<PatientAnamnesis> => ({
+    bloodType: a.bloodType, isPregnant: a.isPregnant, isBreastfeeding: a.isBreastfeeding,
+    hasDiabetes: a.hasDiabetes, hasHypertension: a.hasHypertension, hasHeartDisease: a.hasHeartDisease,
+    hasPacemaker: a.hasPacemaker, hasAsthma: a.hasAsthma, hasEpilepsy: a.hasEpilepsy,
+    hasKidneyDisease: a.hasKidneyDisease, hasLiverDisease: a.hasLiverDisease,
+    hasHiv: a.hasHiv, hasHepatitisB: a.hasHepatitisB, hasHepatitisC: a.hasHepatitisC,
+    otherSystemicDiseases: a.otherSystemicDiseases,
+    localAnesthesiaAllergy: a.localAnesthesiaAllergy, localAnesthesiaAllergyNote: a.localAnesthesiaAllergyNote,
+    bleedingTendency: a.bleedingTendency, onAnticoagulant: a.onAnticoagulant,
+    anticoagulantDrug: a.anticoagulantDrug, bisphosphonateUse: a.bisphosphonateUse,
+    hasPenicillinAllergy: a.hasPenicillinAllergy, hasAspirinAllergy: a.hasAspirinAllergy,
+    hasLatexAllergy: a.hasLatexAllergy, otherAllergies: a.otherAllergies,
+    previousSurgeries: a.previousSurgeries, brushingFrequency: a.brushingFrequency,
+    usesFloss: a.usesFloss, smokingStatus: a.smokingStatus ?? 0,
+    smokingAmount: a.smokingAmount, alcoholUse: a.alcoholUse ?? 0, additionalNotes: a.additionalNotes,
+  });
+
+  const [draft, setDraft] = useState<Partial<PatientAnamnesis>>(emptyDraft);
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    if (!initialized && latest !== undefined) {
+      setDraft(latest ? fromRecord(latest) : emptyDraft());
+      setInitialized(true);
+    }
+  }, [latest, initialized]);
 
   const toggle = (key: keyof PatientAnamnesis) =>
     setDraft((prev) => ({ ...prev, [key]: !(prev[key] as boolean) }));
 
   const setText = (key: keyof PatientAnamnesis, val: string) =>
     setDraft((prev) => ({ ...prev, [key]: val || null }));
+
+  const saveMutation = useMutation({
+    mutationFn: () => patientsApi.upsertAnamnesis(patientPublicId, draft as any),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['patient-anamnesis', patientPublicId] });
+      qc.invalidateQueries({ queryKey: ['patient-anamnesis-history', patientPublicId] });
+      toast.success('Anamnez kaydedildi.');
+    },
+    onError: () => toast.error('Kayıt başarısız.'),
+  });
 
   if (isLoading) {
     return (
@@ -273,23 +279,25 @@ function AnamnezTab({ patientPublicId }: { patientPublicId: string }) {
     );
   }
 
-  // ── Edit mode ──────────────────────────────────────────────────────────────
-  if (editMode) {
-    const d = draft as PatientAnamnesis;
-    return (
+  const d = draft as PatientAnamnesis;
+
+  return (
+    <div className="grid grid-cols-[1fr_280px] gap-6 items-start">
+      {/* ── Sol: Form (her zaman açık) ───────────────────────────────────────── */}
       <div className="space-y-4">
-        {/* Edit header */}
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground font-medium">Anamnez Formu — Düzenleniyor</p>
-          <div className="flex gap-1.5">
-            <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => setEditMode(false)}>
-              <X className="size-3" /> Vazgeç
-            </Button>
-            <Button size="sm" className="h-7 text-xs gap-1" onClick={() => saveMutation.mutate(d as any)} disabled={saveMutation.isPending}>
-              <Save className="size-3" /> {saveMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
-            </Button>
+        {/* Kritik uyarı banner */}
+        {CRITICAL_FLAGS.some(({ key }) => !!(d[key])) && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 flex items-center gap-2">
+            <AlertTriangle className="size-4 text-red-600 shrink-0" />
+            <div className="flex flex-wrap gap-1">
+              {CRITICAL_FLAGS.filter(({ key }) => !!(d[key])).map(({ label }) => (
+                <span key={label} className="text-xs bg-red-100 text-red-700 border border-red-200 px-2 py-0.5 rounded-full font-medium">
+                  {label}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Genel */}
         <AnamnesisSection title="Genel">
@@ -320,13 +328,8 @@ function AnamnezTab({ patientPublicId }: { patientPublicId: string }) {
           </div>
           <div className="pt-1">
             <p className="text-xs text-muted-foreground mb-1">Diğer sistemik hastalıklar</p>
-            <Textarea
-              rows={2}
-              className="text-sm"
-              value={d.otherSystemicDiseases ?? ''}
-              onChange={(e) => setText('otherSystemicDiseases', e.target.value)}
-              placeholder="Varsa belirtin..."
-            />
+            <Textarea rows={2} className="text-sm" value={d.otherSystemicDiseases ?? ''}
+              onChange={(e) => setText('otherSystemicDiseases', e.target.value)} placeholder="Varsa belirtin..." />
           </div>
         </AnamnesisSection>
 
@@ -354,7 +357,7 @@ function AnamnezTab({ patientPublicId }: { patientPublicId: string }) {
           </div>
         </AnamnesisSection>
 
-        {/* Diş hekimliği */}
+        {/* Diş hekimliği spesifik */}
         <AnamnesisSection title="Diş Hekimliği Spesifik">
           <div className="grid grid-cols-2 gap-x-4">
             {([
@@ -377,15 +380,16 @@ function AnamnezTab({ patientPublicId }: { patientPublicId: string }) {
           )}
         </AnamnesisSection>
 
-        {/* Alışkanlıklar */}
+        {/* Sosyal alışkanlıklar */}
         <AnamnesisSection title="Sosyal Alışkanlıklar">
           <div className="space-y-2">
             <div>
               <p className="text-xs text-muted-foreground mb-1">Sigara</p>
-              <div className="flex gap-2">
+              <div className="flex gap-3">
                 {['Hayır', 'Evet', 'Bıraktı'].map((lbl, i) => (
                   <label key={i} className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="radio" name="smoking" checked={d.smokingStatus === i} onChange={() => setDraft(p => ({ ...p, smokingStatus: i }))} />
+                    <input type="radio" name={`smoking-${patientPublicId}`} checked={d.smokingStatus === i}
+                      onChange={() => setDraft(p => ({ ...p, smokingStatus: i }))} />
                     <span className="text-sm">{lbl}</span>
                   </label>
                 ))}
@@ -397,10 +401,11 @@ function AnamnezTab({ patientPublicId }: { patientPublicId: string }) {
             )}
             <div>
               <p className="text-xs text-muted-foreground mb-1">Alkol</p>
-              <div className="flex gap-2">
+              <div className="flex gap-3">
                 {['Hayır', 'Sosyal', 'Düzenli'].map((lbl, i) => (
                   <label key={i} className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="radio" name="alcohol" checked={d.alcoholUse === i} onChange={() => setDraft(p => ({ ...p, alcoholUse: i }))} />
+                    <input type="radio" name={`alcohol-${patientPublicId}`} checked={d.alcoholUse === i}
+                      onChange={() => setDraft(p => ({ ...p, alcoholUse: i }))} />
                     <span className="text-sm">{lbl}</span>
                   </label>
                 ))}
@@ -420,134 +425,85 @@ function AnamnezTab({ patientPublicId }: { patientPublicId: string }) {
           <Textarea rows={2} className="text-sm" value={d.additionalNotes ?? ''}
             onChange={(e) => setText('additionalNotes', e.target.value)} placeholder="Diğer önemli bilgiler..." />
         </AnamnesisSection>
-      </div>
-    );
-  }
 
-  // ── View mode ──────────────────────────────────────────────────────────────
-  if (!anamnesis) {
-    return (
-      <div className="space-y-4">
-        <div className="flex flex-col items-center gap-3 py-10 text-muted-foreground">
-          <ClipboardList className="size-10 opacity-30" />
-          <p className="text-sm text-center">Anamnez formu henüz doldurulmamış</p>
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={startEdit}>
-            <Pencil className="size-3.5" />
-            Formu Doldur
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  const activeCritical = CRITICAL_FLAGS.filter(({ key }) => !!anamnesis[key]);
-  const activeSystemic = SYSTEMIC_FLAGS.filter(({ key }) => !!anamnesis[key]);
-
-  return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">Son güncelleme: {format(new Date(anamnesis.filledAt), 'd MMM yyyy', { locale: tr })}</p>
-        <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={startEdit}>
-          <Pencil className="size-3" /> Düzenle
+        <Button className="w-full gap-1.5" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+          <Save className="size-4" />
+          {saveMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
         </Button>
       </div>
 
-      {/* Kritik uyarılar */}
-      {activeCritical.length > 0 && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-1.5">
-          <div className="flex items-center gap-1.5 text-red-700 font-semibold text-xs uppercase tracking-wide">
-            <AlertTriangle className="size-3.5" />
-            Kritik Uyarılar
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {activeCritical.map(({ label }) => (
-              <span key={label} className="text-xs bg-red-100 text-red-700 border border-red-200 px-2 py-0.5 rounded-full font-medium">
-                {label}
-              </span>
-            ))}
-          </div>
-          {anamnesis.localAnesthesiaAllergy && anamnesis.localAnesthesiaAllergyNote && (
-            <p className="text-xs text-red-600 mt-1">Not: {anamnesis.localAnesthesiaAllergyNote}</p>
-          )}
-          {anamnesis.onAnticoagulant && anamnesis.anticoagulantDrug && (
-            <p className="text-xs text-red-600">İlaç: {anamnesis.anticoagulantDrug}</p>
-          )}
+      {/* ── Sağ: Anamnez Geçmişi ──────────────────────────────────────────────── */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-1.5">
+          <History className="size-3.5 text-muted-foreground" />
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Anamnez Geçmişi</p>
         </div>
-      )}
 
-      {/* Sistemik hastalıklar */}
-      {activeSystemic.length > 0 && (
-        <AnamnesisSection title="Sistemik Hastalıklar">
-          <div className="flex flex-wrap gap-1.5">
-            {activeSystemic.map(({ label }) => (
-              <span key={label} className="text-xs bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
-                {label}
-              </span>
+        {history.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground rounded-lg border border-dashed">
+            <ClipboardList className="size-6 opacity-30" />
+            <p className="text-xs">Henüz kayıt yok</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {history.map((h, idx) => (
+              <button
+                key={h.publicId}
+                className={cn(
+                  'w-full text-left rounded-lg border p-3 space-y-1.5 text-xs transition-colors hover:bg-accent',
+                  idx === 0 && 'border-primary/30 bg-primary/5',
+                )}
+                onClick={async () => {
+                  try {
+                    const r = await patientsApi.getAnamnesis(patientPublicId);
+                    // Find exact record — for now load latest matching publicId
+                    // Since API only returns latest, we highlight idx=0 as current
+                    if (h.publicId === r.data.publicId) {
+                      setDraft(fromRecord(r.data));
+                      toast.info('Mevcut kayıt formu doldurdu.');
+                    }
+                  } catch { /* ignore */ }
+                }}
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <span className="font-medium text-foreground">
+                    {format(new Date(h.filledAt), 'd MMM yyyy HH:mm', { locale: tr })}
+                  </span>
+                  {idx === 0 && (
+                    <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-medium">Güncel</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 text-muted-foreground">
+                  <User className="size-3 shrink-0" />
+                  <span className="truncate">{h.filledByName || '—'}</span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {h.hasCriticalAlert && (
+                    <span className="text-[10px] bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5">
+                      <AlertTriangle className="size-2.5" /> Kritik
+                    </span>
+                  )}
+                  {h.smokingStatus === 1 && (
+                    <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                      <Cigarette className="size-2.5" /> Sigara
+                    </span>
+                  )}
+                  {h.alcoholUse != null && h.alcoholUse > 0 && (
+                    <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                      <Wine className="size-2.5" /> Alkol
+                    </span>
+                  )}
+                  {!h.hasCriticalAlert && h.smokingStatus !== 1 && !h.alcoholUse && (
+                    <span className="text-[10px] text-emerald-600 flex items-center gap-0.5">
+                      <CheckCheck className="size-2.5" /> Temiz
+                    </span>
+                  )}
+                </div>
+              </button>
             ))}
           </div>
-          {anamnesis.otherSystemicDiseases && (
-            <p className="text-sm text-muted-foreground pt-1">{anamnesis.otherSystemicDiseases}</p>
-          )}
-        </AnamnesisSection>
-      )}
-
-      {/* Alerjiler */}
-      {(ALLERGY_FLAGS.some(({ key }) => !!anamnesis[key]) || anamnesis.otherAllergies) && (
-        <AnamnesisSection title="Alerjiler">
-          <div className="flex flex-wrap gap-1.5">
-            {ALLERGY_FLAGS.filter(({ key }) => !!anamnesis[key]).map(({ label }) => (
-              <span key={label} className="text-xs bg-orange-100 text-orange-700 border border-orange-200 px-2 py-0.5 rounded-full">
-                {label}
-              </span>
-            ))}
-          </div>
-          {anamnesis.otherAllergies && (
-            <p className="text-sm text-muted-foreground pt-1">{anamnesis.otherAllergies}</p>
-          )}
-        </AnamnesisSection>
-      )}
-
-      {/* Alışkanlıklar */}
-      {(anamnesis.smokingStatus != null || anamnesis.alcoholUse != null) && (
-        <AnamnesisSection title="Sosyal Alışkanlıklar">
-          {anamnesis.smokingStatus != null && (
-            <div className="flex items-center gap-2">
-              <Cigarette className="size-3.5 text-muted-foreground" />
-              <span className="text-sm">Sigara: </span>
-              <span className="text-sm font-medium">{['Hayır', 'Evet', 'Bıraktı'][anamnesis.smokingStatus] ?? '—'}</span>
-              {anamnesis.smokingAmount && <span className="text-xs text-muted-foreground">({anamnesis.smokingAmount})</span>}
-            </div>
-          )}
-          {anamnesis.alcoholUse != null && (
-            <div className="flex items-center gap-2">
-              <Wine className="size-3.5 text-muted-foreground" />
-              <span className="text-sm">Alkol: </span>
-              <span className="text-sm font-medium">{['Hayır', 'Sosyal', 'Düzenli'][anamnesis.alcoholUse] ?? '—'}</span>
-            </div>
-          )}
-        </AnamnesisSection>
-      )}
-
-      {/* Diğer */}
-      {anamnesis.previousSurgeries && (
-        <AnamnesisSection title="Geçirilmiş Ameliyatlar">
-          <p className="text-sm text-muted-foreground">{anamnesis.previousSurgeries}</p>
-        </AnamnesisSection>
-      )}
-      {anamnesis.additionalNotes && (
-        <AnamnesisSection title="Ek Notlar">
-          <p className="text-sm text-muted-foreground">{anamnesis.additionalNotes}</p>
-        </AnamnesisSection>
-      )}
-
-      {/* Tüm değerler negatif */}
-      {activeCritical.length === 0 && activeSystemic.length === 0 && !ALLERGY_FLAGS.some(({ key }) => !!anamnesis[key]) && (
-        <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-700">
-          <CheckCheck className="size-4 shrink-0" />
-          <p className="text-sm">Bilinen sistemik hastalık veya alerji yok</p>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -1145,7 +1101,7 @@ export function ExaminationPage() {
           </TabsContent>
 
           <TabsContent value="anamnez" className="mt-0">
-            <div className="max-w-2xl mx-auto p-4">
+            <div className="max-w-5xl mx-auto p-4">
               {protocol?.patientPublicId ? (
                 <AnamnezTab patientPublicId={protocol.patientPublicId} />
               ) : (
