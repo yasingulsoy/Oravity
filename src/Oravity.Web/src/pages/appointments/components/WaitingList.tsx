@@ -151,7 +151,7 @@ export function WaitingList() {
                           return (
                             <TooltipProvider delayDuration={200}>
                               <Tooltip>
-                                <TooltipTrigger asChild>
+                                <TooltipTrigger>
                                   <span className="shrink-0">
                                     <StepIcon className={cn('size-3.5', step.color)} />
                                   </span>
