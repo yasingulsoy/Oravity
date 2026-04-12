@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Oravity.SharedKernel.BaseEntities;
 
 namespace Oravity.SharedKernel.Entities;
@@ -51,6 +52,9 @@ public class Protocol : BaseEntity
     public string? TreatmentPlan        { get; private set; }
     public string? Notes                { get; private set; }
 
+    /// <summary>Seçilen ICD tanıları — JSON dizi olarak protokol tablosunda saklanır.</summary>
+    public string IcdDiagnosesJson { get; private set; } = "[]";
+
     public DateTime? StartedAt   { get; private set; }
     public DateTime? CompletedAt { get; private set; }
 
@@ -58,7 +62,6 @@ public class Protocol : BaseEntity
 
     public ICollection<TreatmentPlan>      TreatmentPlans     { get; private set; } = [];
     public ICollection<PatientAnamnesis>   Anamneses          { get; private set; } = [];
-    public ICollection<ProtocolDiagnosis>  Diagnoses          { get; private set; } = [];
 
     private Protocol() { }
 
@@ -112,6 +115,43 @@ public class Protocol : BaseEntity
         MarkUpdated();
     }
 
+    // ─── ICD tanı yönetimi ────────────────────────────────────────────────
+
+    private static readonly JsonSerializerOptions _jsonOpts =
+        new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+    public IReadOnlyList<IcdDiagnosisEntry> GetIcdDiagnoses() =>
+        JsonSerializer.Deserialize<List<IcdDiagnosisEntry>>(IcdDiagnosesJson, _jsonOpts) ?? [];
+
+    public IcdDiagnosisEntry AddIcdDiagnosis(long icdCodeId, string code, string description, string category, bool isPrimary)
+    {
+        var list = GetIcdDiagnoses().ToList();
+        if (isPrimary)
+            list = list.Select(x => x with { IsPrimary = false }).ToList();
+        var entry = new IcdDiagnosisEntry(Guid.NewGuid(), icdCodeId, code, description, category, isPrimary);
+        list.Add(entry);
+        IcdDiagnosesJson = JsonSerializer.Serialize(list, _jsonOpts);
+        SyncDiagnosis(list);
+        MarkUpdated();
+        return entry;
+    }
+
+    public void RemoveIcdDiagnosis(Guid entryId)
+    {
+        var list = GetIcdDiagnoses().Where(x => x.EntryId != entryId).ToList();
+        IcdDiagnosesJson = JsonSerializer.Serialize(list, _jsonOpts);
+        SyncDiagnosis(list);
+        MarkUpdated();
+    }
+
+    private void SyncDiagnosis(IList<IcdDiagnosisEntry> list)
+    {
+        if (list.Count == 0) return;
+        // Birincil tanılar önce, sonra ikinciller
+        var codes = list.OrderByDescending(x => x.IsPrimary).Select(x => x.Code);
+        Diagnosis = string.Join(", ", codes);
+    }
+
     public void Complete()
     {
         if (Status != ProtocolStatus.Open)
@@ -129,3 +169,13 @@ public class Protocol : BaseEntity
         MarkUpdated();
     }
 }
+
+/// <summary>Protokol JSON alanında saklanan tek ICD tanı girişi.</summary>
+public record IcdDiagnosisEntry(
+    Guid   EntryId,
+    long   IcdCodeId,
+    string Code,
+    string Description,
+    string Category,
+    bool   IsPrimary
+);

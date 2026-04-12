@@ -122,12 +122,12 @@ public class ProtocolsController : ControllerBase
     }
 
     /// <summary>Protokol tanısını sil.</summary>
-    [HttpDelete("diagnoses/{diagnosisPublicId:guid}")]
+    [HttpDelete("{publicId:guid}/diagnoses/{entryId:guid}")]
     [RequirePermission("protocol:update")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    public async Task<IActionResult> RemoveDiagnosis(Guid diagnosisPublicId, CancellationToken ct)
+    public async Task<IActionResult> RemoveDiagnosis(Guid publicId, Guid entryId, CancellationToken ct)
     {
-        await _mediator.Send(new RemoveProtocolDiagnosisCommand(diagnosisPublicId), ct);
+        await _mediator.Send(new RemoveProtocolDiagnosisCommand(publicId, entryId), ct);
         return NoContent();
     }
 

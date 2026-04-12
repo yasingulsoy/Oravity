@@ -20,10 +20,13 @@ public class GetProtocolDetailQueryHandler : IRequestHandler<GetProtocolDetailQu
             .AsNoTracking()
             .Include(x => x.Patient)
             .Include(x => x.Doctor)
-            .Include(x => x.Diagnoses.Where(d => !d.IsDeleted))
-                .ThenInclude(d => d.IcdCode)
             .FirstOrDefaultAsync(x => x.PublicId == request.PublicId && !x.IsDeleted, ct)
             ?? throw new NotFoundException("Protokol bulunamadı.");
+
+        var diagnoses = p.GetIcdDiagnoses()
+            .OrderByDescending(d => d.IsPrimary)
+            .Select(d => new ProtocolDiagnosisResponse(d.EntryId, d.IcdCodeId, d.Code, d.Description, d.Category, d.IsPrimary, null))
+            .ToList();
 
         return new ProtocolDetailResponse(
             p.PublicId,
@@ -46,11 +49,6 @@ public class GetProtocolDetailQueryHandler : IRequestHandler<GetProtocolDetailQu
             p.StartedAt,
             p.CompletedAt,
             p.CreatedAt,
-            p.Diagnoses.OrderByDescending(d => d.IsPrimary).ThenBy(d => d.Id)
-                .Select(d => new ProtocolDiagnosisResponse(
-                    d.PublicId, d.IcdCodeId,
-                    d.IcdCode.Code, d.IcdCode.Description, d.IcdCode.Category,
-                    d.IsPrimary, d.Note))
-                .ToList());
+            diagnoses);
     }
 }

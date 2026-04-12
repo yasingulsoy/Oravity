@@ -33,29 +33,19 @@ public class AddProtocolDiagnosisCommandHandler
             .FirstOrDefaultAsync(x => x.Id == request.IcdCodeId && x.IsActive, ct)
             ?? throw new NotFoundException("ICD kodu bulunamadı.");
 
-        // Ana tanı tekli olsun — varsa diğerini secondary'ye al
-        if (request.IsPrimary)
-        {
-            var existing = await _db.ProtocolDiagnoses
-                .Where(d => d.ProtocolId == protocol.Id && d.IsPrimary && !d.IsDeleted)
-                .ToListAsync(ct);
-            foreach (var e in existing) e.SetPrimary(false);
-        }
-
-        var diagnosis = ProtocolDiagnosis.Create(protocol.Id, icdCode.Id, request.IsPrimary, request.Note);
-        _db.ProtocolDiagnoses.Add(diagnosis);
+        var entry = protocol.AddIcdDiagnosis(icdCode.Id, icdCode.Code, icdCode.Description, icdCode.Category, request.IsPrimary);
         await _db.SaveChangesAsync(ct);
 
         return new ProtocolDiagnosisResponse(
-            diagnosis.PublicId, icdCode.Id,
+            entry.EntryId, icdCode.Id,
             icdCode.Code, icdCode.Description, icdCode.Category,
-            diagnosis.IsPrimary, diagnosis.Note);
+            entry.IsPrimary, request.Note);
     }
 }
 
 // ─── Remove ───────────────────────────────────────────────────────────────────
 
-public record RemoveProtocolDiagnosisCommand(Guid DiagnosisPublicId) : IRequest;
+public record RemoveProtocolDiagnosisCommand(Guid ProtocolPublicId, Guid EntryId) : IRequest;
 
 public class RemoveProtocolDiagnosisCommandHandler : IRequestHandler<RemoveProtocolDiagnosisCommand>
 {
@@ -65,11 +55,11 @@ public class RemoveProtocolDiagnosisCommandHandler : IRequestHandler<RemoveProto
 
     public async Task Handle(RemoveProtocolDiagnosisCommand request, CancellationToken ct)
     {
-        var d = await _db.ProtocolDiagnoses
-            .FirstOrDefaultAsync(x => x.PublicId == request.DiagnosisPublicId && !x.IsDeleted, ct)
-            ?? throw new NotFoundException("Tanı bulunamadı.");
+        var protocol = await _db.Protocols
+            .FirstOrDefaultAsync(x => x.PublicId == request.ProtocolPublicId && !x.IsDeleted, ct)
+            ?? throw new NotFoundException("Protokol bulunamadı.");
 
-        d.SoftDelete();
+        protocol.RemoveIcdDiagnosis(request.EntryId);
         await _db.SaveChangesAsync(ct);
     }
 }
