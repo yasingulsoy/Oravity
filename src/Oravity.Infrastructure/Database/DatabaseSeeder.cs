@@ -28,6 +28,7 @@ public class DatabaseSeeder
         await SeedVerticalsAsync(ct);
         await SeedRoleTemplatesAsync(ct);
         await SeedPermissionsAsync(ct);
+        await SeedRoleTemplatePermissionsAsync(ct);
         await SeedTranslationsAsync(ct);
 
         await SeedCitizenshipTypesAsync(ct);
@@ -98,6 +99,130 @@ public class DatabaseSeeder
         await _db.Verticals.AddAsync(dental, ct);
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation("DENTAL vertical eklendi.");
+    }
+
+    // ─── Role Template Permissions ────────────────────────────────────────
+    /// <summary>
+    /// Her rol şablonuna temel izinleri atar (idempotent — mevcut atamalar atlanır).
+    /// </summary>
+    private async Task SeedRoleTemplatePermissionsAsync(CancellationToken ct)
+    {
+        // Rol kodu → atanacak permission kodları
+        var matrix = new Dictionary<string, string[]>
+        {
+            ["DOCTOR"] =
+            [
+                "patient.view", "patient.create", "patient.edit", "patient.edit_basic",
+                "appointment.view", "appointment.create", "appointment.edit", "appointment.cancel",
+                "visit.view", "visit.create", "visit.update",
+                "protocol.view", "protocol.create", "protocol.update",
+                "treatment_plan.view", "treatment_plan.create", "treatment_plan.edit", "treatment_plan.complete",
+                "note.write_patient", "note.delete_patient",
+                "anamnesis.edit",
+                "complaint.view", "complaint.create",
+                "report.view",
+            ],
+            ["ASSISTANT"] =
+            [
+                "patient.view", "patient.create", "patient.edit_basic",
+                "appointment.view", "appointment.create", "appointment.edit", "appointment.cancel",
+                "visit.view", "visit.create",
+                "protocol.view",
+                "treatment_plan.view",
+                "note.write_patient",
+                "complaint.view",
+            ],
+            ["RECEPTIONIST"] =
+            [
+                "patient.view", "patient.create", "patient.edit_basic",
+                "appointment.view", "appointment.create", "appointment.edit", "appointment.cancel",
+                "visit.view",
+                "protocol.view",
+                "payment.view", "payment.create",
+                "complaint.view", "complaint.create",
+                "report.view_daily",
+            ],
+            ["ACCOUNTANT"] =
+            [
+                "payment.view", "payment.create",
+                "invoice.view", "invoice.create",
+                "report.view", "report.export",
+                "commission.view",
+                "patient.view",
+            ],
+            ["READONLY"] =
+            [
+                "patient.view",
+                "appointment.view",
+                "visit.view",
+                "protocol.view",
+                "treatment_plan.view",
+                "report.view",
+            ],
+            ["BRANCH_MANAGER"] =
+            [
+                "patient.view", "patient.create", "patient.edit", "patient.edit_basic",
+                "patient.delete", "patient.upload_document", "patient.write_hidden_note",
+                "appointment.view", "appointment.create", "appointment.edit",
+                "appointment.cancel", "appointment.delete", "appointment.create_overlap",
+                "visit.view", "visit.create", "visit.update",
+                "protocol.view", "protocol.create", "protocol.update",
+                "treatment_plan.view", "treatment_plan.create", "treatment_plan.edit",
+                "treatment_plan.complete", "treatment_plan.delete_planned", "treatment_plan.delete_completed",
+                "payment.view", "payment.create", "payment.delete", "payment.refund",
+                "invoice.view", "invoice.create",
+                "report.view", "report.export",
+                "settings.view", "settings.edit_general",
+                "note.write_patient", "note.delete_patient",
+                "anamnesis.edit",
+                "complaint.view", "complaint.create", "complaint.manage",
+                "commission.view", "commission.distribute",
+                "survey.manage", "survey.view_results",
+                "audit.view",
+                "report.view_daily",
+                "institution.view",
+            ],
+        };
+
+        var roles = await _db.RoleTemplates
+            .Include(r => r.RoleTemplatePermissions)
+            .Where(r => matrix.Keys.Contains(r.Code))
+            .ToListAsync(ct);
+
+        var allPermCodes = matrix.Values.SelectMany(v => v).Distinct().ToList();
+        var permissions = await _db.Permissions
+            .Where(p => allPermCodes.Contains(p.Code))
+            .ToDictionaryAsync(p => p.Code, ct);
+
+        var added = 0;
+        foreach (var role in roles)
+        {
+            if (!matrix.TryGetValue(role.Code, out var codes)) continue;
+
+            var existingPermIds = role.RoleTemplatePermissions
+                .Select(rtp => rtp.PermissionId)
+                .ToHashSet();
+
+            foreach (var code in codes)
+            {
+                if (!permissions.TryGetValue(code, out var perm)) continue;
+                if (existingPermIds.Contains(perm.Id)) continue;
+
+                _db.RoleTemplatePermissions.Add(
+                    RoleTemplatePermission.Create(role.Id, perm.Id));
+                added++;
+            }
+        }
+
+        if (added > 0)
+        {
+            await _db.SaveChangesAsync(ct);
+            _logger.LogInformation("{Count} rol-izin ataması eklendi.", added);
+        }
+        else
+        {
+            _logger.LogDebug("Tüm rol-izin atamaları zaten mevcut.");
+        }
     }
 
     // ─── Role Templates ───────────────────────────────────────────────────
