@@ -15,6 +15,7 @@ public record TreatmentCategoryResponse(
 public record TreatmentResponse(
     Guid                        PublicId,
     string                      Code,
+    string?                     SutCode,
     string                      Name,
     TreatmentCategoryResponse?  Category,
     string?                     Tags,
@@ -23,6 +24,7 @@ public record TreatmentResponse(
     bool                        RequiresLaboratory,
     int[]                       AllowedScopes,
     bool                        IsActive,
+    bool                        IsGlobal,
     DateTime                    CreatedAt
 );
 
@@ -44,6 +46,7 @@ public static class TreatmentCatalogMappings
         => new(
             t.PublicId,
             t.Code,
+            t.SutCode,
             t.Name,
             t.Category is null ? null : ToResponse(t.Category),
             t.Tags,
@@ -52,6 +55,7 @@ public static class TreatmentCatalogMappings
             t.RequiresLaboratory,
             t.AllowedScopes,
             t.IsActive,
+            t.CompanyId is null,
             t.CreatedAt
         );
 }

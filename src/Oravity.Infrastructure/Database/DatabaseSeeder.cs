@@ -39,6 +39,7 @@ public class DatabaseSeeder
         await SeedAppointmentStatusesAsync(ct);
         await SeedAppointmentTypesAsync(ct);
         await SeedProtocolTypesAsync(ct);
+        await SeedTreatmentCatalogAsync(ct);
 
         if (_env.IsDevelopment())
         {
@@ -945,6 +946,252 @@ public class DatabaseSeeder
         await _db.SaveChangesAsync(ct);
         _logger.LogInformation("Protokol tipleri seed edildi.");
     }
+
+    // ── Treatment Catalog (Global) ─────────────────────────────────────────────
+    private async Task SeedTreatmentCatalogAsync(CancellationToken ct)
+    {
+        if (await _db.TreatmentCategories.AnyAsync(c => c.CompanyId == null, ct))
+        {
+            _logger.LogInformation("Global tedavi kataloğu zaten mevcut, atlanıyor.");
+            return;
+        }
+
+        var catalog = GetDentalTreatmentCatalog();
+
+        foreach (var cat in catalog)
+        {
+            var category = TreatmentCategory.Create(null, cat.Name, null, cat.SortOrder);
+            await _db.TreatmentCategories.AddAsync(category, ct);
+            await _db.SaveChangesAsync(ct);
+
+            foreach (var t in cat.Treatments)
+            {
+                var treatment = Treatment.Create(
+                    companyId:               null,
+                    code:                    t.Code,
+                    name:                    t.Name,
+                    categoryId:              category.Id,
+                    kdvRate:                 t.KdvRate,
+                    requiresSurfaceSelection: t.RequiresSurface,
+                    requiresLaboratory:      t.RequiresLab,
+                    allowedScopes:           null,
+                    tags:                    null,
+                    sutCode:                 t.SutCode);
+                await _db.Treatments.AddAsync(treatment, ct);
+            }
+
+            await _db.SaveChangesAsync(ct);
+        }
+
+        // TDB 2026 referans fiyat listesi
+        var tdbList = await _db.ReferencePriceLists
+            .FirstOrDefaultAsync(l => l.Code == "TDB_2026", ct);
+
+        if (tdbList is null)
+        {
+            tdbList = ReferencePriceList.Create("TDB_2026", "TDB 2026 Rehber Tarife", "manual", 2026);
+            await _db.ReferencePriceLists.AddAsync(tdbList, ct);
+            await _db.SaveChangesAsync(ct);
+        }
+
+        // TDB fiyatlarını reference_price_items olarak kaydet
+        var allTreatments = await _db.Treatments
+            .Where(t => t.CompanyId == null)
+            .ToListAsync(ct);
+
+        var allSeeds = catalog.SelectMany(c => c.Treatments).ToDictionary(t => t.Code);
+
+        foreach (var tr in allTreatments)
+        {
+            if (!allSeeds.TryGetValue(tr.Code, out var seed)) continue;
+            var alreadyExists = await _db.ReferencePriceItems
+                .AnyAsync(i => i.ListId == tdbList.Id && i.TreatmentCode == tr.Code, ct);
+            if (alreadyExists) continue;
+
+            var item = ReferencePriceItem.Create(tdbList.Id, tr.Code, tr.Name, seed.TdbPrice, 0m, "TRY", null, null);
+            await _db.ReferencePriceItems.AddAsync(item, ct);
+        }
+
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("Global tedavi kataloğu seed edildi ({Count} kategori).", catalog.Length);
+    }
+
+    private static CategorySeed[] GetDentalTreatmentCatalog() =>
+    [
+        new("Teşhis ve Tedavi Planlaması", 1,
+        [
+            new("1-1",  "Dişhekimi Muayenesi",                        "401010", 1500.00m),
+            new("1-2",  "Uzman Dişhekimi Muayenesi",                  "401020", 1850.00m),
+            new("1-3",  "Kontrol Hekim Muayenesi",                    "401010", 1300.00m),
+            new("1-4",  "Konsültasyon",                               "401030", 1009.09m),
+            new("1-5",  "Uzman Dişhekimi Konsültasyonu",              "401040", 1313.64m),
+            new("1-8",  "Teşhis ve Tedavi Planlaması",                "401000", 1395.45m),
+            new("1-9",  "Oral Hijyen Eğitimi",                       "401010", 1068.18m),
+            new("1-13", "Vitalite Kontrolü (Diş Başına)",             "401010",  213.64m),
+            new("1-14", "Diş Röntgen Filmi (Periapikal)",             "401050",  754.55m),
+            new("1-16", "Bite-Wing Radyografi",                       "401150",  754.55m),
+            new("1-18", "Panoramik Film",                             "401080", 1854.55m),
+            new("1-19", "Lateral Sefalometrik Film",                  "401090", 1863.64m),
+            new("1-21", "İntra Oral Dijital Radyografi (RVG)",        "401160",  900.00m),
+            new("1-24", "Tomografi (Bölgesel)",                       "401120", 2500.00m),
+            new("1-25", "Tomografi (Tek Çene)",                       "401120", 4000.00m),
+            new("1-26", "Tomografi (İki Çene)",                       "401120", 5400.00m),
+            new("1-31", "Lokal Anestezi (İnfiltratif)",               "405420",  336.36m),
+            new("1-32", "Lokal Anestezi (Rejyonal)",                  "405430",  336.36m),
+            new("1-34", "Ağız İçi Dijital Tarama",                   null,      2500.00m),
+        ]),
+
+        new("Tedavi ve Endodonti", 2,
+        [
+            new("2-1",  "Amalgam Dolgu (Bir Yüzlü)",                  "402010", 2586.36m, RequiresSurface: true),
+            new("2-2",  "Amalgam Dolgu (İki Yüzlü)",                  "402020", 3459.09m, RequiresSurface: true),
+            new("2-3",  "Amalgam Dolgu (Üç Yüzlü)",                   "402030", 4404.55m, RequiresSurface: true),
+            new("2-4",  "Kompozit Dolgu (Bir Yüzlü)",                 "200120", 3068.18m, RequiresSurface: true),
+            new("2-5",  "Kompozit Dolgu (İki Yüzlü)",                 "200130", 3850.00m, RequiresSurface: true),
+            new("2-6",  "Kompozit Dolgu (Üç Yüzlü)",                  "200140", 4818.18m, RequiresSurface: true),
+            new("2-7",  "Direkt Kompozit Laminate Restorasyonu",      "404390", 8450.00m, RequiresSurface: true),
+            new("2-9",  "Cam İyonomer Dolgu",                         "402190", 2431.82m, RequiresSurface: true),
+            new("2-11", "İnley Dolgu (Bir Yüzlü)",                    "402040", 5713.64m, RequiresSurface: true, RequiresLab: true),
+            new("2-12", "İnley Dolgu (İki Yüzlü)",                    "402050", 5900.00m, RequiresSurface: true, RequiresLab: true),
+            new("2-13", "İnley Dolgu (Üç Yüzlü)",                     "402060", 6154.55m, RequiresSurface: true, RequiresLab: true),
+            new("2-17", "Seramik İnley Dolgu (Bir Yüzlü)",            "200150", 14200.00m, RequiresSurface: true, RequiresLab: true),
+            new("2-18", "Seramik İnley Dolgu (İki Yüzlü)",            "200160", 14200.00m, RequiresSurface: true, RequiresLab: true),
+            new("2-19", "Seramik İnley Dolgu (Üç Yüzlü)",             "200170", 14200.00m, RequiresSurface: true, RequiresLab: true),
+            new("2-23", "Dolgu (Restorasyon) Tamiri",                 "401010", 2654.55m),
+            new("2-25", "Kuafaj (Dolgu Hariç)",                       "402130",  400.00m),
+            new("2-26", "Ekstirpasyon (Her Kanal İçin)",              "402300", 1827.27m),
+            new("2-27", "Kanal Tedavisi - Tek Kanal",                 "402150", 4190.91m),
+            new("2-28", "Kanal Tedavisi - İki Kanal",                 "402152", 6563.64m),
+            new("2-29", "Kanal Tedavisi - Üç Kanal",                  "402153", 9409.09m),
+            new("2-30", "Kanal Tedavisi - İlave Her Kanal",           "402154", 2272.73m),
+            new("2-31", "Periapikal Lezyonlu Kanal Tedavisi - Tek",   "402271", 4595.45m),
+            new("2-32", "Periapikal Lezyonlu Kanal Tedavisi - İki",   "402272", 7000.00m),
+            new("2-33", "Periapikal Lezyonlu Kanal Tedavisi - Üç",    "402273", 9981.82m),
+            new("2-35", "Kanal Dolgusu Tekrarı (Retreatment - Kanal)","401010", 4100.00m),
+            new("2-37", "Kanal İçi Hazır Post (Metal)",               "402240", 2795.45m, RequiresLab: true),
+            new("2-38", "Kanal İçi Fiber Post",                       "402240", 4500.00m),
+            new("2-42", "Endokron",                                   null,     12500.00m, RequiresLab: true),
+            new("2-43", "Hassasiyet Tedavisi (Tek Diş)",              "402250", 1109.09m),
+            new("2-45", "Diş Ağartma (Vital Tek Diş)",               "200100", 1950.00m),
+            new("2-47", "Diş Ağartma (Tek Çene)",                    "200110", 10850.00m),
+        ]),
+
+        new("Pedodonti", 3,
+        [
+            new("3-2",  "Fissür Örtücü (Sealant - Tek Diş)",         "403010", 1313.64m),
+            new("3-3",  "Yüzeysel Flor Uygulaması (Yarım Çene)",     "403020", 1250.00m),
+            new("3-4",  "Kompomer Dolgu",                             "403090", 3800.00m, RequiresSurface: true),
+            new("3-6",  "Amputasyon",                                 "402140", 3500.00m),
+            new("3-7",  "Süt Dişi Kanal Tedavisi",                   null,      6150.00m),
+            new("3-10", "Yer Tutucu (Sabit)",                        "403040", 6800.00m, RequiresLab: true),
+            new("3-11", "Yer Tutucu (Hareketli)",                    "403050", 9100.00m, RequiresLab: true),
+            new("3-12", "Prefabrike Kron",                            "403030", 3463.64m, RequiresLab: true),
+            new("3-13", "Strip Kron",                                 "403080", 3250.00m, RequiresLab: true),
+            new("3-16", "Çocuk Protezi (Akrilik - Bölümlü - Tek Çene)", "403060", 13681.82m, RequiresLab: true),
+            new("3-17", "Çocuk Protezi (Akrilik - Tam - Tek Çene)",  "403070", 15450.00m, RequiresLab: true),
+            new("3-18", "Avülsiyon Tedavisi",                        null,     17000.00m),
+        ]),
+
+        new("Protez", 4,
+        [
+            new("4-1",  "Tam Protez (Akrilik - Tek Çene)",            "404010", 29000.00m, RequiresLab: true),
+            new("4-2",  "Bölümlü Protez (Akrilik - Tek Çene)",        "404020", 27900.00m, RequiresLab: true),
+            new("4-3",  "Tam Protez (Döküm Metal - Tek Çene)",        "404030", 36000.00m, RequiresLab: true),
+            new("4-4",  "Bölümlü Protez (Döküm Metal - Tek Çene)",    "404040", 35000.00m, RequiresLab: true),
+            new("4-7",  "Geçici (İmmediyet) Protez (Tek Çene)",       "404050", 20259.09m, RequiresLab: true),
+            new("4-8",  "Besleme (Tek Çene)",                         "404080", 10877.27m),
+            new("4-9",  "Kaide Yenileme (Rebazaj - Tek Çene)",        "404060", 11300.00m),
+            new("4-12", "Tamir (Akrilik Protez)",                     "404090", 3459.09m),
+            new("4-15", "Diş İlavesi (Tek Diş)",                     "404120", 3800.00m, RequiresLab: true),
+            new("4-17", "Gece Plağı (Yumuşak)",                      "404150", 5350.00m, RequiresLab: true),
+            new("4-18", "Gece Plağı (Sert Oklüzal Splint)",          "404150", 18400.00m, RequiresLab: true),
+            new("4-20", "Tek Parça Döküm Kuron",                     "404170", 7031.82m, RequiresLab: true),
+            new("4-22", "Veneer Kuron (Seramik)",                    "404181", 11000.00m, RequiresLab: true),
+            new("4-24", "Laminate Veneer Kompozit",                  null,      8450.00m, RequiresLab: true),
+            new("4-26", "Laminate Veneer (Seramik)",                 "404181", 24000.00m, RequiresLab: true),
+            new("4-27", "Jaket Kuron (Akrilik)",                     "404200", 6800.00m, RequiresLab: true),
+            new("4-29", "Tam Seramik Kuron (Metal Desteksiz)",        "404201", 19500.00m, RequiresLab: true),
+            new("4-30", "Teleskop Kuron (Koping)",                   "404210", 8995.45m, RequiresLab: true),
+            new("4-32", "Döküm Post Core (Pivo)",                    "404190", 6236.36m, RequiresLab: true),
+            new("4-33", "Adeziv Köprü (Maryland)",                   "404220", 10500.00m, RequiresLab: true),
+            new("4-34", "Geçici Kuron (Tek Diş)",                    "404240", 2040.91m, RequiresLab: true),
+            new("4-35", "Kuron Sökümü (Tek Sabit Üye)",             "404250", 1704.55m),
+            new("4-36", "Düşmüş Kuron/Köprü Simantasyonu",          "404260", 1113.64m),
+            new("4-51", "Zirkonyum Kuron",                           null,     12500.00m, RequiresLab: true),
+            new("4-49", "İmplant Rehberi (Yarım Çene)",             null,      8850.00m, RequiresLab: true),
+            new("4-50", "İmplant Rehberi (Tam Çene)",               null,     13000.00m, RequiresLab: true),
+        ]),
+
+        new("Ağız-Diş ve Çene Cerrahisi", 5,
+        [
+            new("5-1",  "Diş Çekimi",                                "405010", 2250.00m),
+            new("5-2",  "Komplikasyonlu Diş Çekimi",                 "405020", 4500.00m),
+            new("5-3",  "Gömülü Diş Operasyonu",                    "405030", 7250.00m),
+            new("5-4",  "Gömülü Diş Operasyonu (Kemik Retansiyonlu)","405040", 10650.00m),
+            new("5-5",  "Tek Kökte Kök Ucu Rezeksiyonu",             "405060", 9500.00m),
+            new("5-6",  "İki Kökte Kök Ucu Rezeksiyonu",             "405060", 11750.00m),
+            new("5-7",  "Üç Kökte Kök Ucu Rezeksiyonu",              "405060", 13750.00m),
+            new("5-8",  "Alveolitis Cerrahi Tedavisi",               "405070", 6777.27m),
+            new("5-13", "Kist Operasyonu (Küçük)",                   "405110", 10050.00m),
+            new("5-14", "Kist Operasyonu (1 cm Büyük)",              "405110", 15000.00m),
+            new("5-20", "Sert Doku Greftleme",                       "405170", 14500.00m),
+            new("5-21", "Yumuşak Doku Greftleme",                    "405170", 12000.00m),
+            new("5-22", "Sinüs Lifting",                             "401010", 13150.00m),
+            new("5-23", "Biyopsi",                                   "405180", 5800.00m),
+            new("5-25", "Apse Drenajı (Ekstraoral)",                 "405190", 10150.00m),
+            new("5-26", "Apse Drenajı (İntraoral)",                  "405190", 7990.91m),
+            new("5-27", "Kapişon İzalesi / İmplant Üstü Açılması",  "401010", 3309.09m),
+            new("5-32", "Reimplantasyon",                            "405210", 10500.00m),
+            new("5-34", "Kemik İçi İmplant (Tek Silindirik)",        "405260", 20400.00m),
+            new("5-35", "Torus Operasyonu (Yarım Çene)",             "405270", 9800.00m),
+            new("5-42", "Ortodontik Amaçlı Gömük Diş Üzeri Açılması","405380", 9500.00m),
+            new("5-51", "İmplant Çıkartılması",                     null,      9500.00m),
+            new("5-55", "Koronektomi",                               null,      9500.00m),
+        ]),
+
+        new("Periodontoloji", 6,
+        [
+            new("6-1",  "Detartraj (Diş Taşı Temizliği - Tek Çene)", "406020", 3000.00m),
+            new("6-2",  "Subgingival Küretaj (Tek Diş)",             "406030", 1700.00m),
+            new("6-3",  "Subgingival İlaç Uygulaması",               "406180",  300.00m),
+            new("6-4",  "Gingivoplasti (Tek Diş)",                   "406130", 2850.00m),
+            new("6-5",  "Gingivektomi (Tek Diş)",                    "406040", 2950.00m),
+            new("6-6",  "Flap Operasyonu (Tek Diş)",                 "406050", 4750.00m),
+            new("6-9",  "Serbest Diş Eti Grefti (Tek Diş)",         "406070", 11950.00m),
+            new("6-10", "Saplı Yumuşak Doku Grefti (Tek Diş)",      "406080", 10450.00m),
+            new("6-14", "Biyomateryal Uygulaması (Tek Diş)",        "406140", 1250.00m),
+            new("6-15", "Membran Uygulaması (Tek Diş)",             "406160", 1236.36m),
+            new("6-17", "Subepitelyal Bağ Dokusu Grefti",           "406170", 13500.00m),
+            new("6-18", "Frenektomi - Frenetomi",                   "401010", 7000.00m),
+            new("6-19", "Peri-İmplantitis (Cerrahi - Tek İmp.)",    null,      6250.00m),
+        ]),
+
+        new("Ortodonti", 7,
+        [
+            new("7-1",  "Lateral Sefalometrik Film Analizi",          "407010", 1522.73m),
+            new("7-3",  "Kemik Yaşı Tayini",                         "407060",  586.36m),
+            new("7-6",  "Ortodontik Model Yapımı",                   "407090", 1100.00m),
+            new("7-7",  "Ortodontik Model Analizi",                  "407100", 1345.45m),
+            new("7-10", "Angle Sınıf I Anomali Tedavisi",            "407110", 37190.91m),
+            new("7-11", "Angle Sınıf II Anomali Tedavisi",           "407120", 46722.73m),
+            new("7-12", "Angle Sınıf III Anomali Tedavisi",          "407130", 56977.27m),
+            new("7-18", "Önleyici Ortodontik Tedavi",                "407150", 23750.00m),
+            new("7-19", "Kısa Süreli Ortodontik Tedavi",            "407140", 21172.73m),
+            new("7-20", "Pekiştirme Tedavisi",                      "407160", 8450.00m),
+            new("7-21", "Pekiştirme Aygıtı (Hawley vb.)",           "407170", 6150.00m, RequiresLab: true),
+            new("7-22", "Sabit Pekiştirme (Lingual Retainer)",      "407180", 8750.00m),
+            new("7-24", "Tek Çene Aparey Yapımı",                   "407190", 6850.00m, RequiresLab: true),
+            new("7-25", "Çift Çene Aparey Yapımı (Frankel/Aktivatör)","407200", 11150.00m, RequiresLab: true),
+            new("7-35", "Bant Tatbiki (Tek Diş)",                   "407270", 2050.00m),
+            new("7-36", "Braket Tatbiki (Tek Diş)",                 "407270", 1750.00m),
+            new("7-40", "Bant veya Braket Çıkarılması (Tek Diş)",   "407270",  713.64m),
+            new("7-44", "Hızlı Maksiller Genişletme Apareyi",       "407250", 12500.00m, RequiresLab: true),
+            new("7-62", "Şeffaf Plak Ortodontik Tedavi (Hafif)",    null,     49000.00m),
+            new("7-63", "Şeffaf Plak Ortodontik Tedavi (Orta)",     null,     63000.00m),
+            new("7-64", "Şeffaf Plak Ortodontik Tedavi (Ağır)",     null,     87000.00m),
+            new("7-60", "Mini Vida Uygulaması",                     null,      4500.00m),
+        ]),
+    ];
 }
 
 // ─── Extension ────────────────────────────────────────────────────────────────
@@ -962,3 +1209,10 @@ public static class DatabaseSeederExtensions
         await seeder.SeedAsync();
     }
 }
+
+// ─── Treatment Catalog Seed Data ─────────────────────────────────────────────
+
+internal record TreatmentSeed(string Code, string Name, string? SutCode, decimal TdbPrice,
+    bool RequiresSurface = false, bool RequiresLab = false, decimal KdvRate = 10m);
+
+internal record CategorySeed(string Name, int SortOrder, TreatmentSeed[] Treatments);

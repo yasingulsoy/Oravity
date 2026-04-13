@@ -25,20 +25,16 @@ public class GetTreatmentByIdQueryHandler
         GetTreatmentByIdQuery request,
         CancellationToken cancellationToken)
     {
-        var query = _db.Treatments
+        var companyId = _tenant.CompanyId
+            ?? throw new ForbiddenException("Tedavi görüntülemek için şirket bağlamı gereklidir.");
+
+        var treatment = await _db.Treatments
             .AsNoTracking()
             .Include(t => t.Category)
-            .Where(t => t.PublicId == request.PublicId);
-
-        if (!_tenant.IsPlatformAdmin)
-        {
-            if (_tenant.CompanyId.HasValue)
-                query = query.Where(t => t.CompanyId == _tenant.CompanyId.Value);
-            else
-                throw new ForbiddenException("Erişim için şirket bağlamı gereklidir.");
-        }
-
-        var treatment = await query.FirstOrDefaultAsync(cancellationToken)
+            .FirstOrDefaultAsync(
+                t => t.PublicId == request.PublicId
+                  && (t.CompanyId == null || t.CompanyId == companyId),
+                cancellationToken)
             ?? throw new NotFoundException("Tedavi bulunamadı.");
 
         return TreatmentCatalogMappings.ToResponse(treatment);

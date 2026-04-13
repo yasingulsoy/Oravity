@@ -38,7 +38,7 @@ public class GetTreatmentsQueryHandler
         var query = _db.Treatments
             .AsNoTracking()
             .Include(t => t.Category)
-            .Where(t => t.CompanyId == request.CompanyId);
+            .Where(t => t.CompanyId == null || t.CompanyId == request.CompanyId);
 
         if (request.ActiveOnly)
             query = query.Where(t => t.IsActive);

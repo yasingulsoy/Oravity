@@ -7,8 +7,9 @@ namespace Oravity.SharedKernel.Entities;
 /// </summary>
 public class TreatmentCategory : AuditableEntity
 {
-    public long CompanyId { get; private set; }
-    public Company Company { get; private set; } = default!;
+    /// <summary>null = global şablon, değer varsa şirkete özel.</summary>
+    public long? CompanyId { get; private set; }
+    public Company? Company { get; private set; }
 
     public string Name { get; private set; } = default!;
 
@@ -21,7 +22,7 @@ public class TreatmentCategory : AuditableEntity
     private TreatmentCategory() { }
 
     public static TreatmentCategory Create(
-        long companyId,
+        long? companyId,
         string name,
         long? parentId,
         int sortOrder)

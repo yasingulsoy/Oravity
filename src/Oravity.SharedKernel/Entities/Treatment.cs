@@ -8,16 +8,20 @@ namespace Oravity.SharedKernel.Entities;
 /// </summary>
 public class Treatment : AuditableEntity
 {
-    public long CompanyId { get; private set; }
-    public Company Company { get; private set; } = default!;
+    /// <summary>null = global şablon, değer varsa şirkete özel.</summary>
+    public long? CompanyId { get; private set; }
+    public Company? Company { get; private set; }
 
-    /// <summary>Benzersiz tedavi kodu (büyük harf, boşluksuz). Örn: "D001"</summary>
+    /// <summary>TDB sınıflandırma kodu. Örn: "1-1", "2-4"</summary>
     public string Code { get; private set; } = default!;
 
     public string Name { get; private set; } = default!;
 
     public long? CategoryId { get; private set; }
     public TreatmentCategory? Category { get; private set; }
+
+    /// <summary>SUT/MBYS işlem kodu. Örn: "402150"</summary>
+    public string? SutCode { get; private set; }
 
     /// <summary>JSONB string — etiketler dizisi. Örn: '["ortopantomografi","röntgen"]'</summary>
     public string? Tags { get; private set; }
@@ -34,7 +38,7 @@ public class Treatment : AuditableEntity
     private Treatment() { }
 
     public static Treatment Create(
-        long companyId,
+        long? companyId,
         string code,
         string name,
         long? categoryId,
@@ -42,7 +46,8 @@ public class Treatment : AuditableEntity
         bool requiresSurfaceSelection,
         bool requiresLaboratory,
         int[]? allowedScopes,
-        string? tags)
+        string? tags,
+        string? sutCode = null)
     {
         if (string.IsNullOrWhiteSpace(code))
             throw new ArgumentException("Tedavi kodu boş olamaz.", nameof(code));
@@ -52,7 +57,7 @@ public class Treatment : AuditableEntity
         return new Treatment
         {
             CompanyId                = companyId,
-            Code                     = code.Trim().ToUpperInvariant(),
+            Code                     = code.Trim(),
             Name                     = name.Trim(),
             CategoryId               = categoryId,
             KdvRate                  = kdvRate,
@@ -60,6 +65,7 @@ public class Treatment : AuditableEntity
             RequiresLaboratory       = requiresLaboratory,
             AllowedScopes            = allowedScopes ?? [],
             Tags                     = tags,
+            SutCode                  = sutCode?.Trim(),
             IsActive                 = true
         };
     }
@@ -72,14 +78,15 @@ public class Treatment : AuditableEntity
         bool requiresSurfaceSelection,
         bool requiresLaboratory,
         int[]? allowedScopes,
-        string? tags)
+        string? tags,
+        string? sutCode = null)
     {
         if (string.IsNullOrWhiteSpace(code))
             throw new ArgumentException("Tedavi kodu boş olamaz.", nameof(code));
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Tedavi adı boş olamaz.", nameof(name));
 
-        Code                     = code.Trim().ToUpperInvariant();
+        Code                     = code.Trim();
         Name                     = name.Trim();
         CategoryId               = categoryId;
         KdvRate                  = kdvRate;
@@ -87,6 +94,7 @@ public class Treatment : AuditableEntity
         RequiresLaboratory       = requiresLaboratory;
         AllowedScopes            = allowedScopes ?? [];
         Tags                     = tags;
+        SutCode                  = sutCode?.Trim();
         MarkUpdated();
     }
 

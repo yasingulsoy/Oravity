@@ -43,7 +43,7 @@ public class CalculateTreatmentPriceQueryHandler
         var treatment = await _db.Treatments
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.PublicId == request.TreatmentPublicId
-                                   && t.CompanyId == companyId, cancellationToken)
+                                   && (t.CompanyId == null || t.CompanyId == companyId), cancellationToken)
             ?? throw new NotFoundException("Tedavi bulunamadı.");
 
         var ctx = new PricingContext
