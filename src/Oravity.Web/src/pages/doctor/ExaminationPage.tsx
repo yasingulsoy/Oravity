@@ -813,10 +813,10 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
   return (
     <div className="space-y-4">
       {/* Diş şeması */}
-      <div className="rounded-xl border bg-muted/10 p-4 space-y-2">
+      <div className="rounded-xl border bg-muted/10 p-4 space-y-2 overflow-x-auto">
         {/* Üst çene */}
         <p className="text-[10px] text-center text-muted-foreground uppercase tracking-wider font-medium">Üst Çene</p>
-        <div className="flex justify-center gap-0.5 flex-wrap">
+        <div className="flex justify-center gap-0.5 flex-nowrap min-w-max mx-auto">
           {rows.upperRight.map(n => (
             <ToothSvg key={n} tooth={teethMap[n] ?? defaultTooth(n)} selected={selected === n}
               onClick={() => setSelected(selected === n ? null : n)} isUpper={true} />
@@ -831,7 +831,7 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
         <div className="h-px bg-border my-1" />
 
         {/* Alt çene */}
-        <div className="flex justify-center gap-0.5 flex-wrap">
+        <div className="flex justify-center gap-0.5 flex-nowrap min-w-max mx-auto">
           {rows.lowerRight.map(n => (
             <ToothSvg key={n} tooth={teethMap[n] ?? defaultTooth(n)} selected={selected === n}
               onClick={() => setSelected(selected === n ? null : n)} isUpper={false} />
