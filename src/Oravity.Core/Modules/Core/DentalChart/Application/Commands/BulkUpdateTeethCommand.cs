@@ -59,7 +59,7 @@ public class BulkUpdateTeethCommandHandler
 
         var patient = await _db.Patients
             .Where(p => p.PublicId == request.PatientPublicId && !p.IsDeleted)
-            .Select(p => new { p.Id, p.BranchId, p.CompanyId })
+            .Select(p => new { p.Id, p.BranchId })
             .FirstOrDefaultAsync(cancellationToken);
 
         if (patient is null)
@@ -102,7 +102,7 @@ public class BulkUpdateTeethCommandHandler
                     toothNumber: item.ToothNumber,
                     status:      item.Status,
                     recordedBy:  _user.UserId,
-                    companyId:   patient.CompanyId,
+                    companyId:   _tenant.CompanyId,
                     surfaces:    normalizedSurfaces,
                     notes:       item.Notes);
 

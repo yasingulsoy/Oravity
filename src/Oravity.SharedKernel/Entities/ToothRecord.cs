@@ -16,8 +16,12 @@ public enum ToothStatus
     Implant            = 5,  // İmplant
     Crown              = 6,  // Kron
     Bridge             = 7,  // Köprü
-    RootCanal          = 8,  // Kanal Tedavili
-    CongenitallyMissing = 9  // Eksik Doğumsal
+    RootCanal           = 8,  // Kanal Tedavili
+    CongenitallyMissing = 9,  // Eksik Doğumsal
+    Impacted            = 10, // Gömülü
+    Abscess             = 11, // Apse/Kist
+    Fractured           = 12, // Kırık
+    Root                = 13, // Kök (kron yok, sadece kök kalmış)
 }
 
 public class ToothRecord : AuditableEntity

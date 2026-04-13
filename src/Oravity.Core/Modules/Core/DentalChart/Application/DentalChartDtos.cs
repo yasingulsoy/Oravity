@@ -27,6 +27,7 @@ public record ToothHistoryResponse(
     ToothStatus NewStatus,
     string NewStatusLabel,
     long ChangedBy,
+    string ChangedByName,
     DateTime ChangedAt,
     string? Reason
 );
@@ -60,7 +61,7 @@ public static class DentalChartMappings
         r.CreatedAt
     );
 
-    public static ToothHistoryResponse ToHistoryResponse(HistoryEntity h) => new(
+    public static ToothHistoryResponse ToHistoryResponse(HistoryEntity h, string changedByName = "") => new(
         h.Id,
         h.ToothNumber,
         h.OldStatus,
@@ -68,6 +69,7 @@ public static class DentalChartMappings
         h.NewStatus,
         StatusLabel(h.NewStatus),
         h.ChangedBy,
+        changedByName,
         h.ChangedAt,
         h.Reason
     );
@@ -98,6 +100,10 @@ public static class DentalChartMappings
         ToothStatus.Bridge              => "Köprü",
         ToothStatus.RootCanal           => "Kanal Tedavili",
         ToothStatus.CongenitallyMissing => "Eksik Doğumsal",
+        ToothStatus.Impacted            => "Gömülü",
+        ToothStatus.Abscess             => "Apse/Kist",
+        ToothStatus.Fractured           => "Kırık",
+        ToothStatus.Root                => "Kök",
         _                               => s.ToString()
     };
 }

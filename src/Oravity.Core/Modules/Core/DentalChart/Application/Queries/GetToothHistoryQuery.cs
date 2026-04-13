@@ -36,15 +36,17 @@ public class GetToothHistoryQueryHandler
             .Select(p => p.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
-        var history = await _db.ToothConditionHistories
-            .AsNoTracking()
-            .Where(h =>
-                h.PatientId == patientId &&
-                h.ToothNumber == request.ToothNumber)
-            .OrderByDescending(h => h.ChangedAt)
-            .Select(h => DentalChartMappings.ToHistoryResponse(h))
-            .ToListAsync(cancellationToken);
+        var history = await (
+            from h in _db.ToothConditionHistories.AsNoTracking()
+            where h.PatientId == patientId && h.ToothNumber == request.ToothNumber
+            join u in _db.Users.AsNoTracking() on h.ChangedBy equals u.Id into uj
+            from u in uj.DefaultIfEmpty()
+            orderby h.ChangedAt descending
+            select new { History = h, ChangedByName = u != null ? u.FullName : "" }
+        ).ToListAsync(cancellationToken);
 
-        return history;
+        return history
+            .Select(x => DentalChartMappings.ToHistoryResponse(x.History, x.ChangedByName))
+            .ToList();
     }
 }
