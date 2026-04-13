@@ -201,7 +201,7 @@ function AnamnezTab({ patientPublicId, protocolPublicId }: { patientPublicId: st
     queryFn: () => patientsApi.getById(patientPublicId).then(r => r.data),
     staleTime: 10 * 60 * 1000,
   });
-  const isMale = patientInfo?.gender === 'Male' || patientInfo?.gender === 'M';
+  const isMale = ['male', 'Male', 'M', 'Erkek'].includes(patientInfo?.gender ?? '');
 
   // ── Latest anamnesis (pre-fill) ────────────────────────────────────────────
   const { data: latest, isLoading } = useQuery<PatientAnamnesis | null>({
@@ -667,8 +667,8 @@ function ToothSvg({
     }
   }
 
-  const svgW = compact ? 24 : 32;
-  const svgH = compact ? 30 : 40;
+  const svgW = compact ? 28 : 32;
+  const svgH = compact ? 35 : 40;
 
   return (
     <button
