@@ -1344,7 +1344,7 @@ export function ExaminationPage() {
   const TAB_ITEMS = [
     { value: 'hasta-bilgileri', label: 'Hasta Bilgileri', icon: User },
     { value: 'anamnez',         label: 'Anamnez',         icon: ClipboardList },
-    { value: 'oral-diagnoz',    label: 'Oral Diagnoz',    icon: ScanLine },
+    { value: 'oral-diagnoz',    label: 'Oral Diagnoz',    icon: Heart },
     { value: 'protokol',        label: 'Protokol',        icon: FileText },
   ];
 
