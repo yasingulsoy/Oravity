@@ -26,7 +26,7 @@ import { protocolsApi } from '@/api/visits';
 import { patientsApi } from '@/api/patients';
 import { dentalApi } from '@/api/dental';
 import { ToothStatus, STATUS_META } from '@/types/dental';
-import type { ToothRecord } from '@/types/dental';
+import type { ToothRecord, ToothHistoryResponse } from '@/types/dental';
 import type { DoctorProtocol, ProtocolDetail, IcdCode, ProtocolDiagnosis, ProtocolHistoryItem } from '@/types/visit';
 import type { Patient, PatientAnamnesis, AnamnesisHistoryItem } from '@/types/patient';
 
@@ -196,6 +196,13 @@ function BoolRow({ label, value }: { label: string; value: boolean }) {
 function AnamnezTab({ patientPublicId, protocolPublicId }: { patientPublicId: string; protocolPublicId: string }) {
   const qc = useQueryClient();
 
+  const { data: patientInfo } = useQuery<Patient>({
+    queryKey: ['patient', patientPublicId],
+    queryFn: () => patientsApi.getById(patientPublicId).then(r => r.data),
+    staleTime: 10 * 60 * 1000,
+  });
+  const isMale = patientInfo?.gender === 'Male' || patientInfo?.gender === 'M';
+
   // ── Latest anamnesis (pre-fill) ────────────────────────────────────────────
   const { data: latest, isLoading } = useQuery<PatientAnamnesis | null>({
     queryKey: ['patient-anamnesis', patientPublicId],
@@ -332,7 +339,7 @@ function AnamnezTab({ patientPublicId, protocolPublicId }: { patientPublicId: st
         {/* Genel */}
         <AnamnesisSection title="Genel">
           <div className="grid grid-cols-2 gap-x-4">
-            {([['isPregnant', 'Hamile'], ['isBreastfeeding', 'Emziriyor']] as [keyof PatientAnamnesis, string][]).map(([k, lbl]) => (
+            {([['isPregnant', 'Hamile'], ['isBreastfeeding', 'Emziriyor']] as [keyof PatientAnamnesis, string][]).filter(() => !isMale).map(([k, lbl]) => (
               <label key={k as string} className="flex items-center gap-2 cursor-pointer py-1">
                 <input type="checkbox" className="h-4 w-4 rounded" checked={!!(d[k])} onChange={() => toggle(k)} />
                 <span className="text-sm">{lbl}</span>
@@ -563,12 +570,101 @@ function ToothSvg({
     ? { top: 'V', bottom: 'L', left: 'M', right: 'D', center: 'O' }
     : { top: 'L', bottom: 'V', left: 'M', right: 'D', center: 'O' };
 
-  const isExtracted = tooth.status === ToothStatus.Extracted || tooth.status === ToothStatus.CongenitallyMissing;
+  const isExtracted           = tooth.status === ToothStatus.Extracted;
+  const isCongenitallyMissing = tooth.status === ToothStatus.CongenitallyMissing;
+  const isAbsent              = isExtracted || isCongenitallyMissing;
 
   function surfFill(key: 'top' | 'bottom' | 'left' | 'right' | 'center') {
-    if (isExtracted) return '#f3f4f6';
+    if (isAbsent) return '#f3f4f6';
     const code = SURFACES[key];
     return surfs.size === 0 || surfs.has(code) ? meta.fill : '#f9fafb';
+  }
+
+  // Status-specific SVG overlay drawn on top of the tooth polygons
+  function statusOverlay() {
+    switch (tooth.status as ToothStatus) {
+      case ToothStatus.Implant:
+        // Vida çizgileri
+        return (
+          <g opacity="0.75">
+            <line x1="18" y1="7" x2="18" y2="37" stroke="#4c1d95" strokeWidth="2.5" strokeLinecap="round" />
+            {[13, 19, 25, 31].map(y => (
+              <line key={y} x1="13" y1={y} x2="23" y2={y} stroke="#4c1d95" strokeWidth="1.2" />
+            ))}
+          </g>
+        );
+      case ToothStatus.Crown:
+        // Kron şekli: 3 diş çıkıntısı
+        return (
+          <path
+            d="M7,36 L7,18 L12,24 L18,11 L24,24 L29,18 L29,36 Z"
+            fill="none"
+            stroke="#92400e"
+            strokeWidth="1.8"
+            strokeLinejoin="round"
+            opacity="0.8"
+          />
+        );
+      case ToothStatus.Bridge:
+        // Üst köprü bağlantı çubuğu
+        return (
+          <rect x="0" y="1" width="36" height="5" fill="#0e7490" opacity="0.6" />
+        );
+      case ToothStatus.RootCanal:
+        // İki kanal çizgisi
+        return (
+          <g opacity="0.7">
+            <line x1="15" y1="10" x2="13" y2="37" stroke="#c2410c" strokeWidth="2" strokeLinecap="round" />
+            <line x1="21" y1="10" x2="23" y2="37" stroke="#c2410c" strokeWidth="2" strokeLinecap="round" />
+          </g>
+        );
+      case ToothStatus.Impacted:
+        // Aşağı ok (gömülü)
+        return (
+          <path
+            d="M18,7 L18,30 M11,23 L18,32 L25,23"
+            fill="none"
+            stroke="#15803d"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity="0.8"
+          />
+        );
+      case ToothStatus.Abscess:
+        // Ünlem işareti
+        return (
+          <g opacity="0.85">
+            <circle cx="18" cy="22" r="9" fill="#fda4af" stroke="#e11d48" strokeWidth="1.5" />
+            <line x1="18" y1="17" x2="18" y2="24" stroke="#881337" strokeWidth="2.5" strokeLinecap="round" />
+            <circle cx="18" cy="27.5" r="1.5" fill="#881337" />
+          </g>
+        );
+      case ToothStatus.Fractured:
+        // Çatlak çizgisi
+        return (
+          <path
+            d="M21,3 L17,15 L23,18 L15,41"
+            fill="none"
+            stroke="#ea580c"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity="0.85"
+          />
+        );
+      case ToothStatus.Root:
+        // Kök kalıntısı: yatay çizgi + iki kök
+        return (
+          <g opacity="0.75">
+            <line x1="9" y1="15" x2="27" y2="15" stroke="#57534e" strokeWidth="1.8" strokeLinecap="round" />
+            <line x1="14" y1="15" x2="12" y2="38" stroke="#57534e" strokeWidth="2.2" strokeLinecap="round" />
+            <line x1="22" y1="15" x2="24" y2="38" stroke="#57534e" strokeWidth="2.2" strokeLinecap="round" />
+          </g>
+        );
+      default:
+        return null;
+    }
   }
 
   const svgW = compact ? 24 : 32;
@@ -590,10 +686,17 @@ function ToothSvg({
         className="overflow-visible"
       >
         {isExtracted ? (
+          /* Çekilmiş: X işareti */
           <>
-            <rect x="2" y="2" width="32" height="40" rx="4" fill="#f3f4f6" stroke="#d1d5db" strokeWidth="1.5" strokeDasharray="4 2" />
-            <line x1="10" y1="10" x2="26" y2="34" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" />
-            <line x1="26" y1="10" x2="10" y2="34" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" />
+            <rect x="2" y="2" width="32" height="40" rx="4" fill="#f3f4f6" stroke="#9ca3af" strokeWidth="1.5" />
+            <line x1="9" y1="9" x2="27" y2="35" stroke="#6b7280" strokeWidth="2.5" strokeLinecap="round" />
+            <line x1="27" y1="9" x2="9" y2="35" stroke="#6b7280" strokeWidth="2.5" strokeLinecap="round" />
+          </>
+        ) : isCongenitallyMissing ? (
+          /* Eksik Doğumsal: kesik kenarlı boş kutu + merkez nokta */
+          <>
+            <rect x="2" y="2" width="32" height="40" rx="4" fill="#f9fafb" stroke="#9ca3af" strokeWidth="1.5" strokeDasharray="5 3" />
+            <circle cx="18" cy="22" r="3" fill="#9ca3af" />
           </>
         ) : (
           <>
@@ -632,6 +735,8 @@ function ToothSvg({
               stroke={meta.stroke}
               strokeWidth="1"
             />
+            {/* Status overlay */}
+            {statusOverlay()}
             {/* Selected ring */}
             {selected && (
               <rect x="0" y="0" width="36" height="44" rx="2" fill="none" stroke="#6366f1" strokeWidth="2" />
@@ -647,19 +752,25 @@ function ToothSvg({
 // ─── Tooth Edit Panel ─────────────────────────────────────────────────────────
 
 function ToothEditPanel({
-  tooth,
+  selectedNums,
+  teethMap,
   patientPublicId,
   onSave,
   onClose,
 }: {
-  tooth: ToothRecord;
+  selectedNums: string[];
+  teethMap: Record<string, ToothRecord>;
   patientPublicId: string;
-  onSave: (updated: ToothRecord) => void;
+  onSave: (updated: ToothRecord[]) => void;
   onClose: () => void;
 }) {
-  const [status,   setStatus]   = useState<ToothStatus>(tooth.status);
-  const [surfaces, setSurfaces] = useState(tooth.surfaces ?? '');
-  const [notes,    setNotes]    = useState(tooth.notes ?? '');
+  const firstNum   = selectedNums[0] ?? '';
+  const firstTooth = teethMap[firstNum];
+  const isSingle   = selectedNums.length === 1;
+
+  const [status,   setStatus]   = useState<ToothStatus>(firstTooth?.status ?? ToothStatus.Healthy);
+  const [surfaces, setSurfaces] = useState(firstTooth?.surfaces ?? '');
+  const [notes,    setNotes]    = useState(firstTooth?.notes ?? '');
 
   const SURFACE_CODES = ['M', 'D', 'O', 'V', 'L'];
 
@@ -671,11 +782,37 @@ function ToothEditPanel({
     });
   };
 
+  // Tek diş seçiliyse geçmişi çek
+  const { data: history = [], isLoading: histLoading } = useQuery<ToothHistoryResponse[]>({
+    queryKey: ['tooth-history', patientPublicId, firstNum],
+    queryFn: () => dentalApi.getHistory(patientPublicId, firstNum).then(r => r.data),
+    enabled: isSingle,
+    staleTime: 30_000,
+  });
+
+  const qc = useQueryClient();
+
   const mutation = useMutation({
-    mutationFn: () => dentalApi.updateTooth(patientPublicId, tooth.toothNumber, status, surfaces || null, notes || null),
-    onSuccess: (res) => {
-      toast.success(`${tooth.toothNumber} nolu diş güncellendi.`);
-      onSave(res.data);
+    mutationFn: () => {
+      if (isSingle) {
+        return dentalApi.updateTooth(patientPublicId, firstNum, status, surfaces || null, notes || null)
+          .then(r => [r.data]);
+      }
+      return dentalApi.bulkUpdate(patientPublicId, selectedNums.map(n => ({
+        toothNumber: n,
+        status,
+        surfaces: surfaces || null,
+        notes: notes || null,
+      }))).then(r => r.data);
+    },
+    onSuccess: (results) => {
+      toast.success(
+        isSingle
+          ? `${firstNum} nolu diş güncellendi.`
+          : `${selectedNums.length} diş güncellendi.`
+      );
+      if (isSingle) qc.invalidateQueries({ queryKey: ['tooth-history', patientPublicId, firstNum] });
+      onSave(results);
     },
     onError: () => toast.error('Güncelleme başarısız.'),
   });
@@ -686,8 +823,19 @@ function ToothEditPanel({
     <div className="rounded-xl border bg-card shadow-sm p-4 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="font-semibold text-sm">Diş {tooth.toothNumber}</p>
-          <p className="text-xs text-muted-foreground">{tooth.quadrantLabel} · {tooth.toothType}</p>
+          {isSingle ? (
+            <>
+              <p className="font-semibold text-sm">Diş {firstNum}</p>
+              <p className="text-xs text-muted-foreground">
+                {firstTooth?.quadrantLabel} · {firstTooth?.toothType}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="font-semibold text-sm">{selectedNums.length} diş seçili</p>
+              <p className="text-xs text-muted-foreground">{selectedNums.join(', ')}</p>
+            </>
+          )}
         </div>
         <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted">
           <X className="size-4" />
@@ -762,6 +910,45 @@ function ToothEditPanel({
           {mutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
         </Button>
       </div>
+
+      {/* Tek diş geçmişi */}
+      {isSingle && (
+        <div className="space-y-1.5 pt-2 border-t">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+            <History className="size-3" /> Geçmiş
+          </p>
+          {histLoading ? (
+            <div className="space-y-1">{[...Array(2)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
+          ) : history.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Henüz kayıt yok.</p>
+          ) : (
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {history.map((h) => {
+                const newMeta = STATUS_META[h.newStatus as ToothStatus];
+                return (
+                  <div key={h.id} className="flex items-start gap-2 text-xs py-1.5 border-b last:border-0">
+                    <span
+                      className="px-1.5 py-0.5 rounded border text-[10px] shrink-0 mt-0.5"
+                      style={{ backgroundColor: newMeta.fill, borderColor: newMeta.stroke, color: newMeta.text }}
+                    >
+                      {h.newStatusLabel}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      {h.oldStatusLabel && (
+                        <span className="text-muted-foreground">← {h.oldStatusLabel} · </span>
+                      )}
+                      <span>{h.changedByName || `#${h.changedBy}`}</span>
+                    </div>
+                    <span className="text-muted-foreground shrink-0">
+                      {format(new Date(h.changedAt), 'd MMM yy', { locale: tr })}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -800,7 +987,7 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
   const rows = mode === 'primary' ? PRIMARY_ROWS : PERMANENT_ROWS;
 
   const [teethMap, setTeethMap] = useState<Record<string, ToothRecord>>({});
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
   const [loading,  setLoading]  = useState(true);
 
   useEffect(() => {
@@ -813,11 +1000,20 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
   }, [patientPublicId]);
 
   // Mod değişince seçimi sıfırla
-  useEffect(() => { setSelected(null); }, [mode]);
+  useEffect(() => { setSelected([]); }, [mode]);
 
-  const handleSave = (updated: ToothRecord) => {
-    setTeethMap(prev => ({ ...prev, [updated.toothNumber]: updated }));
-    setSelected(null);
+  const toggleTooth = (n: string) =>
+    setSelected(prev =>
+      prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n]
+    );
+
+  const handleSave = (updated: ToothRecord[]) => {
+    setTeethMap(prev => {
+      const next = { ...prev };
+      updated.forEach(t => { next[t.toothNumber] = t; });
+      return next;
+    });
+    setSelected([]);
   };
 
   const defaultTooth = (num: string): ToothRecord => ({
@@ -835,8 +1031,6 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
     );
   }
 
-  const selectedTooth = selected ? (teethMap[selected] ?? defaultTooth(selected)) : null;
-
   const summary = Object.values(teethMap).reduce((acc, t) => {
     acc[t.status] = (acc[t.status] ?? 0) + 1;
     return acc;
@@ -848,9 +1042,15 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
           {patientAge != null ? `${patientAge} yaş` : 'Yaş bilinmiyor'} ·{' '}
-          {manualMode == null
-            ? 'Otomatik tespit'
-            : 'Manuel seçim'}
+          {manualMode == null ? 'Otomatik tespit' : 'Manuel seçim'}
+          {selected.length > 0 && (
+            <button
+              onClick={() => setSelected([])}
+              className="ml-2 underline hover:no-underline"
+            >
+              Seçimi temizle ({selected.length})
+            </button>
+          )}
         </p>
         <div className="flex items-center gap-1 rounded-lg border p-0.5 bg-muted/30">
           <button
@@ -887,19 +1087,67 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
         </div>
       </div>
 
+      {/* Çoklu seçim kısayolları */}
+      {(() => {
+        const allUpper = [...rows.upperRight, ...rows.upperLeft];
+        const allLower = [...rows.lowerRight, ...rows.lowerLeft];
+        const allTeeth = [...allUpper, ...allLower];
+
+        const toggleGroup = (nums: string[]) => {
+          const allIn = nums.every(n => selected.includes(n));
+          setSelected(prev =>
+            allIn
+              ? prev.filter(n => !nums.includes(n))
+              : [...new Set([...prev, ...nums])]
+          );
+        };
+
+        const groups = [
+          { label: 'Üst Çene',  nums: allUpper },
+          { label: 'Alt Çene',  nums: allLower },
+          { label: 'Sağ Üst',   nums: rows.upperRight },
+          { label: 'Sol Üst',   nums: rows.upperLeft },
+          { label: 'Sağ Alt',   nums: rows.lowerRight },
+          { label: 'Sol Alt',   nums: rows.lowerLeft },
+          { label: 'Tümü',      nums: allTeeth },
+        ];
+
+        return (
+          <div className="flex flex-wrap gap-1">
+            {groups.map(g => {
+              const active = g.nums.every(n => selected.includes(n));
+              return (
+                <button
+                  key={g.label}
+                  onClick={() => toggleGroup(g.nums)}
+                  className={cn(
+                    'text-[10px] px-2 py-1 rounded border transition-all',
+                    active
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background hover:bg-muted text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {g.label}
+                </button>
+              );
+            })}
+          </div>
+        );
+      })()}
+
       {/* Diş şeması */}
       <div className="rounded-xl border bg-muted/10 p-3 space-y-2">
         {/* Üst çene */}
         <p className="text-[10px] text-center text-muted-foreground uppercase tracking-wider font-medium">Üst Çene</p>
         <div className="flex justify-center gap-0 flex-nowrap mx-auto">
           {rows.upperRight.map(n => (
-            <ToothSvg key={n} tooth={teethMap[n] ?? defaultTooth(n)} selected={selected === n}
-              onClick={() => setSelected(selected === n ? null : n)} isUpper={true} compact={mode === 'permanent'} />
+            <ToothSvg key={n} tooth={teethMap[n] ?? defaultTooth(n)} selected={selected.includes(n)}
+              onClick={() => toggleTooth(n)} isUpper={true} compact={mode === 'permanent'} />
           ))}
           <div className="w-px bg-border mx-1 self-stretch" />
           {rows.upperLeft.map(n => (
-            <ToothSvg key={n} tooth={teethMap[n] ?? defaultTooth(n)} selected={selected === n}
-              onClick={() => setSelected(selected === n ? null : n)} isUpper={true} compact={mode === 'permanent'} />
+            <ToothSvg key={n} tooth={teethMap[n] ?? defaultTooth(n)} selected={selected.includes(n)}
+              onClick={() => toggleTooth(n)} isUpper={true} compact={mode === 'permanent'} />
           ))}
         </div>
 
@@ -908,25 +1156,27 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
         {/* Alt çene */}
         <div className="flex justify-center gap-0 flex-nowrap mx-auto">
           {rows.lowerRight.map(n => (
-            <ToothSvg key={n} tooth={teethMap[n] ?? defaultTooth(n)} selected={selected === n}
-              onClick={() => setSelected(selected === n ? null : n)} isUpper={false} compact={mode === 'permanent'} />
+            <ToothSvg key={n} tooth={teethMap[n] ?? defaultTooth(n)} selected={selected.includes(n)}
+              onClick={() => toggleTooth(n)} isUpper={false} compact={mode === 'permanent'} />
           ))}
           <div className="w-px bg-border mx-1 self-stretch" />
           {rows.lowerLeft.map(n => (
-            <ToothSvg key={n} tooth={teethMap[n] ?? defaultTooth(n)} selected={selected === n}
-              onClick={() => setSelected(selected === n ? null : n)} isUpper={false} compact={mode === 'permanent'} />
+            <ToothSvg key={n} tooth={teethMap[n] ?? defaultTooth(n)} selected={selected.includes(n)}
+              onClick={() => toggleTooth(n)} isUpper={false} compact={mode === 'permanent'} />
           ))}
         </div>
         <p className="text-[10px] text-center text-muted-foreground uppercase tracking-wider font-medium">Alt Çene</p>
       </div>
 
-      {/* Seçili diş edit paneli */}
-      {selectedTooth && (
+      {/* Edit paneli */}
+      {selected.length > 0 && selected[0] != null && (
         <ToothEditPanel
-          tooth={selectedTooth}
+          key={selected.join(',')}
+          selectedNums={selected}
+          teethMap={teethMap}
           patientPublicId={patientPublicId}
           onSave={handleSave}
-          onClose={() => setSelected(null)}
+          onClose={() => setSelected([])}
         />
       )}
 

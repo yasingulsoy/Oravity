@@ -18,6 +18,15 @@ export const dentalApi = {
       { status, surfaces: surfaces ?? null, notes: notes ?? null },
     ),
 
+  bulkUpdate: (
+    patientPublicId: string,
+    teeth: { toothNumber: string; status: ToothStatus; surfaces?: string | null; notes?: string | null }[],
+  ) =>
+    apiClient.put<ToothRecord[]>(
+      `/patients/${patientPublicId}/dental-chart/bulk`,
+      { teeth },
+    ),
+
   getHistory: (patientPublicId: string, toothNumber: string) =>
     apiClient.get<ToothHistoryResponse[]>(
       `/patients/${patientPublicId}/dental-chart/teeth/${toothNumber}/history`,

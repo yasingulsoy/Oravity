@@ -8,6 +8,10 @@ export enum ToothStatus {
   Bridge              = 7,
   RootCanal           = 8,
   CongenitallyMissing = 9,
+  Impacted            = 10,
+  Abscess             = 11,
+  Fractured           = 12,
+  Root                = 13,
 }
 
 export interface ToothRecord {
@@ -39,6 +43,7 @@ export interface ToothHistoryResponse {
   newStatus:      ToothStatus;
   newStatusLabel: string;
   changedBy:      number;
+  changedByName:  string;
   changedAt:      string;
   reason:         string | null;
 }
@@ -53,4 +58,8 @@ export const STATUS_META: Record<ToothStatus, { label: string; fill: string; str
   [ToothStatus.Bridge]:              { label: 'Köprü',           fill: '#a5f3fc', stroke: '#06b6d4', text: '#164e63' },
   [ToothStatus.RootCanal]:           { label: 'Kanal Tedavili',  fill: '#fdba74', stroke: '#f97316', text: '#7c2d12' },
   [ToothStatus.CongenitallyMissing]: { label: 'Eksik Doğumsal',  fill: '#d1d5db', stroke: '#6b7280', text: '#374151' },
+  [ToothStatus.Impacted]:            { label: 'Gömülü',           fill: '#bbf7d0', stroke: '#16a34a', text: '#14532d' },
+  [ToothStatus.Abscess]:             { label: 'Apse/Kist',        fill: '#fecdd3', stroke: '#e11d48', text: '#881337' },
+  [ToothStatus.Fractured]:           { label: 'Kırık',            fill: '#fed7aa', stroke: '#ea580c', text: '#7c2d12' },
+  [ToothStatus.Root]:                { label: 'Kök',              fill: '#e7e5e4', stroke: '#78716c', text: '#44403c' },
 };
