@@ -47,7 +47,6 @@ public class DentalChartController : ControllerBase
     /// Her güncelleme ToothConditionHistory'e yazılır.
     /// </summary>
     [HttpPut("teeth/{toothNumber}")]
-    [RequirePermission("patient:view")]
     [ProducesResponseType(typeof(ToothRecordResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -74,7 +73,6 @@ public class DentalChartController : ControllerBase
     /// Sesli komut entegrasyonundan gelen JSON ile çalışır.
     /// </summary>
     [HttpPut("bulk")]
-    [RequirePermission("patient:view")]
     [ProducesResponseType(typeof(IReadOnlyList<ToothRecordResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
