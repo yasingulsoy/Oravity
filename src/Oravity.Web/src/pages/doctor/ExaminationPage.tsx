@@ -548,11 +548,13 @@ function ToothSvg({
   selected,
   onClick,
   isUpper,
+  compact = false,
 }: {
   tooth: ToothRecord;
   selected: boolean;
   onClick: () => void;
   isUpper: boolean;
+  compact?: boolean;
 }) {
   const meta  = STATUS_META[tooth.status as ToothStatus];
   const surfs = new Set((tooth.surfaces ?? '').toUpperCase().split(''));
@@ -569,6 +571,9 @@ function ToothSvg({
     return surfs.size === 0 || surfs.has(code) ? meta.fill : '#f9fafb';
   }
 
+  const svgW = compact ? 24 : 32;
+  const svgH = compact ? 30 : 40;
+
   return (
     <button
       onClick={onClick}
@@ -580,8 +585,8 @@ function ToothSvg({
     >
       <svg
         viewBox="0 0 36 44"
-        width={32}
-        height={40}
+        width={svgW}
+        height={svgH}
         className="overflow-visible"
       >
         {isExtracted ? (
@@ -883,33 +888,33 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
       </div>
 
       {/* Diş şeması */}
-      <div className="rounded-xl border bg-muted/10 p-4 space-y-2 overflow-x-auto">
+      <div className="rounded-xl border bg-muted/10 p-3 space-y-2">
         {/* Üst çene */}
         <p className="text-[10px] text-center text-muted-foreground uppercase tracking-wider font-medium">Üst Çene</p>
-        <div className="flex justify-center gap-0.5 flex-nowrap min-w-max mx-auto">
+        <div className="flex justify-center gap-0 flex-nowrap mx-auto">
           {rows.upperRight.map(n => (
             <ToothSvg key={n} tooth={teethMap[n] ?? defaultTooth(n)} selected={selected === n}
-              onClick={() => setSelected(selected === n ? null : n)} isUpper={true} />
+              onClick={() => setSelected(selected === n ? null : n)} isUpper={true} compact={mode === 'permanent'} />
           ))}
           <div className="w-px bg-border mx-1 self-stretch" />
           {rows.upperLeft.map(n => (
             <ToothSvg key={n} tooth={teethMap[n] ?? defaultTooth(n)} selected={selected === n}
-              onClick={() => setSelected(selected === n ? null : n)} isUpper={true} />
+              onClick={() => setSelected(selected === n ? null : n)} isUpper={true} compact={mode === 'permanent'} />
           ))}
         </div>
 
         <div className="h-px bg-border my-1" />
 
         {/* Alt çene */}
-        <div className="flex justify-center gap-0.5 flex-nowrap min-w-max mx-auto">
+        <div className="flex justify-center gap-0 flex-nowrap mx-auto">
           {rows.lowerRight.map(n => (
             <ToothSvg key={n} tooth={teethMap[n] ?? defaultTooth(n)} selected={selected === n}
-              onClick={() => setSelected(selected === n ? null : n)} isUpper={false} />
+              onClick={() => setSelected(selected === n ? null : n)} isUpper={false} compact={mode === 'permanent'} />
           ))}
           <div className="w-px bg-border mx-1 self-stretch" />
           {rows.lowerLeft.map(n => (
             <ToothSvg key={n} tooth={teethMap[n] ?? defaultTooth(n)} selected={selected === n}
-              onClick={() => setSelected(selected === n ? null : n)} isUpper={false} />
+              onClick={() => setSelected(selected === n ? null : n)} isUpper={false} compact={mode === 'permanent'} />
           ))}
         </div>
         <p className="text-[10px] text-center text-muted-foreground uppercase tracking-wider font-medium">Alt Çene</p>
