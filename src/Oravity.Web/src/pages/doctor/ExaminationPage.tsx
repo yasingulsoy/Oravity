@@ -763,18 +763,52 @@ function ToothEditPanel({
 
 // ─── Tab: Oral Diagnoz ────────────────────────────────────────────────────────
 
+// Süt dişi FDI numaraları (ISO 3950)
+const PRIMARY_ROWS = {
+  upperRight: ['55','54','53','52','51'],
+  upperLeft:  ['61','62','63','64','65'],
+  lowerRight: ['85','84','83','82','81'],
+  lowerLeft:  ['71','72','73','74','75'],
+};
+
+const PERMANENT_ROWS = {
+  upperRight: ['18','17','16','15','14','13','12','11'],
+  upperLeft:  ['21','22','23','24','25','26','27','28'],
+  lowerRight: ['48','47','46','45','44','43','42','41'],
+  lowerLeft:  ['31','32','33','34','35','36','37','38'],
+};
+
 function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
-  const [teethMap, setTeethMap]     = useState<Record<string, ToothRecord>>({});
-  const [selected, setSelected]     = useState<string | null>(null);
-  const [loading,  setLoading]      = useState(true);
+  // Hasta yaşını cacheden al (PatientInfoTab zaten yüklemişse anında gelir)
+  const { data: patient } = useQuery<Patient>({
+    queryKey: ['patient-detail', patientPublicId],
+    queryFn: () => patientsApi.getById(patientPublicId).then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const patientAge = calcAge(patient?.birthDate?.toString() ?? null);
+  // 12 yaş altı → süt dişi, null ise yetişkin (güvenli default)
+  const autoMode: 'primary' | 'permanent' = patientAge !== null && patientAge < 12 ? 'primary' : 'permanent';
+  const [manualMode, setManualMode] = useState<'primary' | 'permanent' | null>(null);
+  const mode = manualMode ?? autoMode;
+
+  const rows = mode === 'primary' ? PRIMARY_ROWS : PERMANENT_ROWS;
+
+  const [teethMap, setTeethMap] = useState<Record<string, ToothRecord>>({});
+  const [selected, setSelected] = useState<string | null>(null);
+  const [loading,  setLoading]  = useState(true);
 
   useEffect(() => {
+    setLoading(true);
     dentalApi.getChart(patientPublicId).then(r => {
       const map: Record<string, ToothRecord> = {};
       r.data.teeth.forEach(t => { map[t.toothNumber] = t; });
       setTeethMap(map);
     }).finally(() => setLoading(false));
   }, [patientPublicId]);
+
+  // Mod değişince seçimi sıfırla
+  useEffect(() => { setSelected(null); }, [mode]);
 
   const handleSave = (updated: ToothRecord) => {
     setTeethMap(prev => ({ ...prev, [updated.toothNumber]: updated }));
@@ -787,13 +821,6 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
     surfaces: null, notes: null, recordedBy: 0,
     recordedAt: '', createdAt: '',
   });
-
-  const rows = {
-    upperRight: ['18','17','16','15','14','13','12','11'],
-    upperLeft:  ['21','22','23','24','25','26','27','28'],
-    lowerRight: ['48','47','46','45','44','43','42','41'],
-    lowerLeft:  ['31','32','33','34','35','36','37','38'],
-  };
 
   if (loading) {
     return (
@@ -812,6 +839,49 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
 
   return (
     <div className="space-y-4">
+      {/* Şema tipi seçici */}
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          {patientAge != null ? `${patientAge} yaş` : 'Yaş bilinmiyor'} ·{' '}
+          {manualMode == null
+            ? 'Otomatik tespit'
+            : 'Manuel seçim'}
+        </p>
+        <div className="flex items-center gap-1 rounded-lg border p-0.5 bg-muted/30">
+          <button
+            onClick={() => setManualMode('primary')}
+            className={cn(
+              'text-xs px-3 py-1 rounded transition-all',
+              mode === 'primary'
+                ? 'bg-background shadow-sm font-medium'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            Süt Dişi
+          </button>
+          <button
+            onClick={() => setManualMode('permanent')}
+            className={cn(
+              'text-xs px-3 py-1 rounded transition-all',
+              mode === 'permanent'
+                ? 'bg-background shadow-sm font-medium'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            Daimi Diş
+          </button>
+          {manualMode != null && (
+            <button
+              onClick={() => setManualMode(null)}
+              title="Otomatik tespite dön"
+              className="text-[10px] text-muted-foreground hover:text-foreground px-1.5 py-1"
+            >
+              ↺
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Diş şeması */}
       <div className="rounded-xl border bg-muted/10 p-4 space-y-2 overflow-x-auto">
         {/* Üst çene */}
