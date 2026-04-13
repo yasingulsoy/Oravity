@@ -4,7 +4,6 @@ using Oravity.Core.Modules.Core.DentalChart.Application;
 using Oravity.Core.Modules.Core.DentalChart.Domain.Services;
 using Oravity.Infrastructure.Database;
 using Oravity.SharedKernel.Entities;
-using Oravity.SharedKernel.Exceptions;
 using Oravity.SharedKernel.Interfaces;
 
 namespace Oravity.Core.Modules.Core.DentalChart.Application.Commands;
@@ -58,13 +57,15 @@ public class BulkUpdateTeethCommandHandler
             throw new ArgumentException(
                 $"Geçersiz FDI diş numaraları: {string.Join(", ", invalid)}");
 
-        var branchId = _tenant.BranchId
-            ?? throw new ForbiddenException("Bu işlem için şube bağlamı gereklidir.");
-
-        var patientId = await _db.Patients
+        var patient = await _db.Patients
             .Where(p => p.PublicId == request.PatientPublicId && !p.IsDeleted)
-            .Select(p => p.Id)
+            .Select(p => new { p.Id, p.BranchId, p.CompanyId })
             .FirstOrDefaultAsync(cancellationToken);
+
+        if (patient is null)
+            throw new ArgumentException("Hasta bulunamadı.");
+
+        var patientId = patient.Id;
 
         var toothNumbers = request.Teeth.Select(t => t.ToothNumber).ToList();
 
@@ -97,11 +98,11 @@ public class BulkUpdateTeethCommandHandler
             {
                 record = ToothRecord.Create(
                     patientId:   patientId,
-                    branchId:    branchId,
+                    branchId:    patient.BranchId,
                     toothNumber: item.ToothNumber,
                     status:      item.Status,
                     recordedBy:  _user.UserId,
-                    companyId:   _tenant.CompanyId,
+                    companyId:   patient.CompanyId,
                     surfaces:    normalizedSurfaces,
                     notes:       item.Notes);
 

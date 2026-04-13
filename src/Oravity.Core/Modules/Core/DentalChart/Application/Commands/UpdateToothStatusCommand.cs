@@ -4,7 +4,6 @@ using Oravity.Core.Modules.Core.DentalChart.Application;
 using Oravity.Core.Modules.Core.DentalChart.Domain.Services;
 using Oravity.Infrastructure.Database;
 using Oravity.SharedKernel.Entities;
-using Oravity.SharedKernel.Exceptions;
 using Oravity.SharedKernel.Interfaces;
 
 namespace Oravity.Core.Modules.Core.DentalChart.Application.Commands;
@@ -43,13 +42,15 @@ public class UpdateToothStatusCommandHandler
         if (!_fdi.IsValidToothNumber(request.ToothNumber))
             throw new ArgumentException($"Geçersiz FDI diş numarası: {request.ToothNumber}");
 
-        var branchId = _tenant.BranchId
-            ?? throw new ForbiddenException("Bu işlem için şube bağlamı gereklidir.");
-
-        var patientId = await _db.Patients
+        var patient = await _db.Patients
             .Where(p => p.PublicId == request.PatientPublicId && !p.IsDeleted)
-            .Select(p => p.Id)
+            .Select(p => new { p.Id, p.BranchId, p.CompanyId })
             .FirstOrDefaultAsync(cancellationToken);
+
+        if (patient is null)
+            throw new ArgumentException("Hasta bulunamadı.");
+
+        var patientId = patient.Id;
 
         // Yüzey kodlarını normalize et
         var normalizedSurfaces = request.Surfaces is not null
@@ -66,14 +67,13 @@ public class UpdateToothStatusCommandHandler
 
         if (existing is null)
         {
-            // İlk kayıt — create
             var record = ToothRecord.Create(
                 patientId:   patientId,
-                branchId:    branchId,
+                branchId:    patient.BranchId,
                 toothNumber: request.ToothNumber,
                 status:      request.Status,
                 recordedBy:  _user.UserId,
-                companyId:   _tenant.CompanyId,
+                companyId:   patient.CompanyId,
                 surfaces:    normalizedSurfaces,
                 notes:       request.Notes);
 
