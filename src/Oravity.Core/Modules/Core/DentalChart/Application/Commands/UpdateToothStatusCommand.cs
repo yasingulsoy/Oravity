@@ -10,7 +10,7 @@ using Oravity.SharedKernel.Interfaces;
 namespace Oravity.Core.Modules.Core.DentalChart.Application.Commands;
 
 public record UpdateToothStatusCommand(
-    long PatientId,
+    Guid PatientPublicId,
     string ToothNumber,
     ToothStatus Status,
     string? Surfaces = null,
@@ -46,6 +46,11 @@ public class UpdateToothStatusCommandHandler
         var branchId = _tenant.BranchId
             ?? throw new ForbiddenException("Bu işlem için şube bağlamı gereklidir.");
 
+        var patientId = await _db.Patients
+            .Where(p => p.PublicId == request.PatientPublicId && !p.IsDeleted)
+            .Select(p => p.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
         // Yüzey kodlarını normalize et
         var normalizedSurfaces = request.Surfaces is not null
             ? string.Concat(_fdi.ParseSurfaces(request.Surfaces))
@@ -53,7 +58,7 @@ public class UpdateToothStatusCommandHandler
 
         var existing = await _db.ToothRecords
             .FirstOrDefaultAsync(
-                t => t.PatientId == request.PatientId &&
+                t => t.PatientId == patientId &&
                      t.ToothNumber == request.ToothNumber,
                 cancellationToken);
 
@@ -63,7 +68,7 @@ public class UpdateToothStatusCommandHandler
         {
             // İlk kayıt — create
             var record = ToothRecord.Create(
-                patientId:   request.PatientId,
+                patientId:   patientId,
                 branchId:    branchId,
                 toothNumber: request.ToothNumber,
                 status:      request.Status,
@@ -84,7 +89,7 @@ public class UpdateToothStatusCommandHandler
 
         // Her durumda geçmiş kaydı ekle
         var history = ToothConditionHistory.Create(
-            patientId:   request.PatientId,
+            patientId:   patientId,
             toothNumber: request.ToothNumber,
             newStatus:   request.Status,
             changedBy:   _user.UserId,

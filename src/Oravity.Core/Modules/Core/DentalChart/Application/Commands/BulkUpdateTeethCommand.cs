@@ -17,7 +17,7 @@ public record ToothUpdateItem(
 );
 
 public record BulkUpdateTeethCommand(
-    long PatientId,
+    Guid PatientPublicId,
     IReadOnlyList<ToothUpdateItem> Teeth,
     /// <summary>Toplu güncelleme sebebi (sesli komut kaynağı için).</summary>
     string? Reason = null
@@ -61,11 +61,16 @@ public class BulkUpdateTeethCommandHandler
         var branchId = _tenant.BranchId
             ?? throw new ForbiddenException("Bu işlem için şube bağlamı gereklidir.");
 
+        var patientId = await _db.Patients
+            .Where(p => p.PublicId == request.PatientPublicId && !p.IsDeleted)
+            .Select(p => p.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
         var toothNumbers = request.Teeth.Select(t => t.ToothNumber).ToList();
 
         // Mevcut kayıtları toplu çek
         var existingRecords = await _db.ToothRecords
-            .Where(r => r.PatientId == request.PatientId &&
+            .Where(r => r.PatientId == patientId &&
                         toothNumbers.Contains(r.ToothNumber))
             .ToDictionaryAsync(r => r.ToothNumber, cancellationToken);
 
@@ -91,7 +96,7 @@ public class BulkUpdateTeethCommandHandler
             else
             {
                 record = ToothRecord.Create(
-                    patientId:   request.PatientId,
+                    patientId:   patientId,
                     branchId:    branchId,
                     toothNumber: item.ToothNumber,
                     status:      item.Status,
@@ -104,7 +109,7 @@ public class BulkUpdateTeethCommandHandler
             }
 
             historyEntries.Add(ToothConditionHistory.Create(
-                patientId:   request.PatientId,
+                patientId:   patientId,
                 toothNumber: item.ToothNumber,
                 newStatus:   item.Status,
                 changedBy:   _user.UserId,

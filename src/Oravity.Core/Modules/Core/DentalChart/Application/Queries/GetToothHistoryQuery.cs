@@ -8,7 +8,7 @@ using Oravity.SharedKernel.Exceptions;
 namespace Oravity.Core.Modules.Core.DentalChart.Application.Queries;
 
 public record GetToothHistoryQuery(
-    long PatientId,
+    Guid PatientPublicId,
     string ToothNumber
 ) : IRequest<IReadOnlyList<ToothHistoryResponse>>;
 
@@ -31,10 +31,15 @@ public class GetToothHistoryQueryHandler
         if (!_fdi.IsValidToothNumber(request.ToothNumber))
             throw new ArgumentException($"Geçersiz FDI diş numarası: {request.ToothNumber}");
 
+        var patientId = await _db.Patients
+            .Where(p => p.PublicId == request.PatientPublicId && !p.IsDeleted)
+            .Select(p => p.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
         var history = await _db.ToothConditionHistories
             .AsNoTracking()
             .Where(h =>
-                h.PatientId == request.PatientId &&
+                h.PatientId == patientId &&
                 h.ToothNumber == request.ToothNumber)
             .OrderByDescending(h => h.ChangedAt)
             .Select(h => DentalChartMappings.ToHistoryResponse(h))

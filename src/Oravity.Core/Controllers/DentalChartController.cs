@@ -13,7 +13,7 @@ namespace Oravity.Core.Controllers;
 /// FDI diş şeması yönetimi — 32 diş, durum kaydı ve geçmiş izleme.
 /// </summary>
 [ApiController]
-[Route("api/patients/{patientId:long}/dental-chart")]
+[Route("api/patients/{patientPublicId:guid}/dental-chart")]
 [Authorize]
 [Produces("application/json")]
 public class DentalChartController : ControllerBase
@@ -34,9 +34,9 @@ public class DentalChartController : ControllerBase
     [HttpGet]
     [RequirePermission("patient:view")]
     [ProducesResponseType(typeof(DentalChartResponse), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetDentalChart(long patientId)
+    public async Task<IActionResult> GetDentalChart(Guid patientPublicId)
     {
-        var result = await _mediator.Send(new GetPatientDentalChartQuery(patientId));
+        var result = await _mediator.Send(new GetPatientDentalChartQuery(patientPublicId));
         return Ok(result);
     }
 
@@ -52,12 +52,12 @@ public class DentalChartController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> UpdateToothStatus(
-        long patientId,
+        Guid patientPublicId,
         string toothNumber,
         [FromBody] UpdateToothStatusRequest request)
     {
         var result = await _mediator.Send(new UpdateToothStatusCommand(
-            patientId,
+            patientPublicId,
             toothNumber,
             request.Status,
             request.Surfaces,
@@ -79,7 +79,7 @@ public class DentalChartController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> BulkUpdateTeeth(
-        long patientId,
+        Guid patientPublicId,
         [FromBody] BulkUpdateTeethRequest request)
     {
         var items = request.Teeth
@@ -87,7 +87,7 @@ public class DentalChartController : ControllerBase
             .ToList();
 
         var result = await _mediator.Send(new BulkUpdateTeethCommand(
-            patientId, items, request.Reason));
+            patientPublicId, items, request.Reason));
 
         return Ok(result);
     }
@@ -101,10 +101,10 @@ public class DentalChartController : ControllerBase
     [RequirePermission("patient:view")]
     [ProducesResponseType(typeof(IReadOnlyList<ToothHistoryResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> GetToothHistory(long patientId, string toothNumber)
+    public async Task<IActionResult> GetToothHistory(Guid patientPublicId, string toothNumber)
     {
         var result = await _mediator.Send(
-            new GetToothHistoryQuery(patientId, toothNumber));
+            new GetToothHistoryQuery(patientPublicId, toothNumber));
         return Ok(result);
     }
 }
