@@ -93,8 +93,10 @@ public record PatientResponse(
     long? ReferralSourceId,
     string? ReferralSourceName,
     string? ReferralPerson,
-    long? LastInstitutionId,
-    string? LastInstitutionName,
+    long? AgreementInstitutionId,
+    string? AgreementInstitutionName,
+    long? InsuranceInstitutionId,
+    string? InsuranceInstitutionName,
     // Sistem
     string? Notes,
     string PreferredLanguageCode,
@@ -126,7 +128,8 @@ public static class PatientMappings
         p.Country, p.City, p.District, p.Address,
         p.BloodType,
         p.ReferralSourceId, p.ReferralSource?.Name, p.ReferralPerson,
-        p.LastInstitutionId, p.LastInstitution?.Name,
+        p.AgreementInstitutionId, p.AgreementInstitution?.Name,
+        p.InsuranceInstitutionId, p.InsuranceInstitution?.Name,
         p.Notes, p.PreferredLanguageCode,
         p.SmsOptIn, p.CampaignOptIn, p.IsActive, p.CreatedAt);
 }

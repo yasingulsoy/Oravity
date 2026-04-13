@@ -126,7 +126,8 @@ public class PatientsController : ControllerBase
             request.District,
             request.ReferralSourceId,
             request.ReferralPerson,
-            request.LastInstitutionId,
+            request.AgreementInstitutionId,
+            request.InsuranceInstitutionId,
             request.CitizenshipTypeId,
             request.Notes,
             request.SmsOptIn,
@@ -298,7 +299,8 @@ public record UpdatePatientRequest(
     // Geliş / Kurum
     long? ReferralSourceId,
     string? ReferralPerson,
-    long? LastInstitutionId,
+    long? AgreementInstitutionId,
+    long? InsuranceInstitutionId,
     // Sistem
     string? Notes,
     string? PreferredLanguageCode,

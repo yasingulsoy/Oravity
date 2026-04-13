@@ -490,7 +490,8 @@ public class AppDbContext : DbContext
             e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.CitizenshipType).WithMany().HasForeignKey(x => x.CitizenshipTypeId).IsRequired(false);
             e.HasOne(x => x.ReferralSource).WithMany().HasForeignKey(x => x.ReferralSourceId).IsRequired(false);
-            e.HasOne(x => x.LastInstitution).WithMany().HasForeignKey(x => x.LastInstitutionId).IsRequired(false);
+            e.HasOne(x => x.AgreementInstitution).WithMany().HasForeignKey(x => x.AgreementInstitutionId).IsRequired(false);
+            e.HasOne(x => x.InsuranceInstitution).WithMany().HasForeignKey(x => x.InsuranceInstitutionId).IsRequired(false);
             e.HasMany(x => x.EmergencyContacts).WithOne(x => x.Patient).HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Cascade);
 
             // Audit fields
@@ -1917,6 +1918,7 @@ public class AppDbContext : DbContext
             e.HasOne(x => x.Company)
              .WithMany()
              .HasForeignKey(x => x.CompanyId)
+             .IsRequired(false)
              .OnDelete(DeleteBehavior.Restrict);
 
             e.HasOne(x => x.Parent)
@@ -1936,11 +1938,12 @@ public class AppDbContext : DbContext
             e.HasIndex(x => x.PublicId).IsUnique()
              .HasDatabaseName("ix_treatments_public_id");
 
-            e.Property(x => x.Code).HasMaxLength(50).IsRequired();
-            e.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique()
-             .HasDatabaseName("ix_treatments_company_code");
+            e.Property(x => x.Code).HasMaxLength(20).IsRequired();
+            e.HasIndex(x => x.Code).IsUnique()
+             .HasDatabaseName("ix_treatments_code");
 
             e.Property(x => x.Name).HasMaxLength(300).IsRequired();
+            e.Property(x => x.SutCode).HasMaxLength(20);
             e.Property(x => x.Tags).HasColumnType("jsonb");
             e.Property(x => x.KdvRate).HasColumnType("numeric(5,2)");
             e.Property(x => x.AllowedScopes).HasColumnType("integer[]");
@@ -1951,6 +1954,7 @@ public class AppDbContext : DbContext
             e.HasOne(x => x.Company)
              .WithMany()
              .HasForeignKey(x => x.CompanyId)
+             .IsRequired(false)
              .OnDelete(DeleteBehavior.Restrict);
 
             e.HasOne(x => x.Category)

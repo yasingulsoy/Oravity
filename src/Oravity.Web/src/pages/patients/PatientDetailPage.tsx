@@ -194,7 +194,8 @@ export function PatientDetailPage() {
       bloodType: patient.bloodType ?? undefined,
       referralSourceId: patient.referralSourceId ?? undefined,
       referralPerson: patient.referralPerson ?? undefined,
-      lastInstitutionId: patient.lastInstitutionId ?? undefined,
+      agreementInstitutionId: patient.agreementInstitutionId ?? undefined,
+      insuranceInstitutionId: patient.insuranceInstitutionId ?? undefined,
       notes: patient.notes ?? undefined,
       smsOptIn: patient.smsOptIn,
       campaignOptIn: patient.campaignOptIn,
@@ -499,20 +500,47 @@ export function PatientDetailPage() {
                     <Input {...register('referralPerson')} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Anlaşmalı Kurum</Label>
+                    <Label>Anlaşmalı Kurum (AK)</Label>
                     <Controller
-                      name="lastInstitutionId"
+                      name="agreementInstitutionId"
                       control={control}
                       render={({ field }) => {
-                        const label = institutionsData?.data?.find((inst) => inst.id === field.value)?.name;
+                        const akList = institutionsData?.data?.filter(i => i.type === 'kurumsal' || i.type === 'kamu' || i.type === 'uluslararası') ?? [];
+                        const label = akList.find((inst) => inst.id === field.value)?.name;
                         return (
                           <Select
                             value={field.value ? String(field.value) : ''}
-                            onValueChange={(v) => field.onChange(Number(v))}
+                            onValueChange={(v) => field.onChange(v ? Number(v) : undefined)}
                           >
                             <SelectTrigger><SelectValue placeholder="Seçin…">{label}</SelectValue></SelectTrigger>
                             <SelectContent>
-                              {institutionsData?.data?.map((inst) => (
+                              <SelectItem value="">— Yok —</SelectItem>
+                              {akList.map((inst) => (
+                                <SelectItem key={inst.id} value={String(inst.id)}>{inst.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        );
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Özel Sağlık Sigortası (ÖSS)</Label>
+                    <Controller
+                      name="insuranceInstitutionId"
+                      control={control}
+                      render={({ field }) => {
+                        const ossList = institutionsData?.data?.filter(i => i.type === 'sigorta') ?? [];
+                        const label = ossList.find((inst) => inst.id === field.value)?.name;
+                        return (
+                          <Select
+                            value={field.value ? String(field.value) : ''}
+                            onValueChange={(v) => field.onChange(v ? Number(v) : undefined)}
+                          >
+                            <SelectTrigger><SelectValue placeholder="Seçin…">{label}</SelectValue></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">— Yok —</SelectItem>
+                              {ossList.map((inst) => (
                                 <SelectItem key={inst.id} value={String(inst.id)}>{inst.name}</SelectItem>
                               ))}
                             </SelectContent>
@@ -634,7 +662,8 @@ export function PatientDetailPage() {
                   <dl className="grid gap-4 sm:grid-cols-3">
                     <Field label="Geliş Şekli" value={patient.referralSourceName} />
                     <Field label="Referans Kişi" value={patient.referralPerson} />
-                    <Field label="Anlaşmalı Kurum" value={patient.lastInstitutionName} />
+                    <Field label="Anlaşmalı Kurum (AK)" value={patient.agreementInstitutionName} />
+                    <Field label="Özel Sağlık Sigortası (ÖSS)" value={patient.insuranceInstitutionName} />
                   </dl>
                 </CardContent>
               </Card>

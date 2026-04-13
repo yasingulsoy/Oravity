@@ -35,8 +35,10 @@ export interface Patient {
   referralSourceId: number | null;
   referralSourceName: string | null;
   referralPerson: string | null;
-  lastInstitutionId: number | null;
-  lastInstitutionName: string | null;
+  agreementInstitutionId: number | null;
+  agreementInstitutionName: string | null;
+  insuranceInstitutionId: number | null;
+  insuranceInstitutionName: string | null;
   // Sistem
   notes: string | null;
   preferredLanguageCode: string;
@@ -165,7 +167,8 @@ export interface UpdatePatientRequest {
   bloodType?: string;
   referralSourceId?: number;
   referralPerson?: string;
-  lastInstitutionId?: number;
+  agreementInstitutionId?: number;
+  insuranceInstitutionId?: number;
   notes?: string;
   preferredLanguageCode?: string;
   smsOptIn?: boolean;

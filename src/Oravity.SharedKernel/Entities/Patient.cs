@@ -60,8 +60,13 @@ public class Patient : AuditableEntity
     public long? ReferralSourceId { get; private set; }
     public ReferralSource? ReferralSource { get; private set; }
     public string? ReferralPerson { get; private set; }
-    public long? LastInstitutionId { get; private set; }
-    public Institution? LastInstitution { get; private set; }
+    /// <summary>Anlaşmalı Kurum (AK) — kurumsal/kamu tipi kurum.</summary>
+    public long? AgreementInstitutionId { get; private set; }
+    public Institution? AgreementInstitution { get; private set; }
+
+    /// <summary>Özel Sağlık Sigortası (ÖSS) — sigorta tipi kurum.</summary>
+    public long? InsuranceInstitutionId { get; private set; }
+    public Institution? InsuranceInstitution { get; private set; }
 
     // ── Sistem / İdari ─────────────────────────────────────────────────
     public string? Notes { get; private set; }
@@ -148,7 +153,8 @@ public class Patient : AuditableEntity
         string? neighborhood = null,
         long? referralSourceId = null,
         string? referralPerson = null,
-        long? lastInstitutionId = null,
+        long? agreementInstitutionId = null,
+        long? insuranceInstitutionId = null,
         long? citizenshipTypeId = null,
         string? notes = null,
         bool? smsOptIn = null,
@@ -178,7 +184,8 @@ public class Patient : AuditableEntity
         BloodType = bloodType;
         ReferralSourceId = referralSourceId;
         ReferralPerson = referralPerson;
-        LastInstitutionId = lastInstitutionId;
+        AgreementInstitutionId = agreementInstitutionId;
+        InsuranceInstitutionId = insuranceInstitutionId;
         Notes = notes;
         if (preferredLanguageCode is not null) PreferredLanguageCode = preferredLanguageCode;
         if (smsOptIn.HasValue) SmsOptIn = smsOptIn.Value;

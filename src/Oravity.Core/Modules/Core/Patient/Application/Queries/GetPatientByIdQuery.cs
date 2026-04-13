@@ -27,7 +27,8 @@ public class GetPatientByIdQueryHandler : IRequestHandler<GetPatientByIdQuery, P
         var query = _db.Patients.AsNoTracking()
             .Include(p => p.CitizenshipType)
             .Include(p => p.ReferralSource)
-            .Include(p => p.LastInstitution)
+            .Include(p => p.AgreementInstitution)
+            .Include(p => p.InsuranceInstitution)
             .Where(p => p.PublicId == request.PublicId);
 
         query = ApplyTenantFilter(query);

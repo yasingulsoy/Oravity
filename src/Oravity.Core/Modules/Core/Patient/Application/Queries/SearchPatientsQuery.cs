@@ -39,7 +39,8 @@ public class SearchPatientsQueryHandler
             .AsNoTracking()
             .Include(p => p.CitizenshipType)
             .Include(p => p.ReferralSource)
-            .Include(p => p.LastInstitution);
+            .Include(p => p.AgreementInstitution)
+            .Include(p => p.InsuranceInstitution);
 
         q = ApplyTenantFilter(q);
 
