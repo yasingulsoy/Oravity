@@ -27,6 +27,16 @@ public class TreatmentsController : ControllerBase
         _tenant   = tenant;
     }
 
+    /// <summary>Tedavi kategorilerini hiyerarşik olarak listeler.</summary>
+    [HttpGet("api/treatment-categories")]
+    [RequirePermission("treatment:view")]
+    [ProducesResponseType(typeof(IReadOnlyList<TreatmentCategoryResponse>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetCategories()
+    {
+        var result = await _mediator.Send(new GetTreatmentCategoriesQuery());
+        return Ok(result);
+    }
+
     /// <summary>Şirketin tedavi kataloğunu sayfalı olarak listeler.</summary>
     [HttpGet("api/treatments")]
     [RequirePermission("treatment:view")]
@@ -40,11 +50,8 @@ public class TreatmentsController : ControllerBase
         [FromQuery] int     page       = 1,
         [FromQuery] int     pageSize   = 20)
     {
-        var companyId = _tenant.CompanyId
-            ?? throw new UnauthorizedAccessException();
-
         var result = await _mediator.Send(new GetTreatmentsQuery(
-            companyId, categoryId, search, activeOnly, page, pageSize));
+            _tenant.CompanyId, categoryId, search, activeOnly, page, pageSize));
 
         return Ok(result);
     }

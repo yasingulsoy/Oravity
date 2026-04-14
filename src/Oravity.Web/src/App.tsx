@@ -16,6 +16,8 @@ import { NotificationsPage } from '@/pages/notifications/NotificationsPage';
 import { BookingRequestsPage } from '@/pages/bookings/BookingRequestsPage';
 import { DoctorDashboardPage } from '@/pages/doctor/DoctorDashboardPage';
 import { ExaminationPage } from '@/pages/doctor/ExaminationPage';
+import { PricingPage } from '@/pages/pricing/PricingPage';
+import { TreatmentCatalogPage } from '@/pages/treatments/TreatmentCatalogPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -47,6 +49,8 @@ function App() {
               <Route path="/reports" element={<ReportsPage />} />
               <Route path="/booking-requests" element={<BookingRequestsPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
+              <Route path="/pricing" element={<PricingPage />} />
+              <Route path="/catalog" element={<TreatmentCatalogPage />} />
             </Route>
           </Route>
         </Routes>

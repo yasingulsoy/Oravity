@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LogOut, Moon, Sun,
   LayoutDashboard, Users, Calendar, CreditCard,
-  BarChart3, ClipboardList, Bell, CalendarPlus, Stethoscope,
+  BarChart3, ClipboardList, Bell, CalendarPlus, Stethoscope, Tag, Layers,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useUiStore } from '@/store/uiStore';
@@ -29,6 +29,8 @@ const navItems = [
   { to: '/reports',          label: 'Raporlar',        icon: BarChart3       },
   { to: '/booking-requests', label: 'Online Talepler', icon: CalendarPlus    },
   { to: '/notifications',    label: 'Bildirimler',     icon: Bell            },
+  { to: '/catalog',          label: 'Tedavi Kataloğu', icon: Layers          },
+  { to: '/pricing',          label: 'Fiyatlandırma',   icon: Tag             },
 ];
 
 export function Header() {

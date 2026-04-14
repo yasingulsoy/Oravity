@@ -8,6 +8,7 @@ import {
   CheckCheck, AlertTriangle, Cigarette, Wine,
   Phone, Mail, MapPin, Calendar, Heart, Save,
   FileText, Search, Trash2, History, Lock, X,
+  Stethoscope, Plus, ChevronDown, ChevronRight, CheckCircle2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -25,10 +26,17 @@ import { cn } from '@/lib/utils';
 import { protocolsApi } from '@/api/visits';
 import { patientsApi } from '@/api/patients';
 import { dentalApi } from '@/api/dental';
+import { treatmentsApi, treatmentPlansApi } from '@/api/treatments';
+import type { TreatmentCatalogItem } from '@/api/treatments';
+import type { TreatmentPlan } from '@/types/treatment';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { ToothStatus, STATUS_META } from '@/types/dental';
 import type { ToothRecord, ToothHistoryResponse } from '@/types/dental';
 import type { DoctorProtocol, ProtocolDetail, IcdCode, ProtocolDiagnosis, ProtocolHistoryItem } from '@/types/visit';
 import type { Patient, PatientAnamnesis, AnamnesisHistoryItem } from '@/types/patient';
+import { useAuthStore } from '@/store/authStore';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -556,12 +564,14 @@ function ToothSvg({
   onClick,
   isUpper,
   compact = false,
+  size = 1,
 }: {
   tooth: ToothRecord;
   selected: boolean;
   onClick: () => void;
   isUpper: boolean;
   compact?: boolean;
+  size?: number;
 }) {
   const meta  = STATUS_META[tooth.status as ToothStatus];
   const surfs = new Set((tooth.surfaces ?? '').toUpperCase().split(''));
@@ -667,8 +677,8 @@ function ToothSvg({
     }
   }
 
-  const svgW = compact ? 28 : 32;
-  const svgH = compact ? 35 : 40;
+  const svgW = Math.round((compact ? 28 : 32) * size);
+  const svgH = Math.round((compact ? 35 : 40) * size);
 
   return (
     <button
@@ -1201,6 +1211,698 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
   );
 }
 
+// ─── Plan Builder: taslak kalem tipi ─────────────────────────────────────────
+
+interface DraftItem {
+  localId: string;
+  treatmentPublicId: string;
+  treatmentCode: string;
+  treatmentName: string;
+  toothNumber: string;   // "" = diş yok
+  unitPrice: number;
+  discountRate: number;
+  currency: string;
+}
+
+// ─── Plan Builder Panel (inline) ─────────────────────────────────────────────
+
+function PlanBuilderPanel({
+  open,
+  onClose,
+  patientPublicId,
+  doctorPublicId,
+  onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  patientPublicId: string;
+  doctorPublicId: string;
+  onSaved: () => void;
+}) {
+  // Katalog
+  const { data: catalogData } = useQuery({
+    queryKey: ['treatments-catalog'],
+    queryFn: () => treatmentsApi.list().then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+    enabled: open,
+  });
+
+  // Hasta verisi (anlaşmalı kurum/ÖSS için)
+  const { data: patientData } = useQuery({
+    queryKey: ['patient-detail', patientPublicId],
+    queryFn: () => patientsApi.getById(patientPublicId).then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+    enabled: open && !!patientPublicId,
+  });
+  const patientInstitutionId = patientData?.agreementInstitutionId ?? undefined;
+  const catalog: TreatmentCatalogItem[] = catalogData?.items ?? [];
+
+  // Diş şeması verisi (status göstermek için)
+  const [teethMap, setTeethMap] = useState<Record<string, ToothRecord>>({});
+  useEffect(() => {
+    if (!open) return;
+    dentalApi.getChart(patientPublicId).then(r => {
+      const m: Record<string, ToothRecord> = {};
+      r.data.teeth.forEach(t => { m[t.toothNumber] = t; });
+      setTeethMap(m);
+    });
+  }, [open, patientPublicId]);
+
+  // Builder state
+  const [planName,       setPlanName]       = useState('Yeni Tedavi Planı');
+  const [selectedTeeth,  setSelectedTeeth]  = useState<string[]>([]);
+  const [search,         setSearch]         = useState('');
+  const [draftItems,     setDraftItems]     = useState<DraftItem[]>([]);
+  const [saving,         setSaving]         = useState(false);
+  const [mode,           setMode]           = useState<'permanent' | 'primary'>('permanent');
+  const [showDiagnosis,  setShowDiagnosis]  = useState(true);
+
+  // Kapanınca sıfırla
+  useEffect(() => {
+    if (!open) {
+      setPlanName('Yeni Tedavi Planı');
+      setSelectedTeeth([]);
+      setSearch('');
+      setDraftItems([]);
+      setSaving(false);
+    }
+  }, [open]);
+
+  const rows = mode === 'primary' ? PRIMARY_ROWS : PERMANENT_ROWS;
+  const allNums = [...rows.upperRight, ...rows.upperLeft, ...rows.lowerRight, ...rows.lowerLeft];
+
+  const defaultTooth = (num: string): ToothRecord => ({
+    publicId: '', toothNumber: num, quadrantLabel: '', toothType: '',
+    status: ToothStatus.Healthy, statusLabel: 'Sağlıklı',
+    surfaces: null, notes: null, recordedBy: 0, recordedAt: '', createdAt: '',
+  });
+
+  // Tedavi filtresi
+  const filtered = search.trim()
+    ? catalog.filter(t =>
+        t.name.toLowerCase().includes(search.toLowerCase()) ||
+        t.code.toLowerCase().includes(search.toLowerCase()) ||
+        (t.sutCode ?? '').toLowerCase().includes(search.toLowerCase())
+      )
+    : catalog;
+
+  // Tedaviye tıkla → seçili her diş için ayrı kalem ekle, fiyatı kural motorundan çek
+  const addItem = async (t: TreatmentCatalogItem) => {
+    const teeth = selectedTeeth.length > 0 ? selectedTeeth : [''];
+
+    // Önce placeholder'ları hemen ekle (responsiveness için)
+    const placeholders: DraftItem[] = teeth.map(tooth => ({
+      localId:           crypto.randomUUID(),
+      treatmentPublicId: t.publicId,
+      treatmentCode:     t.code,
+      treatmentName:     t.name,
+      toothNumber:       tooth,
+      unitPrice:         0,
+      discountRate:      0,
+      currency:          'TRY',
+    }));
+    setDraftItems(prev => [...prev, ...placeholders]);
+
+    // Kural motorundan fiyatı çek (hasta kurumu ile), sonra güncelle
+    try {
+      const { data } = await treatmentsApi.getPrice(t.publicId, {
+        institutionId: patientInstitutionId,
+      });
+      if (data.unitPrice > 0) {
+        const ids = new Set(placeholders.map(p => p.localId));
+        setDraftItems(prev => prev.map(item =>
+          ids.has(item.localId)
+            ? { ...item, unitPrice: data.unitPrice, currency: data.currency }
+            : item
+        ));
+      }
+    } catch {
+      // fiyat çekilemezse 0 kalır, kullanıcı elle girer
+    }
+  };
+
+  const removeItem = (localId: string) =>
+    setDraftItems(prev => prev.filter(i => i.localId !== localId));
+
+  const updateItem = (localId: string, patch: Partial<Pick<DraftItem, 'unitPrice' | 'discountRate' | 'toothNumber' | 'currency'>>) =>
+    setDraftItems(prev => prev.map(i => i.localId === localId ? { ...i, ...patch } : i));
+
+  const finalPrice = (item: DraftItem) =>
+    Math.round(item.unitPrice * (1 - item.discountRate / 100) * 100) / 100;
+
+  const total = draftItems.reduce((s, i) => s + finalPrice(i), 0);
+
+  // Kaydet
+  const handleSave = async () => {
+    if (!planName.trim()) { toast.error('Plan adı gereklidir.'); return; }
+    if (draftItems.length === 0) { toast.error('En az bir kalem ekleyin.'); return; }
+    setSaving(true);
+    try {
+      const planRes = await treatmentPlansApi.create({
+        patientPublicId,
+        doctorPublicId,
+        name: planName.trim(),
+      });
+      const planId = planRes.data.publicId;
+      for (const item of draftItems) {
+        await treatmentPlansApi.addItem(planId, {
+          treatmentPublicId: item.treatmentPublicId,
+          unitPrice:         item.unitPrice,
+          discountRate:      item.discountRate,
+          toothNumber:       item.toothNumber || undefined,
+        });
+      }
+      toast.success('Tedavi planı kaydedildi.');
+      onSaved();
+      onClose();
+    } catch {
+      toast.error('Kayıt sırasında hata oluştu.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="border rounded-xl bg-background shadow-sm overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-2.5 border-b bg-muted/20">
+        <Stethoscope className="size-4 text-primary shrink-0" />
+        <Input
+          className="h-7 text-sm font-medium max-w-56"
+          value={planName}
+          onChange={(e) => setPlanName(e.target.value)}
+          placeholder="Plan adı..."
+        />
+        <span className="text-xs text-muted-foreground ml-auto">
+          {draftItems.length > 0 && <>{draftItems.length} kalem · {total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</>}
+        </span>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+          <X className="size-4" />
+        </button>
+      </div>
+
+      {/* Body: küçük ekran → dikey yığın, xl+ → yan yana sabit yükseklik */}
+      <div className="flex flex-col xl:flex-row xl:h-[calc(100vh-240px)]">
+
+        {/* Diş şeması — üstte (küçük) / solda (büyük) */}
+        <div className="flex-1 min-w-0 border-b xl:border-b-0 xl:border-r flex flex-col justify-start px-4 py-3 gap-3 overflow-x-auto">
+
+          {/* Hızlı seçim butonları */}
+          {(() => {
+            const allUpper = [...rows.upperRight, ...rows.upperLeft];
+            const allLower = [...rows.lowerRight, ...rows.lowerLeft];
+            const groups = [
+              { label: 'Üst Çene', nums: allUpper },
+              { label: 'Alt Çene', nums: allLower },
+              { label: 'Sağ Üst',  nums: rows.upperRight },
+              { label: 'Sol Üst',  nums: rows.upperLeft },
+              { label: 'Sağ Alt',  nums: rows.lowerRight },
+              { label: 'Sol Alt',  nums: rows.lowerLeft },
+              { label: 'Tümü',     nums: [...allUpper, ...allLower] },
+            ];
+            const toggle = (nums: string[]) => {
+              const allIn = nums.every(n => selectedTeeth.includes(n));
+              setSelectedTeeth(prev =>
+                allIn ? prev.filter(n => !nums.includes(n)) : [...new Set([...prev, ...nums])]
+              );
+            };
+            return (
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-0.5 rounded-lg border p-0.5 bg-muted/30 shrink-0">
+                  {(['permanent', 'primary'] as const).map(m => (
+                    <button key={m} onClick={() => { setMode(m); setSelectedTeeth([]); }}
+                      className={cn('text-[10px] px-3 py-1 rounded transition-all',
+                        mode === m ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground')}>
+                      {m === 'permanent' ? 'Daimi Diş' : 'Süt Dişi'}
+                    </button>
+                  ))}
+                </div>
+                <div className="w-px h-4 bg-border" />
+                {groups.map(g => {
+                  const active = g.nums.length > 0 && g.nums.every(n => selectedTeeth.includes(n));
+                  return (
+                    <button key={g.label} onClick={() => toggle(g.nums)}
+                      className={cn('text-[10px] px-2 py-0.5 rounded border transition-all',
+                        active
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'border-border text-muted-foreground hover:border-primary/50 hover:text-foreground')}>
+                      {g.label}
+                    </button>
+                  );
+                })}
+                <div className="ml-auto flex items-center gap-3 shrink-0">
+                  {selectedTeeth.length > 0 && (
+                    <>
+                      <span className="text-xs text-muted-foreground">
+                        <span className="font-semibold text-foreground">{selectedTeeth.length} diş</span> seçili
+                      </span>
+                      <button onClick={() => setSelectedTeeth([])}
+                        className="text-[10px] text-muted-foreground hover:text-destructive underline">
+                        Temizle
+                      </button>
+                    </>
+                  )}
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={showDiagnosis}
+                      onChange={e => setShowDiagnosis(e.target.checked)}
+                      className="size-3.5 accent-primary"
+                    />
+                    <span className="text-[10px] text-muted-foreground">Oral diagnoz</span>
+                  </label>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Üst çene */}
+          <div className="space-y-1">
+            <div className="flex items-center">
+              <span className="text-sm font-bold text-destructive w-6">R</span>
+              <span className="text-xs text-muted-foreground mr-auto">Sağ Üst</span>
+              <span className="text-xs font-medium text-muted-foreground">Üst Çene</span>
+              <span className="text-xs text-muted-foreground ml-auto">Sol Üst</span>
+              <span className="text-sm font-bold text-destructive w-6 text-right">L</span>
+            </div>
+            <div className="flex justify-center flex-nowrap">
+              {rows.upperRight.map(n => (
+                <ToothSvg key={n} tooth={showDiagnosis ? (teethMap[n] ?? defaultTooth(n)) : defaultTooth(n)}
+                  selected={selectedTeeth.includes(n)}
+                  onClick={() => setSelectedTeeth(prev =>
+                    prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n])}
+                  isUpper={true} compact={false} size={1.5} />
+              ))}
+              <div className="w-px bg-border mx-1 self-stretch" />
+              {rows.upperLeft.map(n => (
+                <ToothSvg key={n} tooth={showDiagnosis ? (teethMap[n] ?? defaultTooth(n)) : defaultTooth(n)}
+                  selected={selectedTeeth.includes(n)}
+                  onClick={() => setSelectedTeeth(prev =>
+                    prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n])}
+                  isUpper={true} compact={false} size={1.5} />
+              ))}
+            </div>
+          </div>
+
+          <div className="h-px bg-border" />
+
+          {/* Alt çene */}
+          <div className="space-y-1">
+            <div className="flex justify-center flex-nowrap">
+              {rows.lowerRight.map(n => (
+                <ToothSvg key={n} tooth={showDiagnosis ? (teethMap[n] ?? defaultTooth(n)) : defaultTooth(n)}
+                  selected={selectedTeeth.includes(n)}
+                  onClick={() => setSelectedTeeth(prev =>
+                    prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n])}
+                  isUpper={false} compact={false} size={1.5} />
+              ))}
+              <div className="w-px bg-border mx-1 self-stretch" />
+              {rows.lowerLeft.map(n => (
+                <ToothSvg key={n} tooth={showDiagnosis ? (teethMap[n] ?? defaultTooth(n)) : defaultTooth(n)}
+                  selected={selectedTeeth.includes(n)}
+                  onClick={() => setSelectedTeeth(prev =>
+                    prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n])}
+                  isUpper={false} compact={false} size={1.5} />
+              ))}
+            </div>
+            <div className="flex items-center">
+              <span className="text-sm font-bold text-destructive w-6">R</span>
+              <span className="text-xs text-muted-foreground mr-auto">Sağ Alt</span>
+              <span className="text-xs font-medium text-muted-foreground">Alt Çene</span>
+              <span className="text-xs text-muted-foreground ml-auto">Sol Alt</span>
+              <span className="text-sm font-bold text-destructive w-6 text-right">L</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Sağ — Tedavi arama (sabit 300px) */}
+        <div className="w-full xl:w-[300px] h-[280px] xl:h-full shrink-0 flex flex-col overflow-hidden p-3 gap-2">
+          <div className="relative shrink-0">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+            <Input
+              className="pl-8 h-8 text-sm"
+              placeholder="Tedavi adı veya kodu ara..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          <div className="flex-1 overflow-y-auto rounded-lg border divide-y min-h-0">
+            {filtered.length === 0 && (
+              <div className="text-center py-8 text-sm text-muted-foreground">Tedavi bulunamadı.</div>
+            )}
+            {filtered.map(t => (
+              <button
+                key={t.publicId}
+                onClick={() => addItem(t)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+              >
+                <span className="flex-1 text-sm truncate">{t.name}</span>
+                <Plus className="size-3.5 text-primary shrink-0" />
+              </button>
+            ))}
+          </div>
+
+          <p className="text-xs text-center text-muted-foreground shrink-0">
+            {selectedTeeth.length > 0
+              ? <>Tedaviye tıkla → <strong>{selectedTeeth.length} diş</strong> için {selectedTeeth.length} kalem eklenir</>
+              : 'Diş seçmeden de ekleyebilirsiniz'}
+          </p>
+        </div>
+      </div>
+
+      {/* Kalem listesi */}
+      <div className="border-t max-h-52 overflow-y-auto">
+        {draftItems.length === 0 ? (
+          <p className="text-center py-4 text-sm text-muted-foreground">
+            Soldan diş seçin, sağdan tedavi ekleyin.
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-muted/30 sticky top-0">
+              <tr className="text-xs text-muted-foreground">
+                <th className="text-left px-3 py-2 font-medium">Tedavi Adı / İşlem</th>
+                <th className="text-center px-2 py-2 font-medium w-16">Diş No</th>
+                <th className="text-right px-2 py-2 font-medium w-28">Birim Fiyat</th>
+                <th className="text-center px-2 py-2 font-medium w-16">İndirim%</th>
+                <th className="text-center px-2 py-2 font-medium w-16">Para</th>
+                <th className="text-right px-2 py-2 font-medium w-28">Tedavi Fiyatı</th>
+                <th className="w-8" />
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {draftItems.map(item => (
+                <tr key={item.localId} className="hover:bg-muted/20">
+                  <td className="px-3 py-1.5">
+                    <span className="font-medium">{item.treatmentName}</span>
+                    <span className="ml-1.5 text-xs text-muted-foreground font-mono">{item.treatmentCode}</span>
+                  </td>
+                  <td className="px-2 py-1.5 text-center">
+                    <Input className="h-6 text-xs text-center px-1 w-14 mx-auto" placeholder="—"
+                      value={item.toothNumber}
+                      onChange={e => updateItem(item.localId, { toothNumber: e.target.value })} />
+                  </td>
+                  <td className="px-2 py-1.5 text-right">
+                    <Input type="number" className="h-6 text-xs text-right px-1 w-24 ml-auto" placeholder="0"
+                      value={item.unitPrice || ''}
+                      onChange={e => updateItem(item.localId, { unitPrice: parseFloat(e.target.value) || 0 })} />
+                  </td>
+                  <td className="px-2 py-1.5 text-center">
+                    <Input type="number" className="h-6 text-xs text-center px-1 w-14 mx-auto" min="0" max="100" placeholder="0"
+                      value={item.discountRate || ''}
+                      onChange={e => updateItem(item.localId, { discountRate: parseFloat(e.target.value) || 0 })} />
+                  </td>
+                  <td className="px-2 py-1.5 text-center">
+                    <select className="h-6 text-xs border rounded px-1 bg-background w-14"
+                      value={item.currency}
+                      onChange={e => updateItem(item.localId, { currency: e.target.value })}>
+                      {['TRY', 'USD', 'EUR'].map(c => <option key={c}>{c}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-2 py-1.5 text-right font-medium">
+                    {finalPrice(item).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                  </td>
+                  <td className="px-2 py-1.5 text-center">
+                    <button onClick={() => removeItem(item.localId)}
+                      className="text-muted-foreground hover:text-destructive">
+                      <X className="size-3.5" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between px-4 py-3 border-t bg-muted/20">
+        <span className="text-sm font-semibold">
+          Toplam: {total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
+        </span>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>İptal</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving || draftItems.length === 0}>
+            {saving ? 'Kaydediliyor...' : 'Kaydet'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tab: Tedavi Planı ────────────────────────────────────────────────────────
+
+function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
+  const qc = useQueryClient();
+  const currentUser = useAuthStore((s) => s.user);
+
+  const { data: plans = [], isLoading } = useQuery<TreatmentPlan[]>({
+    queryKey: ['treatment-plans', patientPublicId],
+    queryFn: () => treatmentPlansApi.getByPatient(patientPublicId).then((r) => r.data),
+    enabled: !!patientPublicId,
+  });
+
+  const [expandedPlan, setExpandedPlan] = useState<string | null>(null);
+  const [builderOpen,  setBuilderOpen]  = useState(false);
+
+  // Mevcut plana kalem ekle
+  const [addItemPlanId, setAddItemPlanId] = useState<string | null>(null);
+  const { data: catalogData } = useQuery({
+    queryKey: ['treatments-catalog'],
+    queryFn: () => treatmentsApi.list().then((r) => r.data),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!addItemPlanId,
+  });
+  const catalog: TreatmentCatalogItem[] = catalogData?.items ?? [];
+  const [itemTreatmentId, setItemTreatmentId] = useState('');
+  const [itemToothNumber, setItemToothNumber] = useState('');
+  const [itemPrice, setItemPrice] = useState('');
+  const [itemDiscount, setItemDiscount] = useState('0');
+  const [itemNotes, setItemNotes] = useState('');
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['treatment-plans', patientPublicId] });
+
+  const approvePlanMutation = useMutation({
+    mutationFn: (planId: string) => treatmentPlansApi.approve(planId),
+    onSuccess: () => { toast.success('Plan onaylandı.'); invalidate(); },
+    onError: () => toast.error('Plan onaylanamadı.'),
+  });
+
+  const addItemMutation = useMutation({
+    mutationFn: () => treatmentPlansApi.addItem(addItemPlanId!, {
+      treatmentPublicId: itemTreatmentId,
+      unitPrice: parseFloat(itemPrice) || 0,
+      discountRate: parseFloat(itemDiscount) || 0,
+      toothNumber: itemToothNumber.trim() || undefined,
+      notes: itemNotes.trim() || undefined,
+    }),
+    onSuccess: () => {
+      toast.success('Kalem eklendi.');
+      invalidate();
+      setAddItemPlanId(null);
+      setItemTreatmentId(''); setItemToothNumber(''); setItemPrice(''); setItemDiscount('0'); setItemNotes('');
+    },
+    onError: () => toast.error('Kalem eklenemedi.'),
+  });
+
+  const deleteItemMutation = useMutation({
+    mutationFn: ({ planId, itemId }: { planId: string; itemId: string }) =>
+      treatmentPlansApi.deleteItem(planId, itemId),
+    onSuccess: () => { toast.success('Kalem silindi.'); invalidate(); },
+    onError: () => toast.error('Kalem silinemedi.'),
+  });
+
+  const statusColor = (status: number) => {
+    if (status === 1) return 'bg-green-100 text-green-800 border-green-200';
+    if (status === 2) return 'bg-blue-100 text-blue-800 border-blue-200';
+    if (status === 3) return 'bg-gray-100 text-gray-600 border-gray-200';
+    return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+  };
+
+  if (isLoading) return (
+    <div className="space-y-3 p-4">
+      {[1, 2].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+    </div>
+  );
+
+  return (
+    <div className={builderOpen ? '' : 'p-4 space-y-4'}>
+      {/* Başlık satırı */}
+      {!builderOpen && (
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Tedavi Planları ({plans.length})
+          </h3>
+          <Button size="sm" onClick={() => setBuilderOpen(true)}>
+            <Plus className="size-3.5 mr-1" />
+            Yeni Plan
+          </Button>
+        </div>
+      )}
+
+      {/* Inline plan builder */}
+      <PlanBuilderPanel
+        open={builderOpen}
+        onClose={() => setBuilderOpen(false)}
+        patientPublicId={patientPublicId}
+        doctorPublicId={currentUser?.publicId ?? ''}
+        onSaved={() => { invalidate(); }}
+      />
+
+      {plans.length === 0 && !builderOpen && (
+        <div className="text-center py-10 text-muted-foreground text-sm">
+          Henüz tedavi planı yok.
+        </div>
+      )}
+
+      {!builderOpen && plans.map((plan) => {
+        const isExpanded = expandedPlan === plan.publicId;
+        const isDraft    = plan.status === 1; // Draft=1 (backend enum)
+        const total      = plan.items.reduce((s, i) => s + i.finalPrice, 0);
+
+        return (
+          <div key={plan.publicId} className="border rounded-lg overflow-hidden">
+            <div
+              className="flex items-center gap-3 px-4 py-3 bg-muted/30 cursor-pointer hover:bg-muted/50"
+              onClick={() => setExpandedPlan(isExpanded ? null : plan.publicId)}
+            >
+              {isExpanded
+                ? <ChevronDown className="size-4 text-muted-foreground shrink-0" />
+                : <ChevronRight className="size-4 text-muted-foreground shrink-0" />}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{plan.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {plan.items.length} kalem · {total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
+                </p>
+              </div>
+              <span className={cn('text-xs px-2 py-0.5 rounded border', statusColor(plan.status))}>
+                {plan.statusLabel}
+              </span>
+            </div>
+
+            {isExpanded && (
+              <div className="divide-y">
+                {plan.items.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-6">Plan boş.</p>
+                )}
+                {plan.items.map((item) => (
+                  <div key={item.publicId} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">
+                        {item.treatmentName ?? 'Bilinmeyen tedavi'}
+                        {item.treatmentCode && (
+                          <span className="ml-1.5 text-xs text-muted-foreground font-normal font-mono">
+                            [{item.treatmentCode}]
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {item.toothNumber ? `Diş ${item.toothNumber} · ` : ''}
+                        {item.finalPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
+                        {item.discountRate > 0 && (
+                          <span className="ml-1 text-green-600">(%{item.discountRate} indirim)</span>
+                        )}
+                      </p>
+                    </div>
+                    <span className={cn('text-xs px-1.5 py-0.5 rounded border shrink-0', statusColor(item.status))}>
+                      {item.statusLabel}
+                    </span>
+                    {isDraft && item.status === 1 && (
+                      <button
+                        className="text-muted-foreground hover:text-destructive shrink-0"
+                        onClick={() => deleteItemMutation.mutate({ planId: plan.publicId, itemId: item.publicId })}
+                        title="Sil"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+
+                <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/20">
+                  {isDraft && (
+                    <>
+                      <Button size="sm" variant="outline" className="h-7 text-xs"
+                        onClick={() => setAddItemPlanId(plan.publicId)}>
+                        <Plus className="size-3 mr-1" />
+                        Kalem Ekle
+                      </Button>
+                      {plan.items.length > 0 && (
+                        <Button size="sm" className="h-7 text-xs"
+                          onClick={() => approvePlanMutation.mutate(plan.publicId)}
+                          disabled={approvePlanMutation.isPending}>
+                          <CheckCircle2 className="size-3 mr-1" />
+                          Onayla
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    Toplam: <strong>{total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</strong>
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Mevcut plana kalem ekle (hızlı modal) */}
+      <Dialog open={!!addItemPlanId} onOpenChange={(o) => !o && setAddItemPlanId(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Kalem Ekle</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label>Tedavi</Label>
+              <Select value={itemTreatmentId} onValueChange={v => { setItemTreatmentId(v); setItemPrice(''); }}>
+                <SelectTrigger><SelectValue placeholder="Tedavi seç..." /></SelectTrigger>
+                <SelectContent className="max-h-64">
+                  {catalog.map((t) => (
+                    <SelectItem key={t.publicId} value={t.publicId}>
+                      <span className="font-mono text-xs text-muted-foreground mr-2">{t.code}</span>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="item-tooth">Diş No</Label>
+                <Input id="item-tooth" placeholder="Ör: 16" value={itemToothNumber} onChange={(e) => setItemToothNumber(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="item-price">Fiyat (₺)</Label>
+                <Input id="item-price" type="number" placeholder="0" value={itemPrice} onChange={(e) => setItemPrice(e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="item-discount">İndirim (%)</Label>
+              <Input id="item-discount" type="number" min="0" max="100" value={itemDiscount} onChange={(e) => setItemDiscount(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="item-notes">Notlar</Label>
+              <Textarea id="item-notes" rows={2} value={itemNotes} onChange={(e) => setItemNotes(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddItemPlanId(null)}>İptal</Button>
+            <Button onClick={() => addItemMutation.mutate()} disabled={addItemMutation.isPending || !itemTreatmentId || !itemPrice}>
+              Ekle
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 // ─── Tab: Protokol ────────────────────────────────────────────────────────────
 
 function ProtokolTab({
@@ -1670,6 +2372,7 @@ export function ExaminationPage() {
     { value: 'hasta-bilgileri', label: 'Hasta Bilgileri', icon: User },
     { value: 'anamnez',         label: 'Anamnez',         icon: ClipboardList },
     { value: 'oral-diagnoz',    label: 'Oral Diagnoz',    icon: Heart },
+    { value: 'tedavi-plani',    label: 'Tedavi Planı',    icon: Stethoscope },
     { value: 'protokol',        label: 'Protokol',        icon: FileText },
   ];
 
@@ -1779,6 +2482,16 @@ export function ExaminationPage() {
                 </div>
               )}
             </div>
+          </TabsContent>
+
+          <TabsContent value="tedavi-plani" className="mt-0">
+            {protocol?.patientPublicId ? (
+              <TedaviPlaniTab patientPublicId={protocol.patientPublicId} />
+            ) : (
+              <div className="space-y-3 p-4">
+                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="protokol" className="mt-0">

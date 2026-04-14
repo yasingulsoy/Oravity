@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Oravity.Core.Modules.Core.Pricing.Application;
 using Oravity.Core.Modules.Treatment.Application;
 using Oravity.Infrastructure.Database;
 using Oravity.SharedKernel.Exceptions;
@@ -35,7 +36,7 @@ public class CreateTreatmentCommandHandler
         CreateTreatmentCommand request,
         CancellationToken cancellationToken)
     {
-        var companyId = _tenant.CompanyId
+        var companyId = await TenantCompanyResolver.ResolveCompanyIdAsync(_tenant, _db, cancellationToken)
             ?? throw new ForbiddenException("Tedavi oluşturmak için şirket bağlamı gereklidir.");
 
         // Aynı şirkette aynı kod var mı?
@@ -50,7 +51,7 @@ public class CreateTreatmentCommandHandler
         {
             var cat = await _db.TreatmentCategories
                 .FirstOrDefaultAsync(c => c.PublicId == request.CategoryPublicId.Value
-                                       && c.CompanyId == companyId, cancellationToken)
+                                       && (c.CompanyId == null || c.CompanyId == companyId), cancellationToken)
                 ?? throw new NotFoundException("Kategori bulunamadı.");
             categoryId = cat.Id;
         }
