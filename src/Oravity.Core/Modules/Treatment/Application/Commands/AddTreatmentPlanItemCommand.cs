@@ -49,10 +49,15 @@ public class AddTreatmentPlanItemCommandHandler
             throw new InvalidOperationException(
                 "Onaylanmış, tamamlanmış veya iptal edilmiş plana kalem eklenemez.");
 
+        var treatment = await _db.Treatments.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == request.TreatmentId, cancellationToken)
+            ?? throw new NotFoundException("Tedavi bulunamadı.");
+
         var item = TreatmentPlanItem.Create(
             planId:         plan.Id,
             treatmentId:    request.TreatmentId,
             unitPrice:      request.UnitPrice,
+            kdvRate:        treatment.KdvRate,
             discountRate:   request.DiscountRate,
             toothNumber:    request.ToothNumber,
             toothSurfaces:  request.ToothSurfaces,
@@ -63,7 +68,13 @@ public class AddTreatmentPlanItemCommandHandler
         _db.TreatmentPlanItems.Add(item);
         await _db.SaveChangesAsync(cancellationToken);
 
-        return TreatmentPlanMappings.ToResponse(item);
+        // Treatment adını response'a eklemek için reload
+        var loaded = await _db.TreatmentPlanItems
+            .AsNoTracking()
+            .Include(i => i.Treatment)
+            .FirstAsync(i => i.Id == item.Id, cancellationToken);
+
+        return TreatmentPlanMappings.ToResponse(loaded);
     }
 
     private void EnsureTenantAccess(TreatmentPlan plan)

@@ -174,6 +174,21 @@ public class FormulaEngine
             _pos++;
 
         var name = _input[start.._pos];
+
+        // Yerleşik fonksiyonlar: MIN(a, b) ve MAX(a, b)
+        SkipWhitespace();
+        if (Peek() == '(' && (name is "MIN" or "MAX"))
+        {
+            _pos++; // '(' tüket
+            var a = ParseTernary();
+            SkipWhitespace();
+            Consume(',');
+            var b = ParseTernary();
+            SkipWhitespace();
+            Consume(')');
+            return name == "MIN" ? Math.Min(a, b) : Math.Max(a, b);
+        }
+
         if (!_vars.TryGetValue(name, out var val))
             throw new UnknownVariableException(name);
         return val;

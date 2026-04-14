@@ -23,6 +23,28 @@ public class PricingController : ControllerBase
         _mediator = mediator;
     }
 
+    /// <summary>Şirkete ait şubelerin fiyat ayarlarını listeler.</summary>
+    [HttpGet("api/pricing/branches")]
+    [RequirePermission("pricing:view")]
+    [ProducesResponseType(typeof(IReadOnlyList<BranchPricingResponse>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetBranchPricingSettings()
+    {
+        var result = await _mediator.Send(new GetBranchPricingQuery());
+        return Ok(result);
+    }
+
+    /// <summary>Şubenin fiyat çarpanını günceller.</summary>
+    [HttpPatch("api/pricing/branches/{branchId:long}/multiplier")]
+    [RequirePermission("pricing:edit")]
+    [ProducesResponseType(typeof(BranchPricingResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateBranchMultiplier(
+        long branchId,
+        [FromBody] UpdateBranchMultiplierRequest request)
+    {
+        var result = await _mediator.Send(new UpdateBranchPricingMultiplierCommand(branchId, request.PricingMultiplier));
+        return Ok(result);
+    }
+
     /// <summary>Şirketin fiyatlandırma kurallarını listeler (öncelik sırasına göre).</summary>
     [HttpGet("api/pricing/rules")]
     [RequirePermission("pricing:view")]
@@ -89,7 +111,77 @@ public class PricingController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>Tedavi için fiyat hesaplar.</summary>
+    /// <summary>Tedavi için kural motoruyla fiyat hesaplar (plan builder kullanır).</summary>
+    [HttpGet("api/pricing/treatment/{publicId:guid}/price")]
+    [ProducesResponseType(typeof(TreatmentPriceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetTreatmentPrice(
+        Guid publicId,
+        [FromQuery] long? branchId      = null,
+        [FromQuery] long? institutionId = null,
+        [FromQuery] bool  isOss         = false)
+    {
+        var result = await _mediator.Send(new GetTreatmentPriceQuery(publicId, branchId, institutionId, isOss));
+        return Ok(result);
+    }
+
+    /// <summary>Yeni referans fiyat listesi oluşturur.</summary>
+    [HttpPost("api/pricing/reference-lists")]
+    [RequirePermission("pricing:edit")]
+    [ProducesResponseType(typeof(ReferencePriceListResponse), StatusCodes.Status201Created)]
+    public async Task<IActionResult> CreateReferenceList([FromBody] CreateReferenceListRequest request)
+    {
+        var result = await _mediator.Send(new CreateReferencePriceListCommand(
+            request.Code, request.Name, request.SourceType, request.Year));
+        return StatusCode(StatusCodes.Status201Created, result);
+    }
+
+    /// <summary>Tüm referans fiyat listelerini döner.</summary>
+    [HttpGet("api/pricing/reference-lists")]
+    [RequirePermission("pricing:view")]
+    [ProducesResponseType(typeof(IReadOnlyList<ReferencePriceListResponse>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetReferenceLists()
+    {
+        var result = await _mediator.Send(new GetReferencePriceListsQuery());
+        return Ok(result);
+    }
+
+    /// <summary>Referans fiyat listesinin kalemlerini döner (sayfalı).</summary>
+    [HttpGet("api/pricing/reference-lists/{listId:long}/items")]
+    [RequirePermission("pricing:view")]
+    [ProducesResponseType(typeof(ReferencePriceItemsPagedResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetReferenceItems(
+        long listId,
+        [FromQuery] string? search  = null,
+        [FromQuery] int page        = 1,
+        [FromQuery] int pageSize    = 50)
+    {
+        var result = await _mediator.Send(new GetReferencePriceItemsQuery(listId, search, page, pageSize));
+        return Ok(result);
+    }
+
+    /// <summary>Referans fiyat kalemi ekler veya günceller (upsert).</summary>
+    [HttpPut("api/pricing/reference-lists/{listId:long}/items/{code}")]
+    [RequirePermission("pricing:edit")]
+    [ProducesResponseType(typeof(ReferencePriceItemResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpsertReferenceItem(
+        long listId,
+        string code,
+        [FromBody] UpsertReferenceItemRequest request)
+    {
+        var result = await _mediator.Send(new UpsertReferencePriceItemCommand(
+            listId,
+            code,
+            request.TreatmentName,
+            request.Price,
+            request.PriceKdv,
+            request.Currency,
+            request.ValidFrom,
+            request.ValidUntil));
+        return Ok(result);
+    }
+
+    /// <summary>Tedavi için fiyat hesaplar (manuel bağlam).</summary>
     [HttpPost("api/pricing/calculate")]
     [RequirePermission("pricing:view")]
     [ProducesResponseType(typeof(CalculatePriceResponse), StatusCodes.Status200OK)]
@@ -139,6 +231,24 @@ public record UpdatePricingRuleRequest(
     DateTime? ValidUntil,
     bool      StopProcessing,
     bool      IsActive
+);
+
+public record UpdateBranchMultiplierRequest(decimal PricingMultiplier);
+
+public record CreateReferenceListRequest(
+    string Code,
+    string Name,
+    string SourceType = "private",
+    int    Year       = 2026
+);
+
+public record UpsertReferenceItemRequest(
+    string    TreatmentName,
+    decimal   Price,
+    decimal   PriceKdv      = 0,
+    string    Currency      = "TRY",
+    DateTime? ValidFrom     = null,
+    DateTime? ValidUntil    = null
 );
 
 public record CalculatePriceRequest(

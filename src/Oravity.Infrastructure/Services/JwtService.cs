@@ -18,7 +18,7 @@ public class JwtService : IJwtService
         _configuration = configuration;
     }
 
-    public string GenerateAccessToken(User user)
+    public string GenerateAccessToken(User user, long? branchId = null, long? companyId = null, int? roleLevel = null)
     {
         var secret = _configuration["Jwt:Secret"]
             ?? throw new InvalidOperationException("Jwt:Secret ayarı eksik.");
@@ -36,6 +36,13 @@ public class JwtService : IJwtService
             new("full_name", user.FullName),
             new("is_platform_admin", user.IsPlatformAdmin.ToString().ToLowerInvariant())
         };
+
+        if (branchId.HasValue)
+            claims.Add(new Claim("branch_id", branchId.Value.ToString()));
+        if (companyId.HasValue)
+            claims.Add(new Claim("company_id", companyId.Value.ToString()));
+        if (roleLevel.HasValue)
+            claims.Add(new Claim("role_level", roleLevel.Value.ToString()));
 
         var token = new JwtSecurityToken(
             issuer: _configuration["Jwt:Issuer"],

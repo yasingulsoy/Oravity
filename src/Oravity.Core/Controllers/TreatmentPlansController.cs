@@ -1,10 +1,14 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Oravity.Core.Filters;
 using Oravity.Core.Modules.Treatment.Application;
 using Oravity.Core.Modules.Treatment.Application.Commands;
 using Oravity.Core.Modules.Treatment.Application.Queries;
+using Oravity.Infrastructure.Database;
+using Oravity.SharedKernel.Exceptions;
+using Oravity.SharedKernel.Interfaces;
 
 namespace Oravity.Core.Controllers;
 
@@ -17,24 +21,30 @@ namespace Oravity.Core.Controllers;
 [Produces("application/json")]
 public class TreatmentPlansController : ControllerBase
 {
-    private readonly IMediator _mediator;
+    private readonly IMediator      _mediator;
+    private readonly AppDbContext   _db;
+    private readonly ITenantContext _tenant;
 
-    public TreatmentPlansController(IMediator mediator)
+    public TreatmentPlansController(IMediator mediator, AppDbContext db, ITenantContext tenant)
     {
         _mediator = mediator;
+        _db       = db;
+        _tenant   = tenant;
     }
 
     // ── Sorgular ─────────────────────────────────────────────────────────
 
     /// <summary>Hastanın tüm tedavi planlarını listeler (item'larla birlikte).</summary>
-    [HttpGet("api/patients/{patientId:long}/treatment-plans")]
+    [HttpGet("api/patients/{patientPublicId:guid}/treatment-plans")]
     [RequirePermission("treatment_plan:view")]
     [ProducesResponseType(typeof(IReadOnlyList<TreatmentPlanResponse>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> GetByPatient(long patientId)
+    public async Task<IActionResult> GetByPatient(Guid patientPublicId)
     {
-        var result = await _mediator.Send(new GetPatientTreatmentPlansQuery(patientId));
+        var patient = await _db.Patients.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.PublicId == patientPublicId)
+            ?? throw new NotFoundException("Hasta bulunamadı.");
+
+        var result = await _mediator.Send(new GetPatientTreatmentPlansQuery(patient.Id));
         return Ok(result);
     }
 
@@ -42,8 +52,6 @@ public class TreatmentPlansController : ControllerBase
     [HttpGet("api/treatment-plans/{id:guid}")]
     [RequirePermission("treatment_plan:view")]
     [ProducesResponseType(typeof(TreatmentPlanResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetById(Guid id)
     {
@@ -58,28 +66,67 @@ public class TreatmentPlansController : ControllerBase
     [RequirePermission("treatment_plan:create")]
     [ProducesResponseType(typeof(TreatmentPlanResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Create([FromBody] CreateTreatmentPlanRequest request)
     {
+        var patient = await _db.Patients.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.PublicId == request.PatientPublicId)
+            ?? throw new NotFoundException("Hasta bulunamadı.");
+
+        var doctor = await _db.Users.AsNoTracking()
+            .FirstOrDefaultAsync(u => u.PublicId == request.DoctorPublicId)
+            ?? throw new NotFoundException("Hekim bulunamadı.");
+
+        // Şube: istekte geliyorsa onu kullan; yoksa JWT'den; yoksa hekimin atamasından çöz
+        long branchId;
+        if (request.BranchPublicId.HasValue)
+        {
+            var branch = await _db.Branches.AsNoTracking()
+                .FirstOrDefaultAsync(b => b.PublicId == request.BranchPublicId.Value)
+                ?? throw new NotFoundException("Şube bulunamadı.");
+            branchId = branch.Id;
+        }
+        else if (_tenant.BranchId.HasValue)
+        {
+            branchId = _tenant.BranchId.Value;
+        }
+        else
+        {
+            var assignment = await _db.UserRoleAssignments.AsNoTracking()
+                .Where(a => a.UserId == doctor.Id && a.IsActive && a.BranchId != null)
+                .OrderByDescending(a => a.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            if (assignment?.BranchId != null)
+            {
+                branchId = assignment.BranchId.Value;
+            }
+            else
+            {
+                // Son çare: şirkete ait ilk aktif şube
+                var firstBranch = await _db.Branches.AsNoTracking()
+                    .Where(b => b.IsActive)
+                    .OrderBy(b => b.Id)
+                    .FirstOrDefaultAsync()
+                    ?? throw new NotFoundException("Sistem aktif şube içermiyor.");
+                branchId = firstBranch.Id;
+            }
+        }
+
         var result = await _mediator.Send(new CreateTreatmentPlanCommand(
-            request.PatientId,
-            request.DoctorId,
+            patient.Id,
+            branchId,
+            doctor.Id,
             request.Name,
             request.Notes));
 
         return StatusCode(StatusCodes.Status201Created, result);
     }
 
-    /// <summary>
-    /// Taslak planı onaylar. Plan ve tüm kalemleri Onaylandı (2) olur.
-    /// </summary>
+    /// <summary>Taslak planı onaylar. Plan ve tüm kalemleri Onaylandı olur.</summary>
     [HttpPut("api/treatment-plans/{id:guid}/approve")]
     [RequirePermission("treatment_plan:edit")]
     [ProducesResponseType(typeof(TreatmentPlanResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Approve(Guid id)
     {
@@ -89,43 +136,36 @@ public class TreatmentPlansController : ControllerBase
 
     // ── Kalem Komutları ───────────────────────────────────────────────────
 
-    /// <summary>
-    /// Plana yeni tedavi kalemi ekler.
-    /// Onaylı/Tamamlanmış plana kalem eklenemez.
-    /// </summary>
+    /// <summary>Plana yeni tedavi kalemi ekler.</summary>
     [HttpPost("api/treatment-plans/{id:guid}/items")]
     [RequirePermission("treatment_plan:create")]
     [ProducesResponseType(typeof(TreatmentPlanItemResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> AddItem(Guid id, [FromBody] AddTreatmentPlanItemRequest request)
     {
+        var treatment = await _db.Treatments.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.PublicId == request.TreatmentPublicId)
+            ?? throw new NotFoundException("Tedavi bulunamadı.");
+
         var result = await _mediator.Send(new AddTreatmentPlanItemCommand(
             id,
-            request.TreatmentId,
+            treatment.Id,
             request.UnitPrice,
             request.DiscountRate,
             request.ToothNumber,
-            request.ToothSurfaces,
-            request.BodyRegionCode,
-            request.DoctorId,
+            null,
+            null,
+            null,
             request.Notes));
 
         return StatusCode(StatusCodes.Status201Created, result);
     }
 
-    /// <summary>
-    /// Tedavi kalemini tamamlandı olarak işaretler, completed_at set edilir.
-    /// İzin: treatment_plan:complete
-    /// </summary>
+    /// <summary>Tedavi kalemini tamamlandı olarak işaretler.</summary>
     [HttpPut("api/treatment-plans/{id:guid}/items/{itemId:guid}/complete")]
     [RequirePermission("treatment_plan:complete")]
     [ProducesResponseType(typeof(TreatmentPlanItemResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> CompleteItem(Guid id, Guid itemId)
     {
@@ -133,17 +173,10 @@ public class TreatmentPlansController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Planlanmış (status=1) tedavi kalemini siler.
-    /// Tamamlanmış kalem silinemez.
-    /// İzin: treatment_plan:delete_planned
-    /// </summary>
+    /// <summary>Planlanmış (status=1) tedavi kalemini siler.</summary>
     [HttpDelete("api/treatment-plans/{id:guid}/items/{itemId:guid}")]
     [RequirePermission("treatment_plan:delete_planned")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteItem(Guid id, Guid itemId)
     {
@@ -155,19 +188,17 @@ public class TreatmentPlansController : ControllerBase
 // ─── Request DTO'lar ───────────────────────────────────────────────────────
 
 public record CreateTreatmentPlanRequest(
-    long PatientId,
-    long DoctorId,
-    string Name,
-    string? Notes
+    Guid    PatientPublicId,
+    Guid    DoctorPublicId,
+    string  Name,
+    string? Notes,
+    Guid?   BranchPublicId = null
 );
 
 public record AddTreatmentPlanItemRequest(
-    long TreatmentId,
+    Guid    TreatmentPublicId,
     decimal UnitPrice,
     decimal DiscountRate,
     string? ToothNumber,
-    string? ToothSurfaces,
-    string? BodyRegionCode,
-    long? DoctorId,
     string? Notes
 );

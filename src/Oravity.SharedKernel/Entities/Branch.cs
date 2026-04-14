@@ -15,6 +15,13 @@ public class Branch : BaseEntity
     public string DefaultLanguageCode { get; private set; } = "tr";
     public bool IsActive { get; private set; } = true;
 
+    /// <summary>
+    /// Şubeye özel cari fiyat çarpanı (varsayılan 1.0).
+    /// Formüllerde MULTI değişkeni olarak kullanılır.
+    /// Örnek: Bodrum = 1.10 → CARI * MULTI = CARI * 1.10
+    /// </summary>
+    public decimal PricingMultiplier { get; private set; } = 1.0m;
+
     public Company Company { get; private set; } = default!;
     public Vertical? Vertical { get; private set; }
     public ICollection<UserRoleAssignment> UserRoleAssignments { get; private set; } = [];
@@ -40,4 +47,5 @@ public class Branch : BaseEntity
     public void SetVerticalOverride(long? verticalId) => VerticalId = verticalId;
     public void SetActive(bool value) => IsActive = value;
     public void SetLanguage(string code) => DefaultLanguageCode = code;
+    public void SetPricingMultiplier(decimal multiplier) => PricingMultiplier = multiplier <= 0 ? 1.0m : multiplier;
 }

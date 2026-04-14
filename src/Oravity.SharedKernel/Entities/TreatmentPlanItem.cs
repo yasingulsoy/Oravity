@@ -20,8 +20,8 @@ public class TreatmentPlanItem : BaseEntity
     public long PlanId { get; private set; }
     public TreatmentPlan Plan { get; private set; } = default!;
 
-    /// <summary>treatments tablosundaki tedavi tanımı FK. Treatments modülü ayrıca implement edilecek.</summary>
     public long TreatmentId { get; private set; }
+    public Treatment? Treatment { get; private set; }
 
     // ── Tedavi kapsamı ────────────────────────────────────────────────────
     /// <summary>FDI diş numarası (örn. "16", "21"). Diş dışı işlemlerde null.</summary>
@@ -38,8 +38,14 @@ public class TreatmentPlanItem : BaseEntity
     public decimal UnitPrice { get; private set; }
     /// <summary>0–100 arası indirim yüzdesi.</summary>
     public decimal DiscountRate { get; private set; }
-    /// <summary>Hesaplanan nihai fiyat: UnitPrice * (1 − DiscountRate / 100)</summary>
+    /// <summary>Hesaplanan net fiyat (KDV hariç): UnitPrice * (1 − DiscountRate / 100)</summary>
     public decimal FinalPrice { get; private set; }
+    /// <summary>Kalem oluşturulurken Treatment.KdvRate'den snapshot alınır.</summary>
+    public decimal KdvRate { get; private set; }
+    /// <summary>KDV tutarı: FinalPrice * KdvRate / 100</summary>
+    public decimal KdvAmount { get; private set; }
+    /// <summary>KDV dahil toplam: FinalPrice + KdvAmount</summary>
+    public decimal TotalAmount { get; private set; }
 
     // ── Döviz ─────────────────────────────────────────────────────────────
     /// <summary>Fiyat para birimi (örn. "EUR", "USD", "TRY").</summary>
@@ -69,6 +75,7 @@ public class TreatmentPlanItem : BaseEntity
         long planId,
         long treatmentId,
         decimal unitPrice,
+        decimal kdvRate = 0,
         decimal discountRate = 0,
         string? toothNumber = null,
         string? toothSurfaces = null,
@@ -80,11 +87,15 @@ public class TreatmentPlanItem : BaseEntity
     {
         if (discountRate < 0 || discountRate > 100)
             throw new ArgumentOutOfRangeException(nameof(discountRate), "İndirim oranı 0–100 arasında olmalıdır.");
+        if (kdvRate < 0 || kdvRate > 100)
+            throw new ArgumentOutOfRangeException(nameof(kdvRate), "KDV oranı 0–100 arasında olmalıdır.");
         if (priceExchangeRate <= 0)
             throw new ArgumentOutOfRangeException(nameof(priceExchangeRate), "Döviz kuru sıfırdan büyük olmalıdır.");
 
-        var finalPrice    = ComputeFinalPrice(unitPrice, discountRate);
-        var priceBaseAmt  = priceCurrency == "TRY"
+        var finalPrice   = ComputeFinalPrice(unitPrice, discountRate);
+        var kdvAmount    = Math.Round(finalPrice * kdvRate / 100, 2);
+        var totalAmount  = finalPrice + kdvAmount;
+        var priceBaseAmt = priceCurrency == "TRY"
             ? finalPrice
             : Math.Round(finalPrice * priceExchangeRate, 4);
 
@@ -99,6 +110,9 @@ public class TreatmentPlanItem : BaseEntity
             UnitPrice         = unitPrice,
             DiscountRate      = discountRate,
             FinalPrice        = finalPrice,
+            KdvRate           = kdvRate,
+            KdvAmount         = kdvAmount,
+            TotalAmount       = totalAmount,
             DoctorId          = doctorId,
             Notes             = notes,
             PriceCurrency     = priceCurrency,
@@ -148,9 +162,11 @@ public class TreatmentPlanItem : BaseEntity
         if (discountRate < 0 || discountRate > 100)
             throw new ArgumentOutOfRangeException(nameof(discountRate));
 
-        UnitPrice    = unitPrice;
+        UnitPrice   = unitPrice;
         DiscountRate = discountRate;
-        FinalPrice   = ComputeFinalPrice(unitPrice, discountRate);
+        FinalPrice  = ComputeFinalPrice(unitPrice, discountRate);
+        KdvAmount   = Math.Round(FinalPrice * KdvRate / 100, 2);
+        TotalAmount = FinalPrice + KdvAmount;
         MarkUpdated();
     }
 

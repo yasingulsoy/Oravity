@@ -37,14 +37,16 @@ public class TreatmentMappingsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetMappings(Guid treatmentId)
+    public async Task<IActionResult> GetMappings(Guid treatmentId, CancellationToken cancellationToken)
     {
-        var companyId = _tenant.CompanyId
+        var companyId = await TenantCompanyResolver.ResolveCompanyIdAsync(_tenant, _db, cancellationToken)
             ?? throw new ForbiddenException("Şirket bağlamı gereklidir.");
 
         var treatment = await _db.Treatments
             .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.PublicId == treatmentId && t.CompanyId == companyId)
+            .FirstOrDefaultAsync(t => t.PublicId == treatmentId
+                                   && (t.CompanyId == null || t.CompanyId == companyId),
+                                  cancellationToken)
             ?? throw new NotFoundException("Tedavi bulunamadı.");
 
         var mappings = await _db.TreatmentMappings
@@ -52,9 +54,28 @@ public class TreatmentMappingsController : ControllerBase
             .Include(m => m.InternalTreatment)
             .Include(m => m.ReferenceList)
             .Where(m => m.InternalTreatmentId == treatment.Id)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
-        return Ok(mappings.Select(PricingMappings.ToResponse).ToList());
+        // Batch-fetch reference item names for all mappings
+        var refItemNames = new Dictionary<(long listId, string code), string?>();
+        foreach (var m in mappings)
+        {
+            var key = (listId: m.ReferenceListId, code: m.ReferenceCode);
+            if (!refItemNames.ContainsKey(key))
+            {
+                refItemNames[key] = await _db.ReferencePriceItems
+                    .AsNoTracking()
+                    .Where(rpi => rpi.ListId == key.listId && rpi.TreatmentCode == key.code)
+                    .Select(rpi => rpi.TreatmentName)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+        }
+
+        var response = mappings
+            .Select(m => PricingMappings.ToResponse(m, refItemNames.GetValueOrDefault((m.ReferenceListId, m.ReferenceCode))))
+            .ToList();
+
+        return Ok(response);
     }
 
     /// <summary>Yeni tedavi eşleştirmesi oluşturur.</summary>
@@ -86,20 +107,21 @@ public class TreatmentMappingsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> DeleteMapping(Guid treatmentId, long mappingId)
+    public async Task<IActionResult> DeleteMapping(Guid treatmentId, long mappingId, CancellationToken cancellationToken)
     {
-        var companyId = _tenant.CompanyId
+        var companyId = await TenantCompanyResolver.ResolveCompanyIdAsync(_tenant, _db, cancellationToken)
             ?? throw new ForbiddenException("Şirket bağlamı gereklidir.");
 
         var mapping = await _db.TreatmentMappings
             .Include(m => m.InternalTreatment)
             .FirstOrDefaultAsync(m => m.Id == mappingId
-                                   && m.InternalTreatment.CompanyId == companyId
-                                   && m.InternalTreatment.PublicId == treatmentId)
+                                   && (m.InternalTreatment.CompanyId == null || m.InternalTreatment.CompanyId == companyId)
+                                   && m.InternalTreatment.PublicId == treatmentId,
+                                  cancellationToken)
             ?? throw new NotFoundException("Eşleştirme bulunamadı.");
 
         _db.TreatmentMappings.Remove(mapping);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(cancellationToken);
 
         return NoContent();
     }

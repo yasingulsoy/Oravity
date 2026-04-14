@@ -4,6 +4,7 @@ using Oravity.Core.Modules.Core.Pricing.Application;
 using Oravity.Infrastructure.Database;
 using Oravity.SharedKernel.Exceptions;
 using Oravity.SharedKernel.Interfaces;
+using static Oravity.Core.Modules.Core.Pricing.Application.TenantCompanyResolver;
 
 namespace Oravity.Core.Modules.Core.Pricing.Application.Queries;
 
@@ -27,7 +28,7 @@ public class GetPricingRulesQueryHandler
         GetPricingRulesQuery request,
         CancellationToken cancellationToken)
     {
-        var companyId = _tenant.CompanyId
+        var companyId = await ResolveCompanyIdAsync(_tenant, _db, cancellationToken)
             ?? throw new ForbiddenException("Fiyatlandırma kurallarını listelemek için şirket bağlamı gereklidir.");
 
         var query = _db.PricingRules

@@ -8,7 +8,7 @@ using Oravity.SharedKernel.Interfaces;
 namespace Oravity.Core.Modules.Treatment.Application.Queries;
 
 public record GetTreatmentsQuery(
-    long  CompanyId,
+    long? CompanyId,
     Guid? CategoryPublicId = null,
     string? Search        = null,
     bool   ActiveOnly     = true,
@@ -32,13 +32,13 @@ public class GetTreatmentsQueryHandler
         GetTreatmentsQuery request,
         CancellationToken cancellationToken)
     {
-        if (!_tenant.IsPlatformAdmin && _tenant.CompanyId != request.CompanyId)
+        if (!_tenant.IsPlatformAdmin && request.CompanyId.HasValue && _tenant.CompanyId != request.CompanyId)
             throw new ForbiddenException("Bu şirketin tedavilerine erişim yetkisi yok.");
 
         var query = _db.Treatments
             .AsNoTracking()
             .Include(t => t.Category)
-            .Where(t => t.CompanyId == null || t.CompanyId == request.CompanyId);
+            .Where(t => t.CompanyId == null || (request.CompanyId != null && t.CompanyId == request.CompanyId));
 
         if (request.ActiveOnly)
             query = query.Where(t => t.IsActive);

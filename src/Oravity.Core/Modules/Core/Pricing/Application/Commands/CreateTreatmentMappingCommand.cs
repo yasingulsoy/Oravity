@@ -32,12 +32,12 @@ public class CreateTreatmentMappingCommandHandler
         CreateTreatmentMappingCommand request,
         CancellationToken cancellationToken)
     {
-        var companyId = _tenant.CompanyId
+        var companyId = await TenantCompanyResolver.ResolveCompanyIdAsync(_tenant, _db, cancellationToken)
             ?? throw new ForbiddenException("Eşleştirme oluşturmak için şirket bağlamı gereklidir.");
 
         var treatment = await _db.Treatments
             .FirstOrDefaultAsync(t => t.PublicId == request.TreatmentPublicId
-                                   && t.CompanyId == companyId, cancellationToken)
+                                   && (t.CompanyId == null || t.CompanyId == companyId), cancellationToken)
             ?? throw new NotFoundException("Tedavi bulunamadı.");
 
         var refList = await _db.ReferencePriceLists

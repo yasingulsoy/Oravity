@@ -25,6 +25,15 @@ public class ReferencePriceItem : BaseEntity
 
     private ReferencePriceItem() { }
 
+    public void SetPrice(decimal price, decimal priceKdv, string? currency = null)
+    {
+        Price    = price;
+        PriceKdv = priceKdv;
+        if (!string.IsNullOrWhiteSpace(currency))
+            Currency = currency.ToUpperInvariant();
+        MarkUpdated();
+    }
+
     public static ReferencePriceItem Create(
         long listId,
         string treatmentCode,

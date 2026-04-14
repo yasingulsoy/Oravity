@@ -840,10 +840,15 @@ public class AppDbContext : DbContext
             e.Property(x => x.FinalPrice).HasColumnType("numeric(12,2)").IsRequired();
             e.Property(x => x.Notes).HasColumnType("text");
 
-            // TreatmentId: treatments tablosu henüz implement edilmedi — FK constraint yok
             e.HasIndex(x => x.PlanId).HasDatabaseName("ix_treatment_plan_items_plan");
             e.HasIndex(x => x.TreatmentId).HasDatabaseName("ix_treatment_plan_items_treatment");
             e.HasIndex(x => x.Status).HasDatabaseName("ix_treatment_plan_items_status");
+
+            e.HasOne(x => x.Treatment)
+             .WithMany()
+             .HasForeignKey(x => x.TreatmentId)
+             .IsRequired()
+             .OnDelete(DeleteBehavior.Restrict);
 
             e.HasOne(x => x.Doctor)
              .WithMany()

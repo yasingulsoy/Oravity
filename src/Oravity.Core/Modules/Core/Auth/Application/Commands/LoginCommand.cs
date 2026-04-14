@@ -53,7 +53,40 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponse>
         // Başarılı giriş
         _db.LoginAttempts.Add(LoginAttempt.Create(email, request.IpAddress, true));
 
-        var accessToken = _jwtService.GenerateAccessToken(user);
+        // JWT'ye branch/company/role ekle — TenantMiddleware bu claim'leri okur
+        long? primaryBranchId = null;
+        long? primaryCompanyId = null;
+        int? primaryRoleLevel = null;
+
+        if (!user.IsPlatformAdmin)
+        {
+            var assignment = await _db.UserRoleAssignments
+                .AsNoTracking()
+                .Where(a => a.UserId == user.Id && a.IsActive)
+                .OrderByDescending(a => a.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (assignment is not null)
+            {
+                primaryBranchId  = assignment.BranchId;
+                primaryCompanyId = assignment.CompanyId;
+
+                // CompanyId null ama BranchId varsa → branch'ten çöz
+                if (primaryCompanyId == null && primaryBranchId.HasValue)
+                {
+                    primaryCompanyId = await _db.Branches
+                        .AsNoTracking()
+                        .Where(b => b.Id == primaryBranchId.Value)
+                        .Select(b => (long?)b.CompanyId)
+                        .FirstOrDefaultAsync(cancellationToken);
+                }
+
+                // BranchId varsa şube personeli (4), yoksa şirket yöneticisi (2)
+                primaryRoleLevel = assignment.BranchId.HasValue ? 4 : 2;
+            }
+        }
+
+        var accessToken = _jwtService.GenerateAccessToken(user, primaryBranchId, primaryCompanyId, primaryRoleLevel);
         var refreshToken = _jwtService.GenerateRefreshToken();
         var tokenHash = _jwtService.HashToken(refreshToken);
 

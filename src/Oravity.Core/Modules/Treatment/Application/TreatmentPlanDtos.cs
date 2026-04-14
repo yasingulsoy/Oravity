@@ -7,21 +7,27 @@ namespace Oravity.Core.Modules.Treatment.Application;
 // ─── Response DTO'lar ──────────────────────────────────────────────────────
 
 public record TreatmentPlanItemResponse(
-    Guid PublicId,
-    long PlanId,
-    long TreatmentId,
+    Guid    PublicId,
+    long    PlanId,
+    long    TreatmentId,
+    Guid?   TreatmentPublicId,
+    string? TreatmentCode,
+    string? TreatmentName,
     string? ToothNumber,
     string? ToothSurfaces,
     string? BodyRegionCode,
     TreatmentItemStatus Status,
-    string StatusLabel,
+    string  StatusLabel,
     decimal UnitPrice,
     decimal DiscountRate,
     decimal FinalPrice,
-    long? DoctorId,
+    decimal KdvRate,
+    decimal KdvAmount,
+    decimal TotalAmount,
+    long?   DoctorId,
     string? Notes,
     DateTime? CompletedAt,
-    DateTime CreatedAt
+    DateTime  CreatedAt
 );
 
 public record TreatmentPlanResponse(
@@ -45,6 +51,9 @@ public static class TreatmentPlanMappings
         i.PublicId,
         i.PlanId,
         i.TreatmentId,
+        i.Treatment?.PublicId,
+        i.Treatment?.Code,
+        i.Treatment?.Name,
         i.ToothNumber,
         i.ToothSurfaces,
         i.BodyRegionCode,
@@ -53,6 +62,9 @@ public static class TreatmentPlanMappings
         i.UnitPrice,
         i.DiscountRate,
         i.FinalPrice,
+        i.KdvRate,
+        i.KdvAmount,
+        i.TotalAmount,
         i.DoctorId,
         i.Notes,
         i.CompletedAt,

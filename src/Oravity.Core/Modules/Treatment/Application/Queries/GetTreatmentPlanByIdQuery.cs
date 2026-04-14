@@ -29,6 +29,7 @@ public class GetTreatmentPlanByIdQueryHandler
         var query = _db.TreatmentPlans
             .AsNoTracking()
             .Include(p => p.Items.Where(i => !i.IsDeleted))
+                .ThenInclude(i => i.Treatment)
             .Where(p => p.PublicId == request.PublicId);
 
         query = ApplyTenantFilter(query);

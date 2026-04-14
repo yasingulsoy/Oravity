@@ -4,6 +4,7 @@ using Oravity.Core.Modules.Core.Pricing.Application;
 using Oravity.Infrastructure.Database;
 using Oravity.SharedKernel.Exceptions;
 using Oravity.SharedKernel.Interfaces;
+using static Oravity.Core.Modules.Core.Pricing.Application.TenantCompanyResolver;
 
 namespace Oravity.Core.Modules.Core.Pricing.Application.Commands;
 
@@ -39,7 +40,7 @@ public class UpdatePricingRuleCommandHandler
         UpdatePricingRuleCommand request,
         CancellationToken cancellationToken)
     {
-        var companyId = _tenant.CompanyId
+        var companyId = await ResolveCompanyIdAsync(_tenant, _db, cancellationToken)
             ?? throw new ForbiddenException("Fiyatlandırma kuralı güncellemek için şirket bağlamı gereklidir.");
 
         var rule = await _db.PricingRules

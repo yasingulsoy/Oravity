@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Oravity.Infrastructure.Database;
@@ -11,9 +12,11 @@ using Oravity.Infrastructure.Database;
 namespace Oravity.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260413204433_AddTreatmentPlanItemTreatmentFk")]
+    partial class AddTreatmentPlanItemTreatmentFk
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -450,9 +453,6 @@ namespace Oravity.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
-
-                    b.Property<decimal>("PricingMultiplier")
-                        .HasColumnType("numeric");
 
                     b.Property<Guid>("PublicId")
                         .ValueGeneratedOnAdd()
@@ -4814,12 +4814,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
-                    b.Property<decimal>("KdvAmount")
-                        .HasColumnType("numeric");
-
-                    b.Property<decimal>("KdvRate")
-                        .HasColumnType("numeric");
-
                     b.Property<string>("Notes")
                         .HasColumnType("text");
 
@@ -4869,9 +4863,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Property<string>("ToothSurfaces")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
-
-                    b.Property<decimal>("TotalAmount")
-                        .HasColumnType("numeric");
 
                     b.Property<long>("TreatmentId")
                         .HasColumnType("bigint");

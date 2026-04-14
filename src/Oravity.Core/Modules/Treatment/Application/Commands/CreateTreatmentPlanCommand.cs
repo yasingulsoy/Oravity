@@ -11,6 +11,7 @@ namespace Oravity.Core.Modules.Treatment.Application.Commands;
 
 public record CreateTreatmentPlanCommand(
     long PatientId,
+    long BranchId,
     long DoctorId,
     string Name,
     string? Notes
@@ -37,12 +38,9 @@ public class CreateTreatmentPlanCommandHandler
         CreateTreatmentPlanCommand request,
         CancellationToken cancellationToken)
     {
-        var branchId = _tenant.BranchId
-            ?? throw new ForbiddenException("Tedavi planı oluşturmak için şube bağlamı gereklidir.");
-
         var plan = PlanEntity.Create(
             patientId: request.PatientId,
-            branchId:  branchId,
+            branchId:  request.BranchId,
             doctorId:  request.DoctorId,
             name:      request.Name,
             notes:     request.Notes);

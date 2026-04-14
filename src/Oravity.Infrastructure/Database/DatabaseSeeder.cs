@@ -117,6 +117,7 @@ public class DatabaseSeeder
                 "appointment.view", "appointment.create", "appointment.edit", "appointment.cancel",
                 "visit.view", "visit.create", "visit.update",
                 "protocol.view", "protocol.create", "protocol.update",
+                "treatment.view",
                 "treatment_plan.view", "treatment_plan.create", "treatment_plan.edit", "treatment_plan.complete",
                 "note.write_patient", "note.delete_patient",
                 "anamnesis.edit",
@@ -168,6 +169,7 @@ public class DatabaseSeeder
                 "appointment.cancel", "appointment.delete", "appointment.create_overlap",
                 "visit.view", "visit.create", "visit.update",
                 "protocol.view", "protocol.create", "protocol.update",
+                "treatment.view",
                 "treatment_plan.view", "treatment_plan.create", "treatment_plan.edit",
                 "treatment_plan.complete", "treatment_plan.delete_planned", "treatment_plan.delete_completed",
                 "payment.view", "payment.create", "payment.delete", "payment.refund",
@@ -285,6 +287,10 @@ public class DatabaseSeeder
             ("protocol",         "view",             false),
             ("protocol",         "create",           false),
             ("protocol",         "update",           false),
+
+            // Treatment Catalog
+            ("treatment",        "view",             false),
+            ("treatment",        "manage",           false),
 
             // Treatment Plan
             ("treatment_plan",   "view",             false),
@@ -950,40 +956,38 @@ public class DatabaseSeeder
     // ── Treatment Catalog (Global) ─────────────────────────────────────────────
     private async Task SeedTreatmentCatalogAsync(CancellationToken ct)
     {
-        if (await _db.TreatmentCategories.AnyAsync(c => c.CompanyId == null, ct))
-        {
-            _logger.LogInformation("Global tedavi kataloğu zaten mevcut, atlanıyor.");
-            return;
-        }
-
         var catalog = GetDentalTreatmentCatalog();
 
-        foreach (var cat in catalog)
+        // Kategori + tedavi seed (ilk kurulumda)
+        if (!await _db.TreatmentCategories.AnyAsync(c => c.CompanyId == null, ct))
         {
-            var category = TreatmentCategory.Create(null, cat.Name, null, cat.SortOrder);
-            await _db.TreatmentCategories.AddAsync(category, ct);
-            await _db.SaveChangesAsync(ct);
-
-            foreach (var t in cat.Treatments)
+            foreach (var cat in catalog)
             {
-                var treatment = Treatment.Create(
-                    companyId:               null,
-                    code:                    t.Code,
-                    name:                    t.Name,
-                    categoryId:              category.Id,
-                    kdvRate:                 t.KdvRate,
-                    requiresSurfaceSelection: t.RequiresSurface,
-                    requiresLaboratory:      t.RequiresLab,
-                    allowedScopes:           null,
-                    tags:                    null,
-                    sutCode:                 t.SutCode);
-                await _db.Treatments.AddAsync(treatment, ct);
-            }
+                var category = TreatmentCategory.Create(null, cat.Name, null, cat.SortOrder);
+                await _db.TreatmentCategories.AddAsync(category, ct);
+                await _db.SaveChangesAsync(ct);
 
-            await _db.SaveChangesAsync(ct);
+                foreach (var t in cat.Treatments)
+                {
+                    var treatment = Treatment.Create(
+                        companyId:                null,
+                        code:                     t.Code,
+                        name:                     t.Name,
+                        categoryId:               category.Id,
+                        kdvRate:                  t.KdvRate,
+                        requiresSurfaceSelection: t.RequiresSurface,
+                        requiresLaboratory:       t.RequiresLab,
+                        allowedScopes:            null,
+                        tags:                     null,
+                        sutCode:                  t.SutCode);
+                    await _db.Treatments.AddAsync(treatment, ct);
+                }
+
+                await _db.SaveChangesAsync(ct);
+            }
         }
 
-        // TDB 2026 referans fiyat listesi
+        // TDB 2026 referans fiyat listesi (her seferinde kontrol et)
         var tdbList = await _db.ReferencePriceLists
             .FirstOrDefaultAsync(l => l.Code == "TDB_2026", ct);
 
@@ -994,26 +998,32 @@ public class DatabaseSeeder
             await _db.SaveChangesAsync(ct);
         }
 
-        // TDB fiyatlarını reference_price_items olarak kaydet
-        var allTreatments = await _db.Treatments
-            .Where(t => t.CompanyId == null)
-            .ToListAsync(ct);
-
-        var allSeeds = catalog.SelectMany(c => c.Treatments).ToDictionary(t => t.Code);
+        // ReferencePriceItem + TreatmentMapping — her seferinde eksikleri tamamla
+        var allTreatments = await _db.Treatments.Where(t => t.CompanyId == null).ToListAsync(ct);
+        var allSeeds      = catalog.SelectMany(c => c.Treatments).ToDictionary(t => t.Code);
+        var changed       = false;
 
         foreach (var tr in allTreatments)
         {
             if (!allSeeds.TryGetValue(tr.Code, out var seed)) continue;
-            var alreadyExists = await _db.ReferencePriceItems
-                .AnyAsync(i => i.ListId == tdbList.Id && i.TreatmentCode == tr.Code, ct);
-            if (alreadyExists) continue;
 
-            var item = ReferencePriceItem.Create(tdbList.Id, tr.Code, tr.Name, seed.TdbPrice, 0m, "TRY", null, null);
-            await _db.ReferencePriceItems.AddAsync(item, ct);
+            if (!await _db.ReferencePriceItems.AnyAsync(i => i.ListId == tdbList.Id && i.TreatmentCode == tr.Code, ct))
+            {
+                await _db.ReferencePriceItems.AddAsync(
+                    ReferencePriceItem.Create(tdbList.Id, tr.Code, tr.Name, seed.TdbPrice, 0m, "TRY", null, null), ct);
+                changed = true;
+            }
+
+            if (!await _db.TreatmentMappings.AnyAsync(m => m.InternalTreatmentId == tr.Id && m.ReferenceListId == tdbList.Id, ct))
+            {
+                await _db.TreatmentMappings.AddAsync(
+                    TreatmentMapping.Create(tr.Id, tdbList.Id, tr.Code, "exact", null), ct);
+                changed = true;
+            }
         }
 
-        await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("Global tedavi kataloğu seed edildi ({Count} kategori).", catalog.Length);
+        if (changed) await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("Tedavi kataloğu seed tamamlandı ({Count} kategori).", catalog.Length);
     }
 
     private static CategorySeed[] GetDentalTreatmentCatalog() =>

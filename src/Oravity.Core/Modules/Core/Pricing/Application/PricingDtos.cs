@@ -28,6 +28,7 @@ public record TreatmentMappingResponse(
     long    ReferenceListId,
     string  ReferenceListCode,
     string  ReferenceCode,
+    string? ReferenceItemName,
     string? MappingQuality,
     string? Notes
 );
@@ -40,6 +41,38 @@ public record CalculatePriceResponse(
     string  Currency
 );
 
+/// <summary>
+/// Plan builder için tedavi fiyatı: kural motoru tarafından hesaplanır.
+/// </summary>
+public record TreatmentPriceResponse(
+    decimal  UnitPrice,
+    decimal  ReferencePrice,
+    string   Currency,
+    string?  AppliedRuleName,
+    string   Strategy        // "Rule" | "ReferencePrice" | "NoPriceConfigured"
+);
+
+public record ReferencePriceListResponse(
+    long   Id,
+    string Code,
+    string Name,
+    string SourceType,
+    int    Year,
+    bool   IsActive,
+    int    ItemCount
+);
+
+public record ReferencePriceItemResponse(
+    long     Id,
+    string   TreatmentCode,
+    string   TreatmentName,
+    decimal  Price,
+    decimal  PriceKdv,
+    string   Currency,
+    DateTime? ValidFrom,
+    DateTime? ValidUntil
+);
+
 // ─── Mappings ──────────────────────────────────────────────────────────────
 
 public static class PricingMappings
@@ -49,7 +82,7 @@ public static class PricingMappings
                r.IncludeFilters, r.ExcludeFilters, r.Formula, r.OutputCurrency,
                r.ValidFrom, r.ValidUntil, r.IsActive, r.StopProcessing);
 
-    public static TreatmentMappingResponse ToResponse(TreatmentMapping m)
+    public static TreatmentMappingResponse ToResponse(TreatmentMapping m, string? referenceItemName = null)
         => new(m.Id,
                m.InternalTreatmentId,
                m.InternalTreatment?.Code ?? string.Empty,
@@ -57,6 +90,7 @@ public static class PricingMappings
                m.ReferenceListId,
                m.ReferenceList?.Code ?? string.Empty,
                m.ReferenceCode,
+               referenceItemName,
                m.MappingQuality,
                m.Notes);
 }
