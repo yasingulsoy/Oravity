@@ -29,18 +29,50 @@ PatientRecords, Patients, Payments, **Pricing**, PublicBooking,
 PublicSurvey, Reports, **Security** (2FA), Surveys, TreatmentMappings,
 TreatmentPlans, **Treatments**
 
-## DB Migration Durumu (son: 20260405)
+## DB Migration Durumu (son: 20260414 — AddBranchPricingMultiplier)
 Oluşturulan tablolar (her şey migrations ile yönetiliyor):
 - Core: companies, branches, users, permissions, role_templates, ...
 - Klinik: patients, appointments, treatment_plans, treatment_plan_items
-- Yeni (04/2026): treatments, treatment_categories, treatment_mappings,
-  pricing_rules, reference_price_lists, reference_price_items,
-  user_2fa_settings, trusted_devices, branch_security_policies, backup_logs
+- Fiyatlandırma (04/2026): treatments, treatment_categories, treatment_mappings,
+  pricing_rules, reference_price_lists, reference_price_items
+- Güvenlik (04/2026): user_2fa_settings, trusted_devices, branch_security_policies, backup_logs
+- branch.pricing_multiplier (04/2026): MULTI formül değişkeni için
+
+## Fiyatlandırma Sistemi
+- **PricingEngine**: kural motoru, `RuleEvalContext` ile çalışır
+- **FormulaEngine**: `TDB`, `CARI`, `SUT`, `ISAK`, `MULTI` değişkenleri + `MIN()`, `MAX()` fonksiyonları
+- **MULTI**: `Branch.PricingMultiplier` — şube bazlı fiyat katsayısı (ör: Bodrum=1.10)
+- **TenantCompanyResolver**: branch-level kullanıcılar için CompanyId çözümleme
+  - JWT.CompanyId → BranchId→Branch.CompanyId → UserRoleAssignment sıralaması
+  - `_tenant.CompanyId ?? throw` KULLANMA, her zaman bu resolver'ı kullan
+- **TreatmentMapping**: iç tedavi → referans liste kodu eşleştirmesi
+  - Pricing engine önce mapping'i bulur, sonra o listedeki fiyatı çeker
+  - Global kategoriler `CompanyId == null`, category sorgusu her zaman `(c.CompanyId == null || c.CompanyId == companyId)`
+
+## Frontend Sayfaları (React — /src/Oravity.Web/src/)
+- `/dashboard` — DashboardPage
+- `/doctor` — DoctorDashboardPage
+- `/muayene/:id` — ExaminationPage (muayene + tedavi plan builder)
+- `/patients` — PatientListPage
+- `/patients/:id` — PatientDetailPage
+- `/catalog` — TreatmentCatalogPage (tedavi kataloğu + referans eşleştirme)
+- `/treatments` — TreatmentPlansPage (hasta tedavi planları listesi)
+- `/pricing` — PricingPage (referans fiyatlar, kurallar, şube ayarları)
+- `/finance` — FinancePage
+- `/appointments` — AppointmentCalendarPage
+
+## API Endpoints (Yeni/Önemli)
+- `GET /api/treatment-categories` — hiyerarşik kategori listesi (ParentPublicId ile)
+- `GET /api/treatments/{id}/mappings` — tedavinin referans eşleştirmeleri
+- `POST /api/treatments/{id}/mappings` — eşleştirme ekle
+- `DELETE /api/treatments/{id}/mappings/{mappingId}` — eşleştirme sil
+- `GET /api/pricing/treatment/{id}/price?branchId=&institutionId=&isOss=` — fiyat hesapla
+- `GET/PATCH /api/pricing/branches[/{id}/multiplier]` — şube MULTI ayarı
+- `GET/PUT /api/pricing/reference-lists[/{id}/items/{code}]` — referans listeler
 
 ## Henüz Yapılmayan / Eksik Alanlar
 > git log ile doğrula, bu liste stalest olabilir
 
-- [ ] Frontend (React) — büyük çoğunluğu yazılmamış
 - [ ] Lab iş takibi modülü (SPEC §LABORATUVAR)
 - [ ] Randevu takvimi UI
 - [ ] Hasta portalı frontend
@@ -51,6 +83,7 @@ Oluşturulan tablolar (her şey migrations ile yönetiliyor):
 - [ ] Push notification / WebSocket event'leri
 - [ ] Fatura / ödeme PDF
 - [ ] Çoklu dil frontend entegrasyonu
+- [ ] Treatment catalog: kategori CRUD UI (şu an sadece listeleme var)
 
 ## Kayıtlı Servisler (DI)
 FormulaEngine, PricingEngine → Singleton
