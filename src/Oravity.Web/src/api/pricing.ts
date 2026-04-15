@@ -69,6 +69,14 @@ export interface BranchPricing {
   pricingMultiplier: number;
 }
 
+export interface TreatmentPriceResponse {
+  unitPrice: number;
+  referencePrice: number;
+  currency: string;
+  appliedRuleName: string | null;
+  strategy: string;
+}
+
 export const pricingApi = {
   // Reference Lists
   getReferenceLists: () =>
@@ -88,6 +96,12 @@ export const pricingApi = {
   }) =>
     apiClient.put<ReferencePriceItem>(`/pricing/reference-lists/${listId}/items/${code}`, data),
 
+  deleteReferenceItem: (listId: number, code: string) =>
+    apiClient.delete(`/pricing/reference-lists/${listId}/items/${code}`),
+
+  bulkUpsertReferenceItems: (listId: number, items: { code: string; name: string; price: number; priceKdv?: number; currency?: string }[]) =>
+    apiClient.post<{ count: number }>(`/pricing/reference-lists/${listId}/items/bulk`, { items }),
+
   // Rules
   getRules: (activeOnly = false) =>
     apiClient.get<PricingRule[]>('/pricing/rules', { params: { activeOnly } }),
@@ -97,6 +111,12 @@ export const pricingApi = {
 
   updateRule: (publicId: string, data: UpdatePricingRulePayload) =>
     apiClient.put<PricingRule>(`/pricing/rules/${publicId}`, data),
+
+  deleteRule: (publicId: string) =>
+    apiClient.delete(`/pricing/rules/${publicId}`),
+
+  getTreatmentPrice: (treatmentPublicId: string, params?: { branchId?: number; institutionId?: number; isOss?: boolean }) =>
+    apiClient.get<TreatmentPriceResponse>(`/pricing/treatment/${treatmentPublicId}/price`, { params }),
 
   // Branch pricing
   getBranchPricing: () =>
