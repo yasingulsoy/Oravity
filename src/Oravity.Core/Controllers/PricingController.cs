@@ -5,6 +5,7 @@ using Oravity.Core.Filters;
 using Oravity.Core.Modules.Core.Pricing.Application;
 using Oravity.Core.Modules.Core.Pricing.Application.Commands;
 using Oravity.Core.Modules.Core.Pricing.Application.Queries;
+using System.Linq;
 
 namespace Oravity.Core.Controllers;
 
@@ -181,6 +182,42 @@ public class PricingController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Fiyatlandırma kuralını siler.</summary>
+    [HttpDelete("api/pricing/rules/{publicId:guid}")]
+    [RequirePermission("pricing:edit")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteRule(Guid publicId)
+    {
+        await _mediator.Send(new DeletePricingRuleCommand(publicId));
+        return NoContent();
+    }
+
+    /// <summary>Referans fiyat kalemini siler.</summary>
+    [HttpDelete("api/pricing/reference-lists/{listId:long}/items/{code}")]
+    [RequirePermission("pricing:edit")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteReferenceItem(long listId, string code)
+    {
+        await _mediator.Send(new DeleteReferencePriceItemCommand(listId, code));
+        return NoContent();
+    }
+
+    /// <summary>Referans fiyat listesine toplu kalem ekler/günceller (CSV/Excel import).</summary>
+    [HttpPost("api/pricing/reference-lists/{listId:long}/items/bulk")]
+    [RequirePermission("pricing:edit")]
+    [ProducesResponseType(typeof(BulkUpsertResultResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> BulkUpsertReferenceItems(
+        long listId,
+        [FromBody] BulkUpsertRequest request)
+    {
+        var count = await _mediator.Send(new BulkUpsertReferencePriceItemsCommand(
+            listId,
+            request.Items.Select(i => new BulkUpsertItem(i.Code, i.Name, i.Price, i.PriceKdv, i.Currency ?? "TRY")).ToArray()));
+        return Ok(new BulkUpsertResultResponse(count));
+    }
+
     /// <summary>Tedavi için fiyat hesaplar (manuel bağlam).</summary>
     [HttpPost("api/pricing/calculate")]
     [RequirePermission("pricing:view")]
@@ -258,3 +295,15 @@ public record CalculatePriceRequest(
     decimal? CampaignDiscountRate   = null,
     bool     IsInstitutionAgreement = false
 );
+
+public record BulkUpsertItemRequest(
+    string  Code,
+    string  Name,
+    decimal Price,
+    decimal PriceKdv  = 0,
+    string? Currency  = "TRY"
+);
+
+public record BulkUpsertRequest(BulkUpsertItemRequest[] Items);
+
+public record BulkUpsertResultResponse(int Count);
