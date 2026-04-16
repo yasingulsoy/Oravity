@@ -26,8 +26,8 @@ Oravity.Web            — React/TypeScript frontend (src/Oravity.Web/)
 Appointments, Audit, Auth, BookingRequests, **Campaigns**, Complaints, DentalChart,
 EInvoice, Health, Localization, Notifications, PatientPortal,
 PatientRecords, Patients, Payments, **Pricing**, PublicBooking,
-PublicSurvey, Reports, **Security** (2FA), Surveys, TreatmentMappings,
-TreatmentPlans, **Treatments**
+PublicSurvey, Reports, **Security** (2FA), **Settings** (şirket/şube/kullanıcı/rol/güvenlik),
+Surveys, TreatmentMappings, TreatmentPlans, **Treatments**
 
 ## DB Migration Durumu (son: 20260414 — AddBranchPricingMultiplier)
 Oluşturulan tablolar (her şey migrations ile yönetiliyor):
@@ -66,6 +66,7 @@ Oluşturulan tablolar (her şey migrations ile yönetiliyor):
 - `/pricing` — PricingPage (referans fiyatlar, kurallar, kampanyalar, eşleştirmeler, şube ayarları, fiyat testi)
 - `/finance` — FinancePage
 - `/appointments` — AppointmentCalendarPage
+- `/settings` — SettingsPage (şirket, şubeler, kullanıcılar, roller & izinler, güvenlik)
 
 ## API Endpoints (Yeni/Önemli)
 - `GET /api/treatment-categories` — hiyerarşik kategori listesi (ParentPublicId ile)
@@ -76,6 +77,15 @@ Oluşturulan tablolar (her şey migrations ile yönetiliyor):
 - `GET/PATCH /api/pricing/branches[/{id}/multiplier]` — şube MULTI ayarı
 - `GET/PUT /api/pricing/reference-lists[/{id}/items/{code}]` — referans listeler
 - `GET/POST/PUT/DELETE /api/campaigns` — kampanya CRUD
+- `GET/PUT /api/settings/company` — şirket bilgileri
+- `GET/POST/PUT/DELETE /api/settings/branches` — şube CRUD (tam: listeleme, detay, oluştur, güncelle, sil)
+- `GET /api/settings/branches/{id}` — şube detay (kullanıcılar dahil)
+- `GET /api/settings/branches/{id}/users` — şubeye atanmış kullanıcılar
+- `GET/POST/PUT/DELETE /api/settings/users` — kullanıcı CRUD (tam: listeleme, detay, oluştur, güncelle, sil)
+- `POST/DELETE /api/settings/users/{id}/roles` — rol atama/kaldırma
+- `GET /api/settings/roles` — rol şablonları + izinler
+- `GET /api/settings/permissions` — tüm izin listesi
+- `GET/PUT /api/settings/branches/{id}/security-policy` — şube güvenlik politikası
 
 ## Henüz Yapılmayan / Eksik Alanlar
 > git log ile doğrula, bu liste stalest olabilir

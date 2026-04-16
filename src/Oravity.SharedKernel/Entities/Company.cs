@@ -27,6 +27,7 @@ public class Company : BaseEntity
         };
     }
 
+    public void SetName(string name) => Name = name;
     public void SetSubscription(DateTime endsAt) => SubscriptionEndsAt = endsAt;
     public void SetActive(bool value) => IsActive = value;
     public void SetLanguage(string code) => DefaultLanguageCode = code;

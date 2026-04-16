@@ -60,6 +60,7 @@ public class User : BaseEntity
     public void SetActive(bool value) => IsActive = value;
     public void UpdatePasswordHash(string hash) => PasswordHash = hash;
     public void SetPlatformAdmin(bool value) => IsPlatformAdmin = value;
+    public void SetFullName(string fullName) => FullName = fullName;
     public void SetLastLoginAt() => LastLoginAt = DateTime.UtcNow;
 
     /// <summary>SSO ile oluşturulan hesap — parola ile giriş kullanılmaz.</summary>

@@ -44,6 +44,7 @@ public class Branch : BaseEntity
         };
     }
 
+    public void SetName(string name) => Name = name;
     public void SetVerticalOverride(long? verticalId) => VerticalId = verticalId;
     public void SetActive(bool value) => IsActive = value;
     public void SetLanguage(string code) => DefaultLanguageCode = code;

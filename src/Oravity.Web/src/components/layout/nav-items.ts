@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Users, Calendar, CreditCard,
-  BarChart3, ClipboardList, CalendarPlus, Stethoscope, Tag, Layers,
+  BarChart3, ClipboardList, CalendarPlus, Stethoscope, Tag, Layers, Settings,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -21,4 +21,5 @@ export const navItems: NavItem[] = [
   { to: '/booking-requests', label: 'Online Talepler', icon: CalendarPlus },
   { to: '/catalog',          label: 'Tedavi Kataloğu', icon: Layers },
   { to: '/pricing',          label: 'Fiyatlandırma',   icon: Tag },
+  { to: '/settings',         label: 'Ayarlar',         icon: Settings },
 ];
