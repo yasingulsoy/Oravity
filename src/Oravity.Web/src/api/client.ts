@@ -47,6 +47,12 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    // Giriş / token yenileme 401: yenileme denemesine girme (aksi halde hata UI'a düşmez veya yönlendirme olur)
+    const reqUrl = String(originalRequest?.url ?? '');
+    if (reqUrl.includes('/auth/login') || reqUrl.includes('/auth/refresh')) {
+      return Promise.reject(error);
+    }
+
     if (isRefreshing) {
       return new Promise((resolve, reject) => {
         failedQueue.push({ resolve, reject });

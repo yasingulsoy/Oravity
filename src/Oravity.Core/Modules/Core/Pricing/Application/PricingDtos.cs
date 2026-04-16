@@ -6,6 +6,7 @@ namespace Oravity.Core.Modules.Core.Pricing.Application;
 
 public record PricingRuleResponse(
     Guid      PublicId,
+    long?     BranchId,
     string    Name,
     string?   Description,
     string    RuleType,
@@ -49,8 +50,11 @@ public record TreatmentPriceResponse(
     decimal  ReferencePrice,
     string   Currency,
     string?  AppliedRuleName,
-    string   Strategy        // "Rule" | "ReferencePrice" | "NoPriceConfigured"
+    string   Strategy,       // "Rule" | "ReferencePrice" | "NoPriceConfigured"
+    List<TraceStepDto>? Trace = null
 );
+
+public record TraceStepDto(string Phase, string Detail, string? Result = null);
 
 public record ReferencePriceListResponse(
     long   Id,
@@ -78,7 +82,7 @@ public record ReferencePriceItemResponse(
 public static class PricingMappings
 {
     public static PricingRuleResponse ToResponse(PricingRule r)
-        => new(r.PublicId, r.Name, r.Description, r.RuleType, r.Priority,
+        => new(r.PublicId, r.BranchId, r.Name, r.Description, r.RuleType, r.Priority,
                r.IncludeFilters, r.ExcludeFilters, r.Formula, r.OutputCurrency,
                r.ValidFrom, r.ValidUntil, r.IsActive, r.StopProcessing);
 

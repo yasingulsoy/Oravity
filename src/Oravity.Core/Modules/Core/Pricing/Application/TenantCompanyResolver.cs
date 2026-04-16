@@ -41,6 +41,27 @@ internal static class TenantCompanyResolver
             }
         }
 
+        // Platform Admin fallback: şirket sayısından bağımsız, ilk şirketi kullan
+        if (companyId == null && tenant.IsPlatformAdmin)
+        {
+            companyId = await db.Companies.AsNoTracking()
+                .OrderBy(c => c.Id)
+                .Select(c => (long?)c.Id)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        // Normal kullanıcı fallback: sadece tek şirket varsa kullan
+        if (companyId == null && !tenant.IsPlatformAdmin)
+        {
+            var companies = await db.Companies.AsNoTracking()
+                .Select(c => c.Id)
+                .Take(2)
+                .ToListAsync(ct);
+
+            if (companies.Count == 1)
+                companyId = companies[0];
+        }
+
         return companyId;
     }
 }

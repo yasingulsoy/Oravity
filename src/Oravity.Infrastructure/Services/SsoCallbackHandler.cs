@@ -83,7 +83,52 @@ public class SsoCallbackHandler
 
         _db.LoginAttempts.Add(LoginAttempt.Create(normalizedEmail, ipAddress, true));
 
-        var accessToken  = _jwtService.GenerateAccessToken(user);
+        // Company/branch bağlamını çöz (Platform Admin dahil)
+        long? branchId = null;
+        long? companyId = null;
+        int? roleLevel = null;
+
+        var assignment = await _db.UserRoleAssignments.AsNoTracking()
+            .Where(a => a.UserId == user.Id && a.IsActive)
+            .OrderByDescending(a => a.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        if (assignment is not null)
+        {
+            branchId  = assignment.BranchId;
+            companyId = assignment.CompanyId;
+
+            if (companyId == null && branchId.HasValue)
+                companyId = await _db.Branches.AsNoTracking()
+                    .Where(b => b.Id == branchId.Value)
+                    .Select(b => (long?)b.CompanyId)
+                    .FirstOrDefaultAsync(ct);
+
+            roleLevel = user.IsPlatformAdmin ? 1
+                : assignment.BranchId.HasValue ? 4
+                : 2;
+        }
+
+        if (companyId == null)
+        {
+            var companies = await _db.Companies.AsNoTracking()
+                .Select(c => c.Id).Take(2).ToListAsync(ct);
+            if (companies.Count == 1)
+            {
+                companyId = companies[0];
+                if (branchId == null)
+                {
+                    var branches = await _db.Branches.AsNoTracking()
+                        .Where(b => b.CompanyId == companyId.Value)
+                        .Select(b => b.Id).Take(2).ToListAsync(ct);
+                    if (branches.Count == 1)
+                        branchId = branches[0];
+                }
+                roleLevel ??= user.IsPlatformAdmin ? 1 : 2;
+            }
+        }
+
+        var accessToken  = _jwtService.GenerateAccessToken(user, branchId, companyId, roleLevel);
         var refreshToken = _jwtService.GenerateRefreshToken();
         var tokenHash    = _jwtService.HashToken(refreshToken);
 

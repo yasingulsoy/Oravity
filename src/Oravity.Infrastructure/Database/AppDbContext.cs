@@ -135,6 +135,7 @@ public class AppDbContext : DbContext
     public DbSet<ReferencePriceList>  ReferencePriceLists  => Set<ReferencePriceList>();
     public DbSet<ReferencePriceItem>  ReferencePriceItems  => Set<ReferencePriceItem>();
     public DbSet<TreatmentMapping>    TreatmentMappings    => Set<TreatmentMapping>();
+    public DbSet<Campaign>            Campaigns            => Set<Campaign>();
 
     // ─── Güvenlik (2FA / Cihaz / Politika) ───────────────────────────────
     public DbSet<User2FASettings>       User2FASettings        => Set<User2FASettings>();
@@ -1989,6 +1990,27 @@ public class AppDbContext : DbContext
 
             e.HasIndex(x => new { x.CompanyId, x.IsActive, x.Priority })
              .HasDatabaseName("ix_pricing_rules_company_active_priority");
+        });
+
+        // ── Campaign ─────────────────────────────────────────────────────
+        m.Entity<Campaign>(e =>
+        {
+            e.ToTable("campaigns");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique()
+             .HasDatabaseName("ix_campaigns_public_id");
+
+            e.Property(x => x.Code).HasMaxLength(50).IsRequired();
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Description).HasColumnType("text");
+
+            e.HasIndex(x => new { x.CompanyId, x.Code }).IsUnique()
+             .HasDatabaseName("ix_campaigns_company_code");
+
+            e.HasIndex(x => new { x.CompanyId, x.IsActive, x.ValidFrom, x.ValidUntil })
+             .HasDatabaseName("ix_campaigns_company_active_dates");
         });
 
         // ── ReferencePriceList ────────────────────────────────────────────

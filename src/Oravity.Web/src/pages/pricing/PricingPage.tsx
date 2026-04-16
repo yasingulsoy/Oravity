@@ -3,12 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search, Plus, Pencil, Check, X, ChevronLeft, ChevronRight, ChevronDown,
   Tag, Zap, ListChecks, AlertCircle, Building2, Copy, Loader2,
-  Trash2, Upload, FlaskConical,
+  Trash2, Upload, FlaskConical, Link2, Megaphone, Calendar,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { pricingApi, type PricingRule, type ReferencePriceList, type BranchPricing, type TreatmentPriceResponse } from '@/api/pricing';
-import { treatmentsApi, treatmentCategoriesApi, type TreatmentCategory } from '@/api/treatments';
-import { institutionsApi } from '@/api/institutions';
+import { treatmentsApi, treatmentCategoriesApi, treatmentMappingsApi, type TreatmentCategory, type TreatmentMapping } from '@/api/treatments';
+import { institutionsApi, type InstitutionItem } from '@/api/institutions';
+import { campaignsApi, type Campaign } from '@/api/campaigns';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -438,12 +439,12 @@ function SeedFromCatalogDialog({ open, onClose, list }: { open: boolean; onClose
                 />
               </div>
               {flatCategories.length > 0 && (
-                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <Select value={categoryFilter || '__all__'} onValueChange={v => setCategoryFilter(v === '__all__' ? '' : v)}>
                   <SelectTrigger className="h-8 w-48 text-sm shrink-0">
-                    <SelectValue placeholder="Tüm kategoriler" />
+                    <SelectValue>{categoryFilter ? (flatCategories.find(c => c.publicId === categoryFilter)?.label ?? 'Tüm kategoriler') : 'Tüm kategoriler'}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Tüm kategoriler</SelectItem>
+                    <SelectItem value="__all__">Tüm kategoriler</SelectItem>
                     {flatCategories.map(c => (
                       <SelectItem key={c.publicId} value={c.publicId}>{c.label}</SelectItem>
                     ))}
@@ -824,47 +825,63 @@ const FORMULA_EXAMPLES = [
   'ISAK==1 ? TDB * 0.80 : CARI * MULTI',
 ];
 
-// Kural koşulunu IncludeFilters JSON'una dönüştür
-function buildIncludeFilters(opts: {
+// Filtre JSON builder — include ve exclude için ortak
+function buildFilterJson(opts: {
   institutionIds: number[];
   ossOnly: boolean;
   campaignCode: string;
   categoryPublicIds: string[];
+  treatmentPublicIds: string[];
 }): string | null {
   const obj: Record<string, unknown> = {};
-  if (opts.institutionIds.length > 0)    obj['institutionIds']    = opts.institutionIds;
-  if (opts.ossOnly)                      obj['ossOnly']           = true;
-  if (opts.campaignCode.trim())          obj['campaignCodes']     = [opts.campaignCode.trim()];
-  if (opts.categoryPublicIds.length > 0) obj['categoryPublicIds'] = opts.categoryPublicIds;
+  if (opts.institutionIds.length > 0)      obj['institutionIds']      = opts.institutionIds;
+  if (opts.ossOnly)                        obj['ossOnly']             = true;
+  if (opts.campaignCode.trim())            obj['campaignCodes']       = [opts.campaignCode.trim()];
+  if (opts.categoryPublicIds.length > 0)   obj['categoryPublicIds']   = opts.categoryPublicIds;
+  if (opts.treatmentPublicIds.length > 0)  obj['treatmentPublicIds']  = opts.treatmentPublicIds;
   return Object.keys(obj).length > 0 ? JSON.stringify(obj) : null;
 }
 
-// IncludeFilters JSON'undan koşulları parse et
-function parseIncludeFilters(json: string | null) {
-  const defaults = { institutionIds: [] as number[], ossOnly: false, campaignCode: '', categoryPublicIds: [] as string[] };
-  if (!json) return defaults;
+interface ParsedFilters {
+  institutionIds: number[];
+  ossOnly: boolean;
+  campaignCode: string;
+  categoryPublicIds: string[];
+  treatmentPublicIds: string[];
+}
+
+const emptyFilters: ParsedFilters = { institutionIds: [], ossOnly: false, campaignCode: '', categoryPublicIds: [], treatmentPublicIds: [] };
+
+function parseFilterJson(json: string | null): ParsedFilters {
+  if (!json) return { ...emptyFilters };
   try {
     const obj = JSON.parse(json);
     return {
-      institutionIds:    Array.isArray(obj.institutionIds) ? (obj.institutionIds as number[]) : [],
-      ossOnly:           !!obj.ossOnly,
-      campaignCode:      Array.isArray(obj.campaignCodes) ? (obj.campaignCodes[0] ?? '') : '',
-      categoryPublicIds: Array.isArray(obj.categoryPublicIds) ? (obj.categoryPublicIds as string[]) : [],
+      institutionIds:      Array.isArray(obj.institutionIds) ? (obj.institutionIds as number[]) : [],
+      ossOnly:             !!obj.ossOnly,
+      campaignCode:        Array.isArray(obj.campaignCodes) ? (obj.campaignCodes[0] ?? '') : '',
+      categoryPublicIds:   Array.isArray(obj.categoryPublicIds) ? (obj.categoryPublicIds as string[]) : [],
+      treatmentPublicIds:  Array.isArray(obj.treatmentPublicIds) ? (obj.treatmentPublicIds as string[]) : [],
     };
-  } catch { return defaults; }
+  } catch { return { ...emptyFilters }; }
 }
 
 // ─── Institution Picker ─────────────────────────────────────────────────────
 
-function InstitutionPicker({ selected, onChange }: {
+function InstitutionPicker({ selected, onChange, institutions: institutionsProp }: {
   selected: number[];
   onChange: (ids: number[]) => void;
+  institutions?: InstitutionItem[];
 }) {
-  const { data } = useQuery({
-    queryKey: ['institutions'],
+  const { data: fetchedData, isFetching, isError } = useQuery({
+    queryKey: ['pricing', 'institutions'],
     queryFn: () => institutionsApi.list().then(r => r.data),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 60_000,
+    retry: 1,
+    enabled: !institutionsProp,
   });
+  const data = institutionsProp ?? fetchedData;
+  const isLoading = !institutionsProp && isFetching && !fetchedData;
 
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -902,7 +919,7 @@ function InstitutionPicker({ selected, onChange }: {
 
   return (
     <div className="space-y-1.5">
-      <Label className="text-sm">Anlaşmalı Kurumlar <span className="text-muted-foreground font-normal">(boş = tüm hastalar)</span></Label>
+      <Label className="text-xs">Kurumlar <span className="text-muted-foreground font-normal">(boş = tümü)</span></Label>
       <div className="relative" ref={ref}>
         <button
           type="button"
@@ -917,8 +934,10 @@ function InstitutionPicker({ selected, onChange }: {
 
         {open && (
           <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md max-h-52 overflow-y-auto">
-            {institutions.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-3">Kurum yükleniyor...</p>
+            {isError ? (
+              <p className="text-xs text-destructive text-center py-3">Kurumlar yüklenemedi</p>
+            ) : isLoading || institutions.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-3">{isLoading ? 'Yükleniyor...' : 'Kurum bulunamadı'}</p>
             ) : (
               <>
                 <label className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent cursor-pointer border-b mb-1 pb-1.5">
@@ -954,9 +973,10 @@ interface RuleDialogProps {
   open: boolean;
   onClose: () => void;
   editing?: PricingRule | null;
+  institutions: InstitutionItem[];
 }
 
-function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
+function RuleDialog({ open, onClose, editing, institutions }: RuleDialogProps) {
   const qc = useQueryClient();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -966,11 +986,19 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
   const [outputCurrency, setOutputCurrency] = useState('TRY');
   const [stopProcessing, setStopProcessing] = useState(true);
   const [isActive, setIsActive] = useState(true);
-  // Koşul kriterleri
+  const [validFrom, setValidFrom] = useState('');
+  const [validUntil, setValidUntil] = useState('');
+  const [branchId, setBranchId] = useState<number | null>(null);
+  // Include koşul kriterleri
   const [institutionIds, setInstitutionIds] = useState<number[]>([]);
   const [ossOnly, setOssOnly] = useState(false);
   const [campaignCode, setCampaignCode] = useState('');
   const [categoryPublicIds, setCategoryPublicIds] = useState<string[]>([]);
+  const [treatmentPublicIds, setTreatmentPublicIds] = useState<string[]>([]);
+  // Exclude koşulları
+  const [showExclude, setShowExclude] = useState(false);
+  const [exInstitutionIds, setExInstitutionIds] = useState<number[]>([]);
+  const [exCategoryPublicIds, setExCategoryPublicIds] = useState<string[]>([]);
 
   const { data: allCategories } = useQuery({
     queryKey: ['treatment-categories'],
@@ -978,6 +1006,20 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
     staleTime: 5 * 60 * 1000,
   });
   const flatCategories = allCategories ? flattenCategoryTree(allCategories) : [];
+
+  const { data: branchesForRule } = useQuery({
+    queryKey: ['pricing', 'branches'],
+    queryFn: () => pricingApi.getBranchPricing().then(r => r.data),
+    staleTime: 60_000,
+  });
+
+  const [treatmentSearch, setTreatmentSearch] = useState('');
+  const { data: treatmentsForFilter } = useQuery({
+    queryKey: ['treatments', 'list', 'rule-filter', treatmentSearch],
+    queryFn: () => treatmentsApi.list({ search: treatmentSearch || undefined, activeOnly: true, pageSize: 20 }).then(r => r.data),
+    enabled: treatmentSearch.length >= 2,
+    staleTime: 30_000,
+  });
 
   useEffect(() => {
     if (editing) {
@@ -989,43 +1031,53 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
       setOutputCurrency(editing.outputCurrency);
       setStopProcessing(editing.stopProcessing);
       setIsActive(editing.isActive);
-      const parsed = parseIncludeFilters(editing.includeFilters);
-      setInstitutionIds(parsed.institutionIds);
-      setOssOnly(parsed.ossOnly);
-      setCampaignCode(parsed.campaignCode);
-      setCategoryPublicIds(parsed.categoryPublicIds);
+      setValidFrom(editing.validFrom ? editing.validFrom.slice(0, 10) : '');
+      setValidUntil(editing.validUntil ? editing.validUntil.slice(0, 10) : '');
+      setBranchId(editing.branchId ?? null);
+      const inc = parseFilterJson(editing.includeFilters);
+      setInstitutionIds(inc.institutionIds);
+      setOssOnly(inc.ossOnly);
+      setCampaignCode(inc.campaignCode);
+      setCategoryPublicIds(inc.categoryPublicIds);
+      setTreatmentPublicIds(inc.treatmentPublicIds);
+      const exc = parseFilterJson(editing.excludeFilters);
+      setExInstitutionIds(exc.institutionIds);
+      setExCategoryPublicIds(exc.categoryPublicIds);
+      setShowExclude(exc.institutionIds.length > 0 || exc.categoryPublicIds.length > 0);
     } else {
-      setName('');
-      setDescription('');
-      setRuleType('formula');
-      setPriority('10');
-      setFormula('');
-      setOutputCurrency('TRY');
-      setStopProcessing(true);
-      setIsActive(true);
-      setInstitutionIds([]);
-      setOssOnly(false);
-      setCampaignCode('');
-      setCategoryPublicIds([]);
+      setName(''); setDescription(''); setRuleType('formula'); setPriority('10');
+      setFormula(''); setOutputCurrency('TRY'); setStopProcessing(true); setIsActive(true);
+      setValidFrom(''); setValidUntil(''); setBranchId(null);
+      setInstitutionIds([]); setOssOnly(false); setCampaignCode('');
+      setCategoryPublicIds([]); setTreatmentPublicIds([]);
+      setShowExclude(false); setExInstitutionIds([]); setExCategoryPublicIds([]);
+      setTreatmentSearch('');
     }
   }, [editing, open]);
 
-  function buildFilters() {
-    return buildIncludeFilters({ institutionIds, ossOnly, campaignCode, categoryPublicIds });
+  function getIncludeFilters() {
+    return buildFilterJson({ institutionIds, ossOnly, campaignCode, categoryPublicIds, treatmentPublicIds });
+  }
+  function getExcludeFilters() {
+    return buildFilterJson({ institutionIds: exInstitutionIds, ossOnly: false, campaignCode: '', categoryPublicIds: exCategoryPublicIds, treatmentPublicIds: [] });
   }
 
-  const createMutation = useMutation({
-    mutationFn: () => pricingApi.createRule({
+  function buildPayload() {
+    return {
       name, description: description || null,
       ruleType, priority: parseInt(priority) || 10,
       formula: formula || null,
-      outputCurrency,
-      stopProcessing,
-      branchId: null,
-      includeFilters: buildFilters(),
-      excludeFilters: null,
-      validFrom: null, validUntil: null,
-    }),
+      outputCurrency, stopProcessing,
+      branchId: branchId ?? null,
+      includeFilters: getIncludeFilters(),
+      excludeFilters: getExcludeFilters(),
+      validFrom: validFrom || null,
+      validUntil: validUntil || null,
+    };
+  }
+
+  const createMutation = useMutation({
+    mutationFn: () => pricingApi.createRule(buildPayload()),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pricing', 'rules'] });
       toast.success('Kural oluşturuldu');
@@ -1035,18 +1087,7 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
   });
 
   const updateMutation = useMutation({
-    mutationFn: () => pricingApi.updateRule(editing!.publicId, {
-      name, description: description || null,
-      ruleType, priority: parseInt(priority) || 10,
-      formula: formula || null,
-      outputCurrency,
-      stopProcessing,
-      isActive,
-      branchId: null,
-      includeFilters: buildFilters(),
-      excludeFilters: null,
-      validFrom: null, validUntil: null,
-    }),
+    mutationFn: () => pricingApi.updateRule(editing!.publicId, { ...buildPayload(), isActive }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pricing', 'rules'] });
       toast.success('Kural güncellendi');
@@ -1069,70 +1110,47 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[calc(100dvh-3rem)] flex flex-col p-0">
-        <DialogHeader className="px-5 pt-5 pb-0 shrink-0">
+      <DialogContent className="max-w-2xl w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] flex flex-col p-0">
+        <DialogHeader className="px-4 sm:px-5 pt-4 sm:pt-5 pb-0 shrink-0">
           <DialogTitle>{editing ? 'Kural Düzenle' : 'Yeni Fiyat Kuralı'}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-3 sm:py-4 space-y-3">
           {/* Row 1: Ad + Açıklama */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div className="space-y-1">
               <Label className="text-xs">Kural Adı</Label>
-              <Input
-                placeholder="Örn: TDB x2.5 - Standart"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                className="h-8"
-              />
+              <Input placeholder="Örn: TDB x2.5 - Standart" value={name} onChange={e => setName(e.target.value)} className="h-8" />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Açıklama <span className="text-muted-foreground">(opsiyonel)</span></Label>
-              <Input
-                placeholder="Bu kural ne zaman uygulanır?"
-                value={description}
-                onChange={e => setDescription(e.target.value)}
-                className="h-8"
-              />
+              <Input placeholder="Bu kural ne zaman uygulanır?" value={description} onChange={e => setDescription(e.target.value)} className="h-8" />
             </div>
           </div>
 
           {/* Row 2: Tip + Öncelik + Para Birimi */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
-              <Label className="text-xs">Kural Tipi</Label>
+              <Label className="text-xs">Tip</Label>
               <Select value={ruleType} onValueChange={setRuleType}>
-                <SelectTrigger className="h-8">
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger className="h-8"><SelectValue>{RULE_TYPES.find(t => t.value === ruleType)?.label ?? ruleType}</SelectValue></SelectTrigger>
                 <SelectContent>
                   {RULE_TYPES.map(t => (
                     <SelectItem key={t.value} value={t.value}>
-                      <span className="flex items-center gap-2">
-                        <t.icon className="h-3.5 w-3.5" />
-                        {t.label}
-                      </span>
+                      <span className="flex items-center gap-1.5"><t.icon className="h-3.5 w-3.5" />{t.label}</span>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Öncelik <span className="text-muted-foreground">(küçük = önce)</span></Label>
-              <Input
-                type="number"
-                min={1}
-                value={priority}
-                onChange={e => setPriority(e.target.value)}
-                className="h-8"
-              />
+              <Label className="text-xs">Öncelik</Label>
+              <Input type="number" min={1} value={priority} onChange={e => setPriority(e.target.value)} className="h-8" />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Para Birimi</Label>
               <Select value={outputCurrency} onValueChange={setOutputCurrency}>
-                <SelectTrigger className="h-8">
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="TRY">TRY</SelectItem>
                   <SelectItem value="USD">USD</SelectItem>
@@ -1142,26 +1160,40 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
             </div>
           </div>
 
-          {/* Row 3: Flags */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="stopProcessing"
-                checked={stopProcessing}
-                onCheckedChange={v => setStopProcessing(!!v)}
-              />
-              <Label htmlFor="stopProcessing" className="font-normal cursor-pointer text-sm">
-                Eşleşince dur
-              </Label>
+          {/* Row 3: Şube + Tarih aralığı */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Şube</Label>
+              <Select value={branchId ? String(branchId) : '__all__'} onValueChange={v => setBranchId(v === '__all__' ? null : Number(v))}>
+                <SelectTrigger className="h-8"><SelectValue>{branchId ? ((branchesForRule ?? []).find(b => b.branchId === branchId)?.branchName ?? branchId) : 'Tüm şubeler'}</SelectValue></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">Tüm şubeler</SelectItem>
+                  {(branchesForRule ?? []).map(b => (
+                    <SelectItem key={b.branchId} value={String(b.branchId)}>{b.branchName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Başlangıç</Label>
+              <Input type="date" value={validFrom} onChange={e => setValidFrom(e.target.value)} className="h-8" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Bitiş</Label>
+              <Input type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} className="h-8" />
+            </div>
+          </div>
+
+          {/* Flags */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <div className="flex items-center gap-1.5">
+              <Checkbox id="stopProcessing" checked={stopProcessing} onCheckedChange={v => setStopProcessing(!!v)} />
+              <Label htmlFor="stopProcessing" className="font-normal cursor-pointer text-xs">Eşleşince dur</Label>
             </div>
             {editing && (
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="isActive"
-                  checked={isActive}
-                  onCheckedChange={v => setIsActive(!!v)}
-                />
-                <Label htmlFor="isActive" className="font-normal cursor-pointer text-sm">Aktif</Label>
+              <div className="flex items-center gap-1.5">
+                <Checkbox id="isActive" checked={isActive} onCheckedChange={v => setIsActive(!!v)} />
+                <Label htmlFor="isActive" className="font-normal cursor-pointer text-xs">Aktif</Label>
               </div>
             )}
           </div>
@@ -1206,51 +1238,45 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
             </div>
           )}
 
-          {(ruleType === 'percentage' || ruleType === 'fixed') && (
+          {ruleType === 'percentage' && (
             <div className="space-y-1">
-              <Label className="text-xs">
-                {ruleType === 'percentage' ? 'Çarpan (örn: 2.5 = TDB x 2.5)' : 'Sabit Fiyat (₺)'}
-              </Label>
+              <Label className="text-xs">İndirim Yüzdesi <span className="text-muted-foreground">(örn: 20 = %20 indirim → TDB × 0.80)</span></Label>
               <Input
-                type="number"
-                step="0.01"
-                placeholder={ruleType === 'percentage' ? '2.5' : '500'}
-                value={formula}
-                onChange={e => setFormula(e.target.value)}
+                type="number" step="0.01" placeholder="20"
+                value={formula} onChange={e => setFormula(e.target.value)}
                 className="h-8 max-w-xs"
               />
             </div>
           )}
 
-          {/* Row 5: Uygulama Koşulları */}
+          {ruleType === 'fixed' && (
+            <div className="space-y-1">
+              <Label className="text-xs">Sabit Fiyat (₺)</Label>
+              <Input
+                type="number" step="0.01" placeholder="5000"
+                value={formula} onChange={e => setFormula(e.target.value)}
+                className="h-8 max-w-xs"
+              />
+            </div>
+          )}
+
+          {/* Row 5: Uygulama Koşulları (Include) */}
           <div className="space-y-2">
-            <Label className="text-xs">Uygulama Koşulları <span className="text-muted-foreground font-normal">(boş = her hastaya)</span></Label>
-            <div className="border rounded-lg p-3 space-y-3 bg-muted/30">
-              <div className="grid grid-cols-2 gap-3">
-                <InstitutionPicker
-                  selected={institutionIds}
-                  onChange={setInstitutionIds}
-                />
+            <Label className="text-xs">Koşullar <span className="text-muted-foreground font-normal">(boş = her hastaya)</span></Label>
+            <div className="border rounded-lg p-2.5 space-y-2.5 bg-muted/30">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <InstitutionPicker selected={institutionIds} onChange={setInstitutionIds} institutions={institutions} />
 
                 {flatCategories.length > 0 && (
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Tedavi Kategorileri <span className="text-muted-foreground font-normal">(boş = tümü)</span></Label>
+                    <Label className="text-xs">Kategoriler <span className="text-muted-foreground font-normal">(boş = tümü)</span></Label>
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         type="button"
-                        className={cn(
-                          'flex h-9 w-full items-center justify-between gap-1.5 rounded-md border border-input bg-transparent py-2 pr-2 pl-3 text-sm transition-colors outline-none select-none shadow-xs hover:bg-accent/50',
-                        )}
+                        className="flex h-9 w-full items-center justify-between gap-1.5 rounded-md border border-input bg-transparent py-2 pr-2 pl-3 text-sm shadow-xs hover:bg-accent/50"
                       >
-                        <span
-                          className={cn(
-                            'truncate text-left',
-                            categoryPublicIds.length === 0 ? 'text-muted-foreground' : 'text-foreground',
-                          )}
-                        >
-                          {categoryPublicIds.length === 0
-                            ? 'Tüm tedaviler'
-                            : `${categoryPublicIds.length} kategori seçili`}
+                        <span className={cn('truncate text-left', categoryPublicIds.length === 0 ? 'text-muted-foreground' : '')}>
+                          {categoryPublicIds.length === 0 ? 'Tüm tedaviler' : `${categoryPublicIds.length} kategori seçili`}
                         </span>
                         <ChevronDown className="pointer-events-none size-3.5 shrink-0 text-muted-foreground" />
                       </DropdownMenuTrigger>
@@ -1259,77 +1285,87 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
                           <DropdownMenuCheckboxItem
                             closeOnClick={false}
                             checked={categoryPublicIds.length === flatCategories.length && flatCategories.length > 0}
-                            onCheckedChange={() =>
-                              setCategoryPublicIds(prev =>
-                                prev.length === flatCategories.length ? [] : flatCategories.map(c => c.publicId),
-                              )
-                            }
+                            onCheckedChange={() => setCategoryPublicIds(p => p.length === flatCategories.length ? [] : flatCategories.map(c => c.publicId))}
                             className="text-sm font-medium"
                           >
                             Tümünü Seç
-                            <span className="ml-auto text-xs font-normal text-muted-foreground">
-                              {categoryPublicIds.length}/{flatCategories.length}
-                            </span>
+                            <span className="ml-auto text-xs font-normal text-muted-foreground">{categoryPublicIds.length}/{flatCategories.length}</span>
                           </DropdownMenuCheckboxItem>
                           <DropdownMenuSeparator />
                           {flatCategories.map(c => (
                             <DropdownMenuCheckboxItem
-                              key={c.publicId}
-                              closeOnClick={false}
+                              key={c.publicId} closeOnClick={false}
                               checked={categoryPublicIds.includes(c.publicId)}
-                              onCheckedChange={() =>
-                                setCategoryPublicIds(prev =>
-                                  prev.includes(c.publicId) ? prev.filter(x => x !== c.publicId) : [...prev, c.publicId],
-                                )
-                              }
-                              className="text-sm"
-                              style={{ paddingLeft: `${(c.depth * 12) + 8}px` }}
+                              onCheckedChange={() => setCategoryPublicIds(p => p.includes(c.publicId) ? p.filter(x => x !== c.publicId) : [...p, c.publicId])}
+                              className="text-sm" style={{ paddingLeft: `${(c.depth * 12) + 8}px` }}
                             >
                               {c.depth > 0 && <span className="mr-1 text-muted-foreground">└</span>}
                               {c.name}
                             </DropdownMenuCheckboxItem>
                           ))}
                         </DropdownMenuGroup>
-                        {categoryPublicIds.length > 0 && (
-                          <>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-xs text-muted-foreground"
-                              onClick={() => setCategoryPublicIds([])}
-                            >
-                              Seçimi temizle
-                            </DropdownMenuItem>
-                          </>
-                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
                 )}
               </div>
 
+              {/* Tedavi filtresi */}
+              <div className="space-y-1.5">
+                <Label className="text-xs">Belirli Tedaviler <span className="text-muted-foreground font-normal">(boş = tümü)</span></Label>
+                {treatmentPublicIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-1">
+                    {treatmentPublicIds.map(id => (
+                      <span key={id} className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-xs">
+                        {id.slice(0, 8)}…
+                        <button type="button" onClick={() => setTreatmentPublicIds(p => p.filter(x => x !== id))} className="hover:text-destructive">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                    <button type="button" onClick={() => setTreatmentPublicIds([])} className="text-xs text-muted-foreground hover:text-foreground">Temizle</button>
+                  </div>
+                )}
+                <div className="relative">
+                  <Search className="absolute left-2 top-1.5 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Tedavi ara (en az 2 harf)..."
+                    value={treatmentSearch} onChange={e => setTreatmentSearch(e.target.value)}
+                    className="h-7 pl-7 text-xs"
+                  />
+                </div>
+                {treatmentsForFilter && treatmentSearch.length >= 2 && (
+                  <div className="border rounded-md max-h-28 overflow-y-auto">
+                    {(treatmentsForFilter.items ?? []).filter(t => !treatmentPublicIds.includes(t.publicId)).map(t => (
+                      <button
+                        key={t.publicId} type="button"
+                        className="w-full text-left px-2 py-1 text-xs hover:bg-accent flex items-center gap-2 border-b last:border-b-0"
+                        onClick={() => { setTreatmentPublicIds(p => [...p, t.publicId]); setTreatmentSearch(''); }}
+                      >
+                        <span className="font-mono text-muted-foreground w-14 shrink-0">{t.code}</span>
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="ossOnly"
-                    checked={ossOnly}
-                    onCheckedChange={v => setOssOnly(!!v)}
-                  />
-                  <Label htmlFor="ossOnly" className="font-normal cursor-pointer text-sm">
-                    ÖSS Kapsamı
-                  </Label>
+                  <Checkbox id="ossOnly" checked={ossOnly} onCheckedChange={v => setOssOnly(!!v)} />
+                  <Label htmlFor="ossOnly" className="font-normal cursor-pointer text-sm">ÖSS Kapsamı</Label>
                 </div>
                 <div className="flex items-center gap-2 flex-1">
                   <Label className="text-sm whitespace-nowrap shrink-0">Kampanya:</Label>
                   <Input
-                    placeholder="YAZ2026"
-                    value={campaignCode}
+                    placeholder="YAZ2026" value={campaignCode}
                     onChange={e => setCampaignCode(e.target.value.toUpperCase())}
                     className="h-7 text-sm font-mono max-w-[160px]"
                   />
                 </div>
               </div>
 
-              {(institutionIds.length > 0 || ossOnly || campaignCode.trim() || categoryPublicIds.length > 0) && (
+              {(institutionIds.length > 0 || ossOnly || campaignCode.trim() || categoryPublicIds.length > 0 || treatmentPublicIds.length > 0) && (
                 <p className="text-xs text-amber-600">
                   Bu kural yalnızca:{' '}
                   {[
@@ -1337,17 +1373,69 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
                     ossOnly && 'ÖSS kapsamındakiler',
                     campaignCode.trim() && `"${campaignCode.trim()}" kampanyası aktifken`,
                     categoryPublicIds.length > 0 && `seçili ${categoryPublicIds.length} kategori`,
+                    treatmentPublicIds.length > 0 && `seçili ${treatmentPublicIds.length} tedavi`,
                   ].filter(Boolean).join(' + ')}
                   {' '}uygulanır.
                 </p>
               )}
             </div>
           </div>
+
+          {/* Row 6: Hariç Tutma (Exclude) */}
+          {showExclude ? (
+            <div className="space-y-2">
+              <Label className="text-xs">Hariç Tutma <span className="text-muted-foreground font-normal">(bu koşullar eşleşirse kural UYGULANMAZ)</span></Label>
+              <div className="border rounded-lg p-2.5 space-y-2.5 bg-destructive/5 border-destructive/20">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <InstitutionPicker selected={exInstitutionIds} onChange={setExInstitutionIds} institutions={institutions} />
+                  {flatCategories.length > 0 && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Hariç Kategoriler</Label>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger type="button" className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent py-2 pr-2 pl-3 text-sm shadow-xs hover:bg-accent/50">
+                          <span className={cn('truncate', exCategoryPublicIds.length === 0 ? 'text-muted-foreground' : '')}>
+                            {exCategoryPublicIds.length === 0 ? 'Yok' : `${exCategoryPublicIds.length} kategori hariç`}
+                          </span>
+                          <ChevronDown className="size-3.5 text-muted-foreground" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="max-h-64 min-w-[var(--anchor-width)]">
+                          <DropdownMenuGroup>
+                            {flatCategories.map(c => (
+                              <DropdownMenuCheckboxItem
+                                key={c.publicId} closeOnClick={false}
+                                checked={exCategoryPublicIds.includes(c.publicId)}
+                                onCheckedChange={() => setExCategoryPublicIds(p => p.includes(c.publicId) ? p.filter(x => x !== c.publicId) : [...p, c.publicId])}
+                                className="text-sm" style={{ paddingLeft: `${(c.depth * 12) + 8}px` }}
+                              >
+                                {c.depth > 0 && <span className="mr-1 text-muted-foreground">└</span>}
+                                {c.name}
+                              </DropdownMenuCheckboxItem>
+                            ))}
+                          </DropdownMenuGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  )}
+                </div>
+                <button type="button" onClick={() => { setShowExclude(false); setExInstitutionIds([]); setExCategoryPublicIds([]); }} className="text-xs text-muted-foreground hover:text-foreground">
+                  Hariç tutmayı kaldır
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowExclude(true)}
+              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+            >
+              <Plus className="h-3 w-3" /> Hariç tutma koşulu ekle
+            </button>
+          )}
         </div>
 
-        <DialogFooter className="px-5 pb-5 pt-3 border-t shrink-0">
-          <Button variant="outline" onClick={onClose} disabled={isPending}>İptal</Button>
-          <Button onClick={handleSave} disabled={isPending}>
+        <DialogFooter className="px-4 sm:px-5 pb-4 sm:pb-5 pt-3 border-t shrink-0">
+          <Button variant="outline" onClick={onClose} disabled={isPending} size="sm">İptal</Button>
+          <Button onClick={handleSave} disabled={isPending} size="sm">
             {isPending ? 'Kaydediliyor...' : (editing ? 'Güncelle' : 'Oluştur')}
           </Button>
         </DialogFooter>
@@ -1375,6 +1463,13 @@ function PricingRulesTab() {
   const { data: rules, isLoading } = useQuery({
     queryKey: ['pricing', 'rules'],
     queryFn: () => pricingApi.getRules(false).then(r => r.data),
+  });
+
+  const { data: allInstitutions = [] } = useQuery({
+    queryKey: ['pricing', 'institutions'],
+    queryFn: () => institutionsApi.list().then(r => r.data),
+    staleTime: 2 * 60 * 1000,
+    refetchOnMount: true,
   });
 
   function openCreate() {
@@ -1487,6 +1582,7 @@ function PricingRulesTab() {
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         editing={editingRule}
+        institutions={allInstitutions}
       />
       <ConfirmDialog
         open={!!deletingRule}
@@ -1548,7 +1644,7 @@ function NewListDialog({ open, onClose }: { open: boolean; onClose: () => void }
           <div className="space-y-1">
             <Label>Tip</Label>
             <Select value={sourceType} onValueChange={setSourceType}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger><SelectValue>{{ private: 'Klinik (private)', insurance: 'Sigorta', SUT: 'SUT (SGK)', manual: 'Manuel' }[sourceType] ?? sourceType}</SelectValue></SelectTrigger>
               <SelectContent>
                 <SelectItem value="private">Klinik (private)</SelectItem>
                 <SelectItem value="insurance">Sigorta</SelectItem>
@@ -1702,6 +1798,474 @@ function BranchSettingsTab() {
   );
 }
 
+// ─── Campaigns Tab ──────────────────────────────────────────────────────────
+
+interface CampaignDialogProps {
+  open: boolean;
+  onClose: () => void;
+  editing?: Campaign | null;
+  rules: PricingRule[];
+}
+
+function CampaignDialog({ open, onClose, editing, rules }: CampaignDialogProps) {
+  const qc = useQueryClient();
+  const [code, setCode] = useState('');
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [validFrom, setValidFrom] = useState('');
+  const [validUntil, setValidUntil] = useState('');
+  const [linkedRulePublicId, setLinkedRulePublicId] = useState('');
+  const [isActive, setIsActive] = useState(true);
+
+  useEffect(() => {
+    if (editing) {
+      setCode(editing.code);
+      setName(editing.name);
+      setDescription(editing.description ?? '');
+      setValidFrom(editing.validFrom.slice(0, 10));
+      setValidUntil(editing.validUntil.slice(0, 10));
+      setLinkedRulePublicId(editing.linkedRulePublicId ?? '');
+      setIsActive(editing.isActive);
+    } else {
+      setCode(''); setName(''); setDescription('');
+      setValidFrom(''); setValidUntil('');
+      setLinkedRulePublicId(''); setIsActive(true);
+    }
+  }, [editing, open]);
+
+  const createMut = useMutation({
+    mutationFn: () => campaignsApi.create({
+      code, name, description: description || null,
+      validFrom, validUntil,
+      linkedRulePublicId: linkedRulePublicId || null,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['campaigns'] });
+      toast.success('Kampanya oluşturuldu');
+      onClose();
+    },
+    onError: () => toast.error('Kampanya oluşturulamadı'),
+  });
+
+  const updateMut = useMutation({
+    mutationFn: () => campaignsApi.update(editing!.publicId, {
+      name, description: description || null,
+      validFrom, validUntil, isActive,
+      linkedRulePublicId: linkedRulePublicId || null,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['campaigns'] });
+      toast.success('Kampanya güncellendi');
+      onClose();
+    },
+    onError: () => toast.error('Kampanya güncellenemedi'),
+  });
+
+  const isPending = createMut.isPending || updateMut.isPending;
+
+  function handleSave() {
+    if (!code.trim()) { toast.error('Kampanya kodu zorunlu'); return; }
+    if (!name.trim()) { toast.error('Kampanya adı zorunlu'); return; }
+    if (!validFrom || !validUntil) { toast.error('Tarih alanları zorunlu'); return; }
+    if (validUntil <= validFrom) { toast.error('Bitiş tarihi başlangıçtan sonra olmalı'); return; }
+    editing ? updateMut.mutate() : createMut.mutate();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{editing ? 'Kampanya Düzenle' : 'Yeni Kampanya'}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Kampanya Kodu</Label>
+              <Input
+                placeholder="YAZ2026"
+                value={code}
+                onChange={e => setCode(e.target.value.toUpperCase())}
+                className="h-8 font-mono"
+                disabled={!!editing}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Kampanya Adı</Label>
+              <Input placeholder="Yaz Kampanyası 2026" value={name} onChange={e => setName(e.target.value)} className="h-8" />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Açıklama <span className="text-muted-foreground">(opsiyonel)</span></Label>
+            <Input placeholder="Kampanya detayları..." value={description} onChange={e => setDescription(e.target.value)} className="h-8" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Başlangıç</Label>
+              <Input type="date" value={validFrom} onChange={e => setValidFrom(e.target.value)} className="h-8" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Bitiş</Label>
+              <Input type="date" value={validUntil} onChange={e => setValidUntil(e.target.value)} className="h-8" />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Bağlı Fiyat Kuralı <span className="text-muted-foreground">(opsiyonel)</span></Label>
+            <Select value={linkedRulePublicId || '__none__'} onValueChange={v => setLinkedRulePublicId(v === '__none__' ? '' : v)}>
+              <SelectTrigger className="h-8">
+                <SelectValue placeholder="Kural seç (opsiyonel)">
+                  {linkedRulePublicId ? (rules.find(r => r.publicId === linkedRulePublicId)?.name ?? linkedRulePublicId) : 'Kural yok'}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Kural yok</SelectItem>
+                {rules.map(r => (
+                  <SelectItem key={r.publicId} value={r.publicId}>
+                    {r.name} <span className="text-muted-foreground text-xs">({r.ruleType})</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              Bu kampanya ile ilişkilendirilecek fiyat kuralı. Kuralda campaignCodes filtresi olmalıdır.
+            </p>
+          </div>
+
+          {editing && (
+            <div className="flex items-center gap-2">
+              <Checkbox id="camp-active" checked={isActive} onCheckedChange={v => setIsActive(!!v)} />
+              <Label htmlFor="camp-active" className="font-normal cursor-pointer text-sm">Aktif</Label>
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={isPending}>İptal</Button>
+          <Button onClick={handleSave} disabled={isPending}>
+            {isPending ? 'Kaydediliyor...' : (editing ? 'Güncelle' : 'Oluştur')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CampaignsTab() {
+  const qc = useQueryClient();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
+  const [deletingCampaign, setDeletingCampaign] = useState<Campaign | null>(null);
+
+  const { data: campaigns, isLoading } = useQuery({
+    queryKey: ['campaigns'],
+    queryFn: () => campaignsApi.list().then(r => r.data),
+    staleTime: 30_000,
+  });
+
+  const { data: rules } = useQuery({
+    queryKey: ['pricing', 'rules'],
+    queryFn: () => pricingApi.getRules().then(r => r.data),
+    staleTime: 60_000,
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (publicId: string) => campaignsApi.delete(publicId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['campaigns'] });
+      setDeletingCampaign(null);
+      toast.success('Kampanya silindi');
+    },
+    onError: () => toast.error('Kampanya silinemedi'),
+  });
+
+  const now = new Date().toISOString();
+
+  function campaignStatus(c: Campaign) {
+    if (!c.isActive) return { label: 'Pasif', color: 'bg-gray-100 text-gray-600' };
+    if (c.validUntil < now) return { label: 'Süresi Dolmuş', color: 'bg-red-50 text-red-600' };
+    if (c.validFrom > now) return { label: 'Planlandı', color: 'bg-blue-50 text-blue-600' };
+    return { label: 'Aktif', color: 'bg-green-50 text-green-700' };
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Kampanya kodları oluşturun ve fiyat kurallarıyla ilişkilendirin. Muayenede kampanya kodu seçildiğinde otomatik fiyat uygulanır.
+        </p>
+        <Button size="sm" onClick={() => { setEditingCampaign(null); setDialogOpen(true); }}>
+          <Plus className="h-4 w-4 mr-1.5" />
+          Yeni Kampanya
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16" />)}</div>
+      ) : !campaigns || campaigns.length === 0 ? (
+        <div className="border rounded-lg p-8 text-center text-sm text-muted-foreground">
+          <Megaphone className="h-8 w-8 mx-auto mb-2 opacity-40" />
+          <p>Henüz kampanya tanımlanmamış.</p>
+          <p className="text-xs mt-1">Kampanya oluşturup fiyat kurallarıyla bağlayabilirsiniz.</p>
+        </div>
+      ) : (
+        <div className="border rounded-lg divide-y">
+          {campaigns.map(c => {
+            const status = campaignStatus(c);
+            const linkedRule = rules?.find(r => r.publicId === c.linkedRulePublicId);
+            return (
+              <div key={c.publicId} className="px-4 py-3 flex items-center gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-sm font-medium">{c.code}</span>
+                    <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium ${status.color}`}>
+                      {status.label}
+                    </span>
+                  </div>
+                  <p className="text-sm mt-0.5">{c.name}</p>
+                  {c.description && <p className="text-xs text-muted-foreground">{c.description}</p>}
+                  <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
+                      {new Date(c.validFrom).toLocaleDateString('tr-TR')} — {new Date(c.validUntil).toLocaleDateString('tr-TR')}
+                    </span>
+                    {linkedRule && (
+                      <span className="flex items-center gap-1">
+                        <Zap className="h-3 w-3 text-amber-500" />
+                        {linkedRule.name}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => { setEditingCampaign(c); setDialogOpen(true); }}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setDeletingCampaign(c)} className="text-destructive hover:text-destructive">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <CampaignDialog
+        open={dialogOpen}
+        onClose={() => { setDialogOpen(false); setEditingCampaign(null); }}
+        editing={editingCampaign}
+        rules={rules ?? []}
+      />
+
+      {/* Silme onay dialog'u */}
+      <Dialog open={!!deletingCampaign} onOpenChange={v => !v && setDeletingCampaign(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Kampanya Sil</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm">
+            <span className="font-mono font-medium">{deletingCampaign?.code}</span> kampanyasını silmek istediğinize emin misiniz?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeletingCampaign(null)}>İptal</Button>
+            <Button variant="destructive" onClick={() => deleteMut.mutate(deletingCampaign!.publicId)} disabled={deleteMut.isPending}>
+              {deleteMut.isPending ? 'Siliniyor...' : 'Sil'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ─── Treatment Mappings Tab ─────────────────────────────────────────────────
+
+function TreatmentMappingsTab() {
+  const qc = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [addingFor, setAddingFor] = useState<{ publicId: string; name: string } | null>(null);
+  const [newRefListId, setNewRefListId] = useState<string>('');
+  const [newRefCode, setNewRefCode] = useState('');
+
+  const { data: treatmentsPage, isLoading } = useQuery({
+    queryKey: ['treatments', 'list', 'mappings-tab', search],
+    queryFn: () => treatmentsApi.list({ search: search || undefined, activeOnly: true, pageSize: 50 }).then(r => r.data),
+    staleTime: 30_000,
+  });
+
+  const { data: refLists } = useQuery({
+    queryKey: ['pricing', 'reference-lists'],
+    queryFn: () => pricingApi.getReferenceLists().then(r => r.data),
+    staleTime: 60_000,
+  });
+
+  const { data: mappings, isFetching: mappingsLoading } = useQuery({
+    queryKey: ['treatment-mappings', expandedId],
+    queryFn: () => treatmentMappingsApi.getMappings(expandedId!).then(r => r.data),
+    enabled: !!expandedId,
+    staleTime: 15_000,
+  });
+
+  const createMappingMut = useMutation({
+    mutationFn: () => treatmentMappingsApi.createMapping(addingFor!.publicId, {
+      referenceListId: Number(newRefListId),
+      referenceCode: newRefCode.trim(),
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['treatment-mappings', addingFor!.publicId] });
+      toast.success('Eşleştirme eklendi');
+      setAddingFor(null); setNewRefListId(''); setNewRefCode('');
+    },
+    onError: () => toast.error('Eşleştirme eklenemedi'),
+  });
+
+  const deleteMappingMut = useMutation({
+    mutationFn: ({ treatmentPublicId, mappingId }: { treatmentPublicId: string; mappingId: number }) =>
+      treatmentMappingsApi.deleteMapping(treatmentPublicId, mappingId),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ['treatment-mappings', vars.treatmentPublicId] });
+      toast.success('Eşleştirme silindi');
+    },
+    onError: () => toast.error('Eşleştirme silinemedi'),
+  });
+
+  const treatments = treatmentsPage?.items ?? [];
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Tedavilerinizi referans fiyat listeleriyle (TDB, SUT, CARI…) eşleştirin. Eşleştirme yapılmadan kural motoru çalışmaz.
+      </p>
+
+      <div className="relative max-w-sm">
+        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <Input
+          className="pl-8"
+          placeholder="Tedavi ara..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
+      ) : treatments.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-8">Tedavi bulunamadı.</p>
+      ) : (
+        <div className="border rounded-lg divide-y">
+          {treatments.map(t => {
+            const isExpanded = expandedId === t.publicId;
+            return (
+              <div key={t.publicId}>
+                <button
+                  type="button"
+                  className="w-full text-left px-4 py-2.5 flex items-center gap-3 hover:bg-accent/50 transition-colors"
+                  onClick={() => setExpandedId(isExpanded ? null : t.publicId)}
+                >
+                  <ChevronRight className={cn('h-4 w-4 shrink-0 transition-transform', isExpanded && 'rotate-90')} />
+                  <span className="font-mono text-xs text-muted-foreground w-16 shrink-0">{t.code}</span>
+                  <span className="text-sm font-medium flex-1">{t.name}</span>
+                  <Badge variant="outline" className="text-xs">{t.category?.name ?? '—'}</Badge>
+                </button>
+
+                {isExpanded && (
+                  <div className="px-4 pb-3 pl-12 space-y-2">
+                    {mappingsLoading ? (
+                      <Skeleton className="h-8 w-full" />
+                    ) : !mappings || mappings.length === 0 ? (
+                      <p className="text-xs text-muted-foreground italic">Henüz eşleştirme yapılmamış.</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {mappings.map(m => (
+                          <div key={m.id} className="flex items-center gap-2 text-sm bg-muted/40 rounded-md px-3 py-1.5">
+                            <Link2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <Badge variant="outline" className="text-xs font-mono">{m.referenceListCode}</Badge>
+                            <span className="font-mono text-xs">{m.referenceCode}</span>
+                            {m.referenceItemName && <span className="text-muted-foreground text-xs">— {m.referenceItemName}</span>}
+                            {m.mappingQuality && (
+                              <Badge variant={m.mappingQuality === 'exact' ? 'default' : 'secondary'} className="text-[10px] ml-auto">
+                                {m.mappingQuality}
+                              </Badge>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => deleteMappingMut.mutate({ treatmentPublicId: t.publicId, mappingId: m.id })}
+                              className="text-muted-foreground hover:text-destructive ml-1"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => { setAddingFor({ publicId: t.publicId, name: t.name }); setNewRefListId(''); setNewRefCode(''); }}
+                      className="text-xs text-primary hover:underline flex items-center gap-1"
+                    >
+                      <Plus className="h-3 w-3" /> Eşleştirme ekle
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Eşleştirme ekleme dialog'u */}
+      <Dialog open={!!addingFor} onOpenChange={v => !v && setAddingFor(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Eşleştirme Ekle</DialogTitle>
+          </DialogHeader>
+          {addingFor && (
+            <div className="space-y-3">
+              <div className="text-sm">
+                <span className="text-muted-foreground">Tedavi:</span>{' '}
+                <span className="font-medium">{addingFor.name}</span>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Referans Liste</Label>
+                <Select value={newRefListId} onValueChange={setNewRefListId}>
+                  <SelectTrigger className="h-8">
+                    <SelectValue>{(() => { const m = (refLists ?? []).find(l => String(l.id) === newRefListId); return m ? `${m.code} — ${m.name}` : 'Liste seç'; })()}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(refLists ?? []).map(l => (
+                      <SelectItem key={l.id} value={String(l.id)}>{l.code} — {l.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Referans Kod</Label>
+                <Input
+                  placeholder="Örn: 201010"
+                  value={newRefCode}
+                  onChange={e => setNewRefCode(e.target.value)}
+                  className="h-8 font-mono"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddingFor(null)}>İptal</Button>
+            <Button
+              onClick={() => createMappingMut.mutate()}
+              disabled={!newRefListId || !newRefCode.trim() || createMappingMut.isPending}
+            >
+              {createMappingMut.isPending ? 'Ekleniyor...' : 'Ekle'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 // ─── Price Test Tab ──────────────────────────────────────────────────────────
 
 function PriceTestTab() {
@@ -1710,6 +2274,7 @@ function PriceTestTab() {
   const [selectedBranch, setSelectedBranch] = useState<number | null>(null);
   const [selectedInstitution, setSelectedInstitution] = useState<number | null>(null);
   const [isOss, setIsOss] = useState(false);
+  const [testCampaignCode, setTestCampaignCode] = useState('');
   const [result, setResult] = useState<TreatmentPriceResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -1726,7 +2291,7 @@ function PriceTestTab() {
   });
 
   const { data: institutions } = useQuery({
-    queryKey: ['institutions'],
+    queryKey: ['pricing', 'institutions'],
     queryFn: () => institutionsApi.list().then(r => r.data),
     staleTime: 60_000,
   });
@@ -1740,6 +2305,7 @@ function PriceTestTab() {
         branchId: selectedBranch ?? undefined,
         institutionId: selectedInstitution ?? undefined,
         isOss,
+        campaignCode: testCampaignCode.trim() || undefined,
       });
       setResult(res.data);
     } catch {
@@ -1814,14 +2380,14 @@ function PriceTestTab() {
           <div className="space-y-1.5">
             <Label>Şube <span className="text-muted-foreground font-normal text-xs">(MULTI için)</span></Label>
             <Select
-              value={selectedBranch ? String(selectedBranch) : ''}
-              onValueChange={v => setSelectedBranch(v ? Number(v) : null)}
+              value={selectedBranch ? String(selectedBranch) : '__none__'}
+              onValueChange={v => setSelectedBranch(v === '__none__' ? null : Number(v))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Şube seç (opsiyonel)" />
+                <SelectValue>{selectedBranch ? ((branches ?? []).find(b => b.branchId === selectedBranch)?.branchName ?? selectedBranch) : 'Şube yok'}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Şube yok</SelectItem>
+                <SelectItem value="__none__">Şube yok</SelectItem>
                 {(branches ?? []).map(b => (
                   <SelectItem key={b.branchId} value={String(b.branchId)}>
                     {b.branchName} <span className="text-muted-foreground text-xs">MULTI={b.pricingMultiplier}</span>
@@ -1835,14 +2401,14 @@ function PriceTestTab() {
           <div className="space-y-1.5">
             <Label>Anlaşmalı Kurum</Label>
             <Select
-              value={selectedInstitution ? String(selectedInstitution) : ''}
-              onValueChange={v => setSelectedInstitution(v ? Number(v) : null)}
+              value={selectedInstitution ? String(selectedInstitution) : '__none__'}
+              onValueChange={v => setSelectedInstitution(v === '__none__' ? null : Number(v))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Kurum yok" />
+                <SelectValue>{selectedInstitution ? ((institutions ?? []).find(i => i.id === selectedInstitution)?.name ?? selectedInstitution) : 'Kurum yok'}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Kurum yok</SelectItem>
+                <SelectItem value="__none__">Kurum yok</SelectItem>
                 {(institutions ?? []).filter(i => i.isActive).map(i => (
                   <SelectItem key={i.id} value={String(i.id)}>{i.name}</SelectItem>
                 ))}
@@ -1851,10 +2417,21 @@ function PriceTestTab() {
           </div>
         </div>
 
-        {/* OSS */}
-        <div className="flex items-center gap-2">
-          <Checkbox id="test-oss" checked={isOss} onCheckedChange={v => setIsOss(!!v)} />
-          <Label htmlFor="test-oss" className="font-normal cursor-pointer">ÖSS Kapsamı</Label>
+        {/* OSS + Kampanya */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Checkbox id="test-oss" checked={isOss} onCheckedChange={v => setIsOss(!!v)} />
+            <Label htmlFor="test-oss" className="font-normal cursor-pointer">ÖSS Kapsamı</Label>
+          </div>
+          <div className="flex items-center gap-2 flex-1">
+            <Label className="text-sm whitespace-nowrap shrink-0">Kampanya:</Label>
+            <Input
+              placeholder="YAZ2026"
+              value={testCampaignCode}
+              onChange={e => setTestCampaignCode(e.target.value.toUpperCase())}
+              className="h-8 text-sm font-mono max-w-[160px]"
+            />
+          </div>
         </div>
 
         <Button onClick={runTest} disabled={!selectedTreatment || loading} className="w-full">
@@ -1863,47 +2440,74 @@ function PriceTestTab() {
       </div>
 
       {result && (
-        <div className="border rounded-lg p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <h3 className="font-medium">Sonuç</h3>
-            <span className={`text-sm font-medium ${strategyColor[result.strategy] ?? ''}`}>
-              {strategyLabel[result.strategy] ?? result.strategy}
-            </span>
-          </div>
-          <div className="grid grid-cols-3 gap-4 text-sm">
-            <div>
-              <p className="text-xs text-muted-foreground">Uygulanan Fiyat</p>
-              <p className="text-2xl font-bold tabular-nums">
-                {result.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
-                <span className="text-sm font-normal text-muted-foreground ml-1">{result.currency}</span>
-              </p>
+        <div className="space-y-4">
+          <div className="border rounded-lg p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <h3 className="font-medium">Sonuç</h3>
+              <span className={`text-sm font-medium ${strategyColor[result.strategy] ?? ''}`}>
+                {strategyLabel[result.strategy] ?? result.strategy}
+              </span>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Referans Fiyat</p>
-              <p className="text-lg font-medium tabular-nums text-muted-foreground">
-                {result.referencePrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {result.currency}
-              </p>
-            </div>
-            {result.unitPrice < result.referencePrice && (
+            <div className="grid grid-cols-3 gap-4 text-sm">
               <div>
-                <p className="text-xs text-muted-foreground">İndirim</p>
-                <p className="text-lg font-medium tabular-nums text-green-600">
-                  -{(((result.referencePrice - result.unitPrice) / result.referencePrice) * 100).toFixed(1)}%
+                <p className="text-xs text-muted-foreground">Uygulanan Fiyat</p>
+                <p className="text-2xl font-bold tabular-nums">
+                  {result.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                  <span className="text-sm font-normal text-muted-foreground ml-1">{result.currency}</span>
                 </p>
               </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Referans Fiyat</p>
+                <p className="text-lg font-medium tabular-nums text-muted-foreground">
+                  {result.referencePrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {result.currency}
+                </p>
+              </div>
+              {result.unitPrice < result.referencePrice && (
+                <div>
+                  <p className="text-xs text-muted-foreground">İndirim</p>
+                  <p className="text-lg font-medium tabular-nums text-green-600">
+                    -{(((result.referencePrice - result.unitPrice) / result.referencePrice) * 100).toFixed(1)}%
+                  </p>
+                </div>
+              )}
+            </div>
+            {result.appliedRuleName && (
+              <div className="bg-muted/50 rounded-md px-3 py-2 text-sm flex items-center gap-2">
+                <Zap className="h-3.5 w-3.5 text-amber-500" />
+                <span className="text-muted-foreground">Uygulanan kural:</span>
+                <span className="font-medium">{result.appliedRuleName}</span>
+              </div>
+            )}
+            {result.strategy === 'NoPriceConfigured' && (
+              <p className="text-sm text-destructive">
+                Bu tedavinin referans fiyat eşleştirmesi yok. /catalog sayfasından eşleştirme yapın.
+              </p>
             )}
           </div>
-          {result.appliedRuleName && (
-            <div className="bg-muted/50 rounded-md px-3 py-2 text-sm flex items-center gap-2">
-              <Zap className="h-3.5 w-3.5 text-amber-500" />
-              <span className="text-muted-foreground">Uygulanan kural:</span>
-              <span className="font-medium">{result.appliedRuleName}</span>
+
+          {result.trace && result.trace.length > 0 && (
+            <div className="border rounded-lg overflow-hidden">
+              <div className="bg-muted/30 px-4 py-2 border-b">
+                <h4 className="text-sm font-medium flex items-center gap-2">
+                  <ListChecks className="h-4 w-4 text-muted-foreground" />
+                  Hesaplama Detayları ({result.trace.length} adım)
+                </h4>
+              </div>
+              <div className="divide-y max-h-[500px] overflow-y-auto">
+                {result.trace.map((step, i) => (
+                  <div key={i} className="px-4 py-2 text-xs flex items-start gap-3 hover:bg-muted/20 transition-colors">
+                    <span className="shrink-0 w-5 text-center text-muted-foreground tabular-nums">{i + 1}</span>
+                    <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0 font-medium min-w-[100px] justify-center">
+                      {step.phase}
+                    </Badge>
+                    <span className="flex-1 text-muted-foreground break-all leading-relaxed">{step.detail}</span>
+                    {step.result && (
+                      <span className="shrink-0 font-medium text-right min-w-[90px]">{step.result}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-          )}
-          {result.strategy === 'NoPriceConfigured' && (
-            <p className="text-sm text-destructive">
-              Bu tedavinin referans fiyat eşleştirmesi yok. /catalog sayfasından eşleştirme yapın.
-            </p>
           )}
         </div>
       )}
@@ -1932,6 +2536,14 @@ export function PricingPage() {
           <TabsList>
             <TabsTrigger value="prices">Referans Fiyatlar</TabsTrigger>
             <TabsTrigger value="rules">Fiyat Kuralları</TabsTrigger>
+            <TabsTrigger value="campaigns">
+              <Megaphone className="h-3.5 w-3.5 mr-1.5" />
+              Kampanyalar
+            </TabsTrigger>
+            <TabsTrigger value="mappings">
+              <Link2 className="h-3.5 w-3.5 mr-1.5" />
+              Tedavi Eşleştirmeleri
+            </TabsTrigger>
             <TabsTrigger value="branches">Şube Ayarları</TabsTrigger>
             <TabsTrigger value="test">
               <FlaskConical className="h-3.5 w-3.5 mr-1.5" />
@@ -1950,6 +2562,14 @@ export function PricingPage() {
 
         <TabsContent value="rules" className="mt-4">
           <PricingRulesTab />
+        </TabsContent>
+
+        <TabsContent value="campaigns" className="mt-4">
+          <CampaignsTab />
+        </TabsContent>
+
+        <TabsContent value="mappings" className="mt-4">
+          <TreatmentMappingsTab />
         </TabsContent>
 
         <TabsContent value="branches" className="mt-4">

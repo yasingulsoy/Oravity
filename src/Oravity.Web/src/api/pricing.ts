@@ -30,6 +30,7 @@ export interface ReferencePriceItemsPage {
 
 export interface PricingRule {
   publicId: string;
+  branchId: number | null;
   name: string;
   description: string | null;
   ruleType: string;
@@ -69,12 +70,19 @@ export interface BranchPricing {
   pricingMultiplier: number;
 }
 
+export interface TraceStep {
+  phase: string;
+  detail: string;
+  result: string | null;
+}
+
 export interface TreatmentPriceResponse {
   unitPrice: number;
   referencePrice: number;
   currency: string;
   appliedRuleName: string | null;
   strategy: string;
+  trace: TraceStep[] | null;
 }
 
 export const pricingApi = {
@@ -115,7 +123,7 @@ export const pricingApi = {
   deleteRule: (publicId: string) =>
     apiClient.delete(`/pricing/rules/${publicId}`),
 
-  getTreatmentPrice: (treatmentPublicId: string, params?: { branchId?: number; institutionId?: number; isOss?: boolean }) =>
+  getTreatmentPrice: (treatmentPublicId: string, params?: { branchId?: number; institutionId?: number; isOss?: boolean; campaignCode?: string }) =>
     apiClient.get<TreatmentPriceResponse>(`/pricing/treatment/${treatmentPublicId}/price`, { params }),
 
   // Branch pricing

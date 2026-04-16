@@ -40,8 +40,67 @@ public class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCommand, L
         // Eski token'ı iptal et
         tokenEntity.Revoke();
 
-        // Yeni token çifti üret
-        var newAccessToken = _jwtService.GenerateAccessToken(tokenEntity.User);
+        var user = tokenEntity.User;
+
+        // Company/branch bağlamını çöz (Platform Admin dahil)
+        long? branchId = null;
+        long? companyId = null;
+        int? roleLevel = null;
+
+        var assignment = await _db.UserRoleAssignments.AsNoTracking()
+            .Where(a => a.UserId == user.Id && a.IsActive)
+            .OrderByDescending(a => a.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (assignment is not null)
+        {
+            branchId  = assignment.BranchId;
+            companyId = assignment.CompanyId;
+
+            if (companyId == null && branchId.HasValue)
+                companyId = await _db.Branches.AsNoTracking()
+                    .Where(b => b.Id == branchId.Value)
+                    .Select(b => (long?)b.CompanyId)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+            roleLevel = user.IsPlatformAdmin ? 1
+                : assignment.BranchId.HasValue ? 4
+                : 2;
+        }
+
+        if (companyId == null)
+        {
+            if (user.IsPlatformAdmin)
+            {
+                // Platform admin: şirket sayısından bağımsız ilk şirketi kullan
+                companyId = await _db.Companies.AsNoTracking()
+                    .OrderBy(c => c.Id)
+                    .Select(c => (long?)c.Id)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+            else
+            {
+                var companies = await _db.Companies.AsNoTracking()
+                    .Select(c => c.Id).Take(2).ToListAsync(cancellationToken);
+                if (companies.Count == 1)
+                    companyId = companies[0];
+            }
+
+            if (companyId.HasValue)
+            {
+                if (branchId == null)
+                {
+                    var branches = await _db.Branches.AsNoTracking()
+                        .Where(b => b.CompanyId == companyId.Value)
+                        .Select(b => b.Id).Take(2).ToListAsync(cancellationToken);
+                    if (branches.Count == 1)
+                        branchId = branches[0];
+                }
+                roleLevel ??= user.IsPlatformAdmin ? 1 : 2;
+            }
+        }
+
+        var newAccessToken = _jwtService.GenerateAccessToken(user, branchId, companyId, roleLevel);
         var newRefreshTokenStr = _jwtService.GenerateRefreshToken();
         var newTokenHash = _jwtService.HashToken(newRefreshTokenStr);
 

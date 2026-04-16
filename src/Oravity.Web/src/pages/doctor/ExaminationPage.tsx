@@ -8,7 +8,7 @@ import {
   CheckCheck, AlertTriangle, Cigarette, Wine,
   Phone, Mail, MapPin, Calendar, Heart, Save,
   FileText, Search, Trash2, History, Lock, X,
-  Stethoscope, Plus, ChevronDown, ChevronRight, CheckCircle2,
+  Stethoscope, Plus, ChevronDown, ChevronRight, CheckCircle2, Megaphone,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,7 @@ import { protocolsApi } from '@/api/visits';
 import { patientsApi } from '@/api/patients';
 import { dentalApi } from '@/api/dental';
 import { treatmentsApi, treatmentPlansApi } from '@/api/treatments';
+import { campaignsApi } from '@/api/campaigns';
 import type { TreatmentCatalogItem } from '@/api/treatments';
 import type { TreatmentPlan } from '@/types/treatment';
 import {
@@ -1258,6 +1259,15 @@ function PlanBuilderPanel({
   const patientIsOss = !!patientData?.insuranceInstitutionId;
   const catalog: TreatmentCatalogItem[] = catalogData?.items ?? [];
 
+  // Aktif kampanyalar
+  const { data: activeCampaigns } = useQuery({
+    queryKey: ['campaigns', 'active'],
+    queryFn: () => campaignsApi.list(true).then(r => r.data),
+    staleTime: 60_000,
+    enabled: open,
+  });
+  const [selectedCampaignCode, setSelectedCampaignCode] = useState('');
+
   // Diş şeması verisi (status göstermek için)
   const [teethMap, setTeethMap] = useState<Record<string, ToothRecord>>({});
   useEffect(() => {
@@ -1286,6 +1296,7 @@ function PlanBuilderPanel({
       setSearch('');
       setDraftItems([]);
       setSaving(false);
+      setSelectedCampaignCode('');
     }
   }, [open]);
 
@@ -1329,6 +1340,7 @@ function PlanBuilderPanel({
       const { data } = await treatmentsApi.getPrice(t.publicId, {
         institutionId: patientInstitutionId,
         isOss: patientIsOss,
+        campaignCode: selectedCampaignCode || undefined,
       });
       if (data.unitPrice > 0) {
         const ids = new Set(placeholders.map(p => p.localId));
@@ -1397,6 +1409,22 @@ function PlanBuilderPanel({
           onChange={(e) => setPlanName(e.target.value)}
           placeholder="Plan adı..."
         />
+        {activeCampaigns && activeCampaigns.length > 0 && (
+          <Select value={selectedCampaignCode} onValueChange={setSelectedCampaignCode}>
+            <SelectTrigger className="h-7 w-auto max-w-[180px] text-xs gap-1">
+              <Megaphone className="size-3 shrink-0" />
+              <SelectValue placeholder="Kampanya" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Kampanya yok</SelectItem>
+              {activeCampaigns.map(c => (
+                <SelectItem key={c.publicId} value={c.code}>
+                  <span className="font-mono">{c.code}</span> — {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <span className="text-xs text-muted-foreground ml-auto">
           {draftItems.length > 0 && <>{draftItems.length} kalem · {total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</>}
         </span>

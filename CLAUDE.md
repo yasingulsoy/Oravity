@@ -23,7 +23,7 @@ Oravity.Web            — React/TypeScript frontend (src/Oravity.Web/)
 - Her yeni migration: `--project src/Oravity.Infrastructure --startup-project src/Oravity.Core`
 
 ## Mevcut Controller'lar (Swagger)
-Appointments, Audit, Auth, BookingRequests, Complaints, DentalChart,
+Appointments, Audit, Auth, BookingRequests, **Campaigns**, Complaints, DentalChart,
 EInvoice, Health, Localization, Notifications, PatientPortal,
 PatientRecords, Patients, Payments, **Pricing**, PublicBooking,
 PublicSurvey, Reports, **Security** (2FA), Surveys, TreatmentMappings,
@@ -34,7 +34,7 @@ Oluşturulan tablolar (her şey migrations ile yönetiliyor):
 - Core: companies, branches, users, permissions, role_templates, ...
 - Klinik: patients, appointments, treatment_plans, treatment_plan_items
 - Fiyatlandırma (04/2026): treatments, treatment_categories, treatment_mappings,
-  pricing_rules, reference_price_lists, reference_price_items
+  pricing_rules, reference_price_lists, reference_price_items, **campaigns**
 - Güvenlik (04/2026): user_2fa_settings, trusted_devices, branch_security_policies, backup_logs
 - branch.pricing_multiplier (04/2026): MULTI formül değişkeni için
 
@@ -44,7 +44,9 @@ Oluşturulan tablolar (her şey migrations ile yönetiliyor):
   - Prefix eşleştirme: `TDB_2026` → `TDB`, `CARI_2026` → `CARI`, `ISAK_2026` → `ISAK` vb.
   - `ISAK` artık referans fiyat listesinden çekiliyor (ISAK_* prefix), boolean değil
 - **MULTI**: `Branch.PricingMultiplier` — şube bazlı fiyat katsayısı (ör: Bodrum=1.10)
-- **CampaignCode**: `GetTreatmentPrice` endpoint'ine `?campaignCode=YAZ2026` ile aktarılır
+- **Campaign modülü**: `campaigns` tablosu, CRUD API (`/api/campaigns`), `/pricing → Kampanyalar` sekmesi
+  - Kampanya kodu kural motorunun `includeFilters.campaignCodes` ile eşleşir
+  - Muayene plan builder'da aktif kampanya seçilebilir → fiyat otomatik hesaplanır
 - **StopProcessing**: `true` → ilk eşleşen kuralda dur; `false` → sonraki kurallarla devam et, son eşleşen kazanır
 - **TenantCompanyResolver**: branch-level kullanıcılar için CompanyId çözümleme
   - JWT.CompanyId → BranchId→Branch.CompanyId → UserRoleAssignment sıralaması
@@ -61,7 +63,7 @@ Oluşturulan tablolar (her şey migrations ile yönetiliyor):
 - `/patients/:id` — PatientDetailPage
 - `/catalog` — TreatmentCatalogPage (tedavi kataloğu + referans eşleştirme)
 - `/treatments` — TreatmentPlansPage (hasta tedavi planları listesi)
-- `/pricing` — PricingPage (referans fiyatlar, kurallar, şube ayarları)
+- `/pricing` — PricingPage (referans fiyatlar, kurallar, kampanyalar, eşleştirmeler, şube ayarları, fiyat testi)
 - `/finance` — FinancePage
 - `/appointments` — AppointmentCalendarPage
 
@@ -73,6 +75,7 @@ Oluşturulan tablolar (her şey migrations ile yönetiliyor):
 - `GET /api/pricing/treatment/{id}/price?branchId=&institutionId=&isOss=&campaignCode=` — fiyat hesapla
 - `GET/PATCH /api/pricing/branches[/{id}/multiplier]` — şube MULTI ayarı
 - `GET/PUT /api/pricing/reference-lists[/{id}/items/{code}]` — referans listeler
+- `GET/POST/PUT/DELETE /api/campaigns` — kampanya CRUD
 
 ## Henüz Yapılmayan / Eksik Alanlar
 > git log ile doğrula, bu liste stalest olabilir

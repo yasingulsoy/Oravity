@@ -919,26 +919,33 @@ public class DatabaseSeeder
     // ─── Platform Admin (sadece Development) ──────────────────────────────
     private async Task SeedPlatformAdminAsync(CancellationToken ct)
     {
-        const string adminEmail = "admin@oravity.com";
-
-        if (await _db.Users.AnyAsync(u => u.Email == adminEmail, ct))
+        var admins = new[]
         {
-            _logger.LogDebug("Platform admin zaten mevcut, atlanıyor.");
-            return;
-        }
+            ("admin@oravity.com",  "Platform Admin"),
+            ("cadmin@oravity.com", "Company Admin (Platform)"),
+        };
 
         var passwordHash = BCrypt.Net.BCrypt.HashPassword("Admin123!", workFactor: 12);
 
-        var admin = User.Create(
-            email: adminEmail,
-            fullName: "Platform Admin",
-            passwordHash: passwordHash,
-            isPlatformAdmin: true
-        );
+        foreach (var (email, name) in admins)
+        {
+            if (await _db.Users.AnyAsync(u => u.Email == email, ct))
+            {
+                _logger.LogDebug("Platform admin {Email} zaten mevcut, atlanıyor.", email);
+                continue;
+            }
 
-        await _db.Users.AddAsync(admin, ct);
-        await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("Platform admin kullanıcısı oluşturuldu: {Email}", adminEmail);
+            var admin = User.Create(
+                email: email,
+                fullName: name,
+                passwordHash: passwordHash,
+                isPlatformAdmin: true
+            );
+
+            await _db.Users.AddAsync(admin, ct);
+            await _db.SaveChangesAsync(ct);
+            _logger.LogInformation("Platform admin kullanıcısı oluşturuldu: {Email}", email);
+        }
     }
 
     private async Task SeedProtocolTypesAsync(CancellationToken ct)

@@ -51,11 +51,27 @@ public class PermissionAuthorizationFilter : IAsyncActionFilter
             return;
         }
 
-        // Platform admin her yetkiye sahiptir
+        // Platform admin her yetkiye sahiptir — ITenantContext kontrolü
         if (_tenantContext.IsPlatformAdmin)
         {
             await next();
             return;
+        }
+
+        // Platform admin fallback: JWT/middleware'den Role doğru gelmemişse DB'den kontrol
+        if (_tenantContext.UserId > 0)
+        {
+            var isPlatformAdmin = await _db.Users.AsNoTracking()
+                .Where(u => u.Id == _tenantContext.UserId)
+                .Select(u => u.IsPlatformAdmin)
+                .FirstOrDefaultAsync();
+
+            if (isPlatformAdmin)
+            {
+                _tenantContext.Role = 1; // context'i de düzelt
+                await next();
+                return;
+            }
         }
 
         // "patient:view" → "patient.view"

@@ -53,38 +53,8 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponse>
         // Başarılı giriş
         _db.LoginAttempts.Add(LoginAttempt.Create(email, request.IpAddress, true));
 
-        // JWT'ye branch/company/role ekle — TenantMiddleware bu claim'leri okur
-        long? primaryBranchId = null;
-        long? primaryCompanyId = null;
-        int? primaryRoleLevel = null;
-
-        if (!user.IsPlatformAdmin)
-        {
-            var assignment = await _db.UserRoleAssignments
-                .AsNoTracking()
-                .Where(a => a.UserId == user.Id && a.IsActive)
-                .OrderByDescending(a => a.CreatedAt)
-                .FirstOrDefaultAsync(cancellationToken);
-
-            if (assignment is not null)
-            {
-                primaryBranchId  = assignment.BranchId;
-                primaryCompanyId = assignment.CompanyId;
-
-                // CompanyId null ama BranchId varsa → branch'ten çöz
-                if (primaryCompanyId == null && primaryBranchId.HasValue)
-                {
-                    primaryCompanyId = await _db.Branches
-                        .AsNoTracking()
-                        .Where(b => b.Id == primaryBranchId.Value)
-                        .Select(b => (long?)b.CompanyId)
-                        .FirstOrDefaultAsync(cancellationToken);
-                }
-
-                // BranchId varsa şube personeli (4), yoksa şirket yöneticisi (2)
-                primaryRoleLevel = assignment.BranchId.HasValue ? 4 : 2;
-            }
-        }
+        var (primaryBranchId, primaryCompanyId, primaryRoleLevel) =
+            await ResolveUserContext(user, cancellationToken);
 
         var accessToken = _jwtService.GenerateAccessToken(user, primaryBranchId, primaryCompanyId, primaryRoleLevel);
         var refreshToken = _jwtService.GenerateRefreshToken();
@@ -97,5 +67,72 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponse>
         await _db.SaveChangesAsync(cancellationToken);
 
         return new LoginResponse(accessToken, refreshToken, 15 * 60);
+    }
+
+    private async Task<(long? BranchId, long? CompanyId, int? RoleLevel)> ResolveUserContext(
+        User user, CancellationToken ct)
+    {
+        long? branchId = null;
+        long? companyId = null;
+        int? roleLevel = null;
+
+        var assignment = await _db.UserRoleAssignments
+            .AsNoTracking()
+            .Where(a => a.UserId == user.Id && a.IsActive)
+            .OrderByDescending(a => a.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        if (assignment is not null)
+        {
+            branchId  = assignment.BranchId;
+            companyId = assignment.CompanyId;
+
+            if (companyId == null && branchId.HasValue)
+            {
+                companyId = await _db.Branches.AsNoTracking()
+                    .Where(b => b.Id == branchId.Value)
+                    .Select(b => (long?)b.CompanyId)
+                    .FirstOrDefaultAsync(ct);
+            }
+
+            roleLevel = user.IsPlatformAdmin ? 1
+                : assignment.BranchId.HasValue ? 4
+                : 2;
+        }
+
+        // Platform Admin: şirket sayısından bağımsız ilk şirketi kullan
+        // Normal kullanıcı: sadece tek şirket varsa kullan
+        if (companyId == null)
+        {
+            if (user.IsPlatformAdmin)
+            {
+                companyId = await _db.Companies.AsNoTracking()
+                    .OrderBy(c => c.Id)
+                    .Select(c => (long?)c.Id)
+                    .FirstOrDefaultAsync(ct);
+            }
+            else
+            {
+                var companies = await _db.Companies.AsNoTracking()
+                    .Select(c => c.Id).Take(2).ToListAsync(ct);
+                if (companies.Count == 1)
+                    companyId = companies[0];
+            }
+
+            if (companyId.HasValue)
+            {
+                if (branchId == null)
+                {
+                    var branches = await _db.Branches.AsNoTracking()
+                        .Where(b => b.CompanyId == companyId.Value)
+                        .Select(b => b.Id).Take(2).ToListAsync(ct);
+                    if (branches.Count == 1)
+                        branchId = branches[0];
+                }
+                roleLevel ??= user.IsPlatformAdmin ? 1 : 2;
+            }
+        }
+
+        return (branchId, companyId, roleLevel);
     }
 }

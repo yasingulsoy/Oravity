@@ -28,11 +28,16 @@ public class InstitutionsController : ControllerBase
     [RequirePermission("institution:view")]
     public async Task<IActionResult> List(CancellationToken ct)
     {
-        var companyId = _tenant.IsPlatformAdmin ? null : _tenant.CompanyId;
+        IQueryable<Institution> query = _db.Institutions.AsNoTracking().Where(x => x.IsActive);
 
-        var items = await _db.Institutions
-            .AsNoTracking()
-            .Where(x => x.IsActive && (x.CompanyId == null || x.CompanyId == companyId))
+        // Platform admin → tüm kurumları göster; normal kullanıcı → kendi şirketi + globaller
+        if (!_tenant.IsPlatformAdmin)
+        {
+            var companyId = _tenant.CompanyId;
+            query = query.Where(x => x.CompanyId == null || x.CompanyId == companyId);
+        }
+
+        var items = await query
             .OrderBy(x => x.Name)
             .Select(x => new InstitutionResponse(
                 x.Id, x.PublicId, x.Name, x.Code, x.Type, x.MarketSegment,

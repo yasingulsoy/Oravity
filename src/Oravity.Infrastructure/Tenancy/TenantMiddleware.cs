@@ -1,5 +1,8 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Oravity.Infrastructure.Database;
 using Oravity.SharedKernel.Interfaces;
 
 namespace Oravity.Infrastructure.Tenancy;
@@ -8,6 +11,7 @@ namespace Oravity.Infrastructure.Tenancy;
 /// Her request'te tenant bağlamını çözer:
 ///   1. JWT claim'lerinden okur (birincil kaynak)
 ///   2. X-Company-Id / X-Branch-Id header'larından okur (fallback / override)
+///   3. Hâlâ null ise DB'den otomatik çözer (tek şirket/şube senaryosu)
 /// </summary>
 public class TenantMiddleware
 {
@@ -63,8 +67,92 @@ public class TenantMiddleware
             {
                 tenantCtx.BranchId = headerBranchId;
             }
+
+            // JWT/header'dan çözülemediyse DB'den otomatik çöz
+            if (tenantCtx.IsAuthenticated && (tenantCtx.CompanyId == null || tenantCtx.Role == 0))
+            {
+                var db = context.RequestServices.GetRequiredService<AppDbContext>();
+                await ResolveFromDatabase(tenantCtx, db);
+            }
         }
 
         await _next(context);
+    }
+
+    private static async Task ResolveFromDatabase(ITenantContext tenant, AppDbContext db)
+    {
+        // 0. Role henüz set edilmemişse DB'den IsPlatformAdmin kontrol et
+        if (tenant.Role == 0 && tenant.UserId > 0)
+        {
+            var isPlatformAdmin = await db.Users.AsNoTracking()
+                .Where(u => u.Id == tenant.UserId)
+                .Select(u => u.IsPlatformAdmin)
+                .FirstOrDefaultAsync();
+
+            if (isPlatformAdmin)
+                tenant.Role = 1;
+        }
+
+        // 1. UserRoleAssignment üzerinden çöz
+        if (tenant.UserId > 0)
+        {
+            var assignment = await db.UserRoleAssignments.AsNoTracking()
+                .Where(a => a.UserId == tenant.UserId && a.IsActive)
+                .OrderByDescending(a => a.CreatedAt)
+                .Select(a => new { a.CompanyId, a.BranchId })
+                .FirstOrDefaultAsync();
+
+            if (assignment is not null)
+            {
+                tenant.CompanyId = assignment.CompanyId;
+                tenant.BranchId ??= assignment.BranchId;
+
+                if (tenant.CompanyId == null && assignment.BranchId.HasValue)
+                {
+                    tenant.CompanyId = await db.Branches.AsNoTracking()
+                        .Where(b => b.Id == assignment.BranchId.Value)
+                        .Select(b => (long?)b.CompanyId)
+                        .FirstOrDefaultAsync();
+                }
+            }
+        }
+
+        // 2. Hâlâ null ise şirket çöz
+        if (tenant.CompanyId == null)
+        {
+            // Platform admin → şirket sayısından bağımsız, ilk şirketi al
+            // Normal kullanıcı → sadece tek şirket varsa kullan
+            long? resolvedCompanyId = null;
+
+            if (tenant.IsPlatformAdmin)
+            {
+                resolvedCompanyId = await db.Companies.AsNoTracking()
+                    .OrderBy(c => c.Id)
+                    .Select(c => (long?)c.Id)
+                    .FirstOrDefaultAsync();
+            }
+            else
+            {
+                var companyIds = await db.Companies.AsNoTracking()
+                    .Select(c => c.Id).Take(2).ToListAsync();
+                if (companyIds.Count == 1)
+                    resolvedCompanyId = companyIds[0];
+            }
+
+            if (resolvedCompanyId.HasValue)
+            {
+                tenant.CompanyId = resolvedCompanyId.Value;
+
+                if (tenant.BranchId == null)
+                {
+                    var branchIds = await db.Branches.AsNoTracking()
+                        .Where(b => b.CompanyId == resolvedCompanyId.Value)
+                        .Select(b => b.Id).Take(2).ToListAsync();
+
+                    if (branchIds.Count == 1)
+                        tenant.BranchId = branchIds[0];
+                }
+            }
+        }
     }
 }

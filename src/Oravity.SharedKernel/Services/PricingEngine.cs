@@ -28,7 +28,10 @@ public record PricingResult
     public string  AppliedStrategy  { get; init; } = string.Empty;
     public string? AppliedRuleName  { get; init; }
     public string  Currency         { get; init; } = "TRY";
+    public List<PricingTraceStep> Trace { get; init; } = [];
 }
+
+public record PricingTraceStep(string Phase, string Detail, string? Result = null);
 
 /// <summary>
 /// Kural motoru için tedavi + referans fiyat bağlamı.
@@ -151,21 +154,48 @@ public class PricingEngine
     /// </summary>
     public PricingResult? CalculateWithRules(
         RuleEvalContext ctx,
-        IReadOnlyList<PricingRule> rules)
+        IReadOnlyList<PricingRule> rules,
+        List<PricingTraceStep>? trace = null)
     {
         var now = DateTime.UtcNow;
         PricingResult? lastResult = null;
 
+        trace?.Add(new("Bağlam", $"Tedavi={ctx.TreatmentCode}, Kurum={ctx.InstitutionId?.ToString() ?? "yok"}, ÖSS={ctx.IsOss}, Kampanya={ctx.CampaignCode ?? "yok"}, MULTI={ctx.PricingMultiplier}"));
+        trace?.Add(new("Referans Fiyatlar", string.Join(", ", ctx.ReferencePrices.Select(kv => $"{kv.Key}={kv.Value:N2}"))));
+        trace?.Add(new("Kural Sayısı", $"{rules.Count} kural yüklendi, öncelik sırasıyla işlenecek"));
+
         foreach (var rule in rules.OrderBy(r => r.Priority))
         {
-            if (!rule.IsActive) continue;
-            if (rule.ValidFrom.HasValue  && rule.ValidFrom.Value  > now) continue;
-            if (rule.ValidUntil.HasValue && rule.ValidUntil.Value < now) continue;
+            var ruleLabel = $"[P{rule.Priority}] {rule.Name}";
 
-            if (!MatchesFilters(ctx, rule.IncludeFilters, rule.ExcludeFilters)) continue;
+            if (!rule.IsActive)
+            {
+                trace?.Add(new("Kural Atlandı", $"{ruleLabel} → pasif", "⏭️ ATLA"));
+                continue;
+            }
+            if (rule.ValidFrom.HasValue && rule.ValidFrom.Value > now)
+            {
+                trace?.Add(new("Kural Atlandı", $"{ruleLabel} → henüz başlamadı (başlangıç: {rule.ValidFrom.Value:d})", "⏭️ ATLA"));
+                continue;
+            }
+            if (rule.ValidUntil.HasValue && rule.ValidUntil.Value < now)
+            {
+                trace?.Add(new("Kural Atlandı", $"{ruleLabel} → süresi dolmuş (bitiş: {rule.ValidUntil.Value:d})", "⏭️ ATLA"));
+                continue;
+            }
+
+            var filterResult = MatchesFiltersWithReason(ctx, rule.IncludeFilters, rule.ExcludeFilters);
+            if (!filterResult.Matched)
+            {
+                trace?.Add(new("Filtre Eşleşmedi", $"{ruleLabel} → {filterResult.Reason}", "❌ EŞLEŞMEZ"));
+                continue;
+            }
+            trace?.Add(new("Filtre Eşleşti", $"{ruleLabel} → {filterResult.Reason}", "✅ EŞLEŞME"));
 
             var vars = BuildFormulaVariables(ctx);
             var tdb = vars["TDB"];
+
+            trace?.Add(new("Değişkenler", $"{ruleLabel} → {string.Join(", ", vars.Select(kv => $"{kv.Key}={kv.Value:N2}"))}"));
 
             decimal finalPrice;
             try
@@ -184,27 +214,46 @@ public class PricingEngine
                     _ => tdb
                 };
             }
-            catch
+            catch (Exception ex)
             {
+                trace?.Add(new("Formül Hatası", $"{ruleLabel} → formül \"{rule.Formula}\" çalıştırılamadı: {ex.Message}", "⚠️ HATA"));
                 continue;
             }
 
             finalPrice = Math.Max(0, Math.Round(finalPrice, 2));
+            var discount = Math.Max(0, tdb - finalPrice);
+            var discountPct = tdb > 0 ? (discount / tdb * 100) : 0;
+
+            trace?.Add(new("Hesaplama", $"{ruleLabel} → formül \"{rule.Formula}\" → sonuç: {finalPrice:N2} (ref: {tdb:N2}, indirim: %{discountPct:N1})", $"💰 {finalPrice:N2}"));
 
             var result = new PricingResult
             {
                 OriginalPrice  = tdb,
                 FinalPrice     = finalPrice,
-                TotalDiscount  = Math.Max(0, tdb - finalPrice),
+                TotalDiscount  = discount,
                 AppliedStrategy = rule.RuleType,
                 AppliedRuleName = rule.Name,
                 Currency        = rule.OutputCurrency,
+                Trace           = trace ?? [],
             };
 
-            if (rule.StopProcessing) return result;
+            if (rule.StopProcessing)
+            {
+                trace?.Add(new("Durduruldu", $"{ruleLabel} → StopProcessing=true, sonraki kurallar işlenmeyecek", "🛑 SON"));
+                return result;
+            }
 
+            trace?.Add(new("Devam", $"{ruleLabel} → StopProcessing=false, sonraki kurala geçiliyor"));
             lastResult = result;
         }
+
+        if (lastResult == null)
+            trace?.Add(new("Sonuç", "Hiçbir kural eşleşmedi", "⚠️ KURAL YOK"));
+        else
+            trace?.Add(new("Sonuç", $"Son eşleşen kural: {lastResult.AppliedRuleName} → {lastResult.FinalPrice:N2}", "✅ TAMAMLANDI"));
+
+        if (lastResult != null)
+            lastResult = lastResult with { Trace = trace ?? [] };
 
         return lastResult;
     }
@@ -241,16 +290,20 @@ public class PricingEngine
     // ─── Yardımcılar ─────────────────────────────────────────────────────────
 
     private static bool MatchesFilters(RuleEvalContext ctx, string? includeJson, string? excludeJson)
+        => MatchesFiltersWithReason(ctx, includeJson, excludeJson).Matched;
+
+    private static (bool Matched, string Reason) MatchesFiltersWithReason(RuleEvalContext ctx, string? includeJson, string? excludeJson)
     {
-        // ExcludeFilters: eşleşirse kural uygulanmaz
         if (!string.IsNullOrWhiteSpace(excludeJson) && FilterMatches(ctx, excludeJson))
-            return false;
+            return (false, $"Hariç tutma filtresi eşleşti: {excludeJson}");
 
-        // IncludeFilters: null ise tüm tedavilere uygulanır
         if (string.IsNullOrWhiteSpace(includeJson))
-            return true;
+            return (true, "Dahil etme filtresi yok → tüm tedavilere uygulanır");
 
-        return FilterMatches(ctx, includeJson);
+        var matched = FilterMatches(ctx, includeJson);
+        return matched
+            ? (true, $"Dahil etme filtresi eşleşti: {includeJson}")
+            : (false, $"Dahil etme filtresi eşleşmedi: {includeJson}");
     }
 
     /// <summary>
