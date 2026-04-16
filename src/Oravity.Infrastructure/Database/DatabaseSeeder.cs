@@ -124,6 +124,7 @@ public class DatabaseSeeder
                 "anamnesis.edit",
                 "complaint.view", "complaint.create",
                 "report.view",
+                "pricing.view",
             ],
             ["ASSISTANT"] =
             [
@@ -152,6 +153,7 @@ public class DatabaseSeeder
                 "report.view", "report.export",
                 "commission.view",
                 "patient.view",
+                "pricing.view",
             ],
             ["READONLY"] =
             [
@@ -185,6 +187,7 @@ public class DatabaseSeeder
                 "audit.view",
                 "report.view_daily",
                 "institution.view",
+                "pricing.view", "pricing.create", "pricing.edit", "pricing.delete",
             ],
         };
 
@@ -351,6 +354,12 @@ public class DatabaseSeeder
             // Institution
             ("institution",      "view",             false),
             ("institution",      "manage",           false),
+
+            // Pricing
+            ("pricing",          "view",             false),
+            ("pricing",          "create",           false),
+            ("pricing",          "edit",             false),
+            ("pricing",          "delete",           true),
         };
 
         var existingCodes = await _db.Permissions

@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Search, Plus, Pencil, Check, X, ChevronLeft, ChevronRight,
+  Search, Plus, Pencil, Check, X, ChevronLeft, ChevronRight, ChevronDown,
   Tag, Zap, ListChecks, AlertCircle, Building2, Copy, Loader2,
   Trash2, Upload, FlaskConical,
 } from 'lucide-react';
@@ -39,6 +39,17 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 
 // ─── Add Item Dialog ────────────────────────────────────────────────────────
 
@@ -851,45 +862,90 @@ function InstitutionPicker({ selected, onChange }: {
 }) {
   const { data } = useQuery({
     queryKey: ['institutions'],
-    queryFn: () => institutionsApi.getAll().then(r => r.data),
+    queryFn: () => institutionsApi.list().then(r => r.data),
     staleTime: 5 * 60 * 1000,
   });
 
-  const institutions = data ?? [];
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  const institutions = (data ?? []).filter(i => i.isActive);
+  const allIds = institutions.map(i => i.id);
+  const allSelected = institutions.length > 0 && allIds.every(id => selected.includes(id));
 
   function toggle(id: number) {
     onChange(selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id]);
+  }
+
+  function toggleAll() {
+    onChange(allSelected ? [] : allIds);
   }
 
   const selectedNames = institutions
     .filter(i => selected.includes(i.id))
     .map(i => i.name);
 
+  const triggerLabel = selected.length === 0
+    ? 'Kurum seçin...'
+    : selected.length === institutions.length
+      ? 'Tüm kurumlar'
+      : selectedNames.join(', ');
+
   return (
     <div className="space-y-1.5">
       <Label className="text-sm">Anlaşmalı Kurumlar <span className="text-muted-foreground font-normal">(boş = tüm hastalar)</span></Label>
-      <div className="flex flex-wrap gap-1.5">
-        {institutions.filter(i => i.isActive).map(inst => (
-          <button
-            key={inst.id}
-            type="button"
-            onClick={() => toggle(inst.id)}
-            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border transition-colors ${
-              selected.includes(inst.id)
-                ? 'bg-primary text-primary-foreground border-primary'
-                : 'bg-background text-muted-foreground border-border hover:bg-accent'
-            }`}
-          >
-            {inst.name}
-          </button>
-        ))}
-        {institutions.length === 0 && (
-          <span className="text-xs text-muted-foreground">Kurum yükleniyor...</span>
+      <div className="relative" ref={ref}>
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs hover:bg-accent/50 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <span className={`truncate ${selected.length === 0 ? 'text-muted-foreground' : ''}`}>
+            {triggerLabel}
+          </span>
+          <Building2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground ml-2" />
+        </button>
+
+        {open && (
+          <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md max-h-52 overflow-y-auto">
+            {institutions.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-3">Kurum yükleniyor...</p>
+            ) : (
+              <>
+                <label className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent cursor-pointer border-b mb-1 pb-1.5">
+                  <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
+                  <span className="font-medium">Tümünü Seç</span>
+                  <span className="ml-auto text-xs text-muted-foreground">{selected.length}/{institutions.length}</span>
+                </label>
+                {institutions.map(inst => (
+                  <label
+                    key={inst.id}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent cursor-pointer"
+                  >
+                    <Checkbox
+                      checked={selected.includes(inst.id)}
+                      onCheckedChange={() => toggle(inst.id)}
+                    />
+                    <span className="truncate">{inst.name}</span>
+                    {inst.type && (
+                      <span className="ml-auto text-xs text-muted-foreground shrink-0">{inst.type}</span>
+                    )}
+                  </label>
+                ))}
+              </>
+            )}
+          </div>
         )}
       </div>
-      {selectedNames.length > 0 && (
-        <p className="text-xs text-muted-foreground">Seçili: {selectedNames.join(', ')}</p>
-      )}
     </div>
   );
 }
@@ -1013,88 +1069,89 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl max-h-[calc(100dvh-3rem)] flex flex-col p-0">
+        <DialogHeader className="px-5 pt-5 pb-0 shrink-0">
           <DialogTitle>{editing ? 'Kural Düzenle' : 'Yeni Fiyat Kuralı'}</DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-2 gap-4">
-          {/* Name */}
-          <div className="col-span-2 space-y-1">
-            <Label>Kural Adı</Label>
-            <Input
-              placeholder="Örn: TDB x2.5 - Standart"
-              value={name}
-              onChange={e => setName(e.target.value)}
-            />
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {/* Row 1: Ad + Açıklama */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Kural Adı</Label>
+              <Input
+                placeholder="Örn: TDB x2.5 - Standart"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                className="h-8"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Açıklama <span className="text-muted-foreground">(opsiyonel)</span></Label>
+              <Input
+                placeholder="Bu kural ne zaman uygulanır?"
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                className="h-8"
+              />
+            </div>
           </div>
 
-          {/* Description */}
-          <div className="col-span-2 space-y-1">
-            <Label>Açıklama (opsiyonel)</Label>
-            <Input
-              placeholder="Bu kural ne zaman uygulanır?"
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-            />
+          {/* Row 2: Tip + Öncelik + Para Birimi */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Kural Tipi</Label>
+              <Select value={ruleType} onValueChange={setRuleType}>
+                <SelectTrigger className="h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RULE_TYPES.map(t => (
+                    <SelectItem key={t.value} value={t.value}>
+                      <span className="flex items-center gap-2">
+                        <t.icon className="h-3.5 w-3.5" />
+                        {t.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Öncelik <span className="text-muted-foreground">(küçük = önce)</span></Label>
+              <Input
+                type="number"
+                min={1}
+                value={priority}
+                onChange={e => setPriority(e.target.value)}
+                className="h-8"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Para Birimi</Label>
+              <Select value={outputCurrency} onValueChange={setOutputCurrency}>
+                <SelectTrigger className="h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TRY">TRY</SelectItem>
+                  <SelectItem value="USD">USD</SelectItem>
+                  <SelectItem value="EUR">EUR</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
-          {/* Rule type */}
-          <div className="space-y-1">
-            <Label>Kural Tipi</Label>
-            <Select value={ruleType} onValueChange={setRuleType}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {RULE_TYPES.map(t => (
-                  <SelectItem key={t.value} value={t.value}>
-                    <span className="flex items-center gap-2">
-                      <t.icon className="h-3.5 w-3.5" />
-                      {t.label}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Priority */}
-          <div className="space-y-1">
-            <Label>Öncelik <span className="text-muted-foreground text-xs">(küçük = önce)</span></Label>
-            <Input
-              type="number"
-              min={1}
-              value={priority}
-              onChange={e => setPriority(e.target.value)}
-            />
-          </div>
-
-          {/* Output Currency */}
-          <div className="space-y-1">
-            <Label>Çıktı Para Birimi</Label>
-            <Select value={outputCurrency} onValueChange={setOutputCurrency}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="TRY">TRY — Türk Lirası</SelectItem>
-                <SelectItem value="USD">USD — Dolar</SelectItem>
-                <SelectItem value="EUR">EUR — Euro</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Flags */}
-          <div className="flex flex-col justify-end gap-2">
+          {/* Row 3: Flags */}
+          <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <Checkbox
                 id="stopProcessing"
                 checked={stopProcessing}
                 onCheckedChange={v => setStopProcessing(!!v)}
               />
-              <Label htmlFor="stopProcessing" className="font-normal cursor-pointer">
-                Eşleşince dur (sonraki kuralları atla)
+              <Label htmlFor="stopProcessing" className="font-normal cursor-pointer text-sm">
+                Eşleşince dur
               </Label>
             </div>
             {editing && (
@@ -1104,68 +1161,172 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
                   checked={isActive}
                   onCheckedChange={v => setIsActive(!!v)}
                 />
-                <Label htmlFor="isActive" className="font-normal cursor-pointer">Aktif</Label>
+                <Label htmlFor="isActive" className="font-normal cursor-pointer text-sm">Aktif</Label>
               </div>
             )}
           </div>
 
-          {/* Uygulama Koşulları */}
-          <div className="col-span-2 space-y-2">
-            <Label className="text-sm">Uygulama Koşulları <span className="text-muted-foreground font-normal">(boş = her hastaya)</span></Label>
-            <div className="border rounded-lg p-3 space-y-3 bg-muted/30">
-
-              {/* Kurum seçimi */}
-              <InstitutionPicker
-                selected={institutionIds}
-                onChange={setInstitutionIds}
+          {/* Row 4: Formül / Değer */}
+          {ruleType === 'formula' && (
+            <div className="space-y-2">
+              <Label className="text-xs">Formül</Label>
+              <Textarea
+                className="font-mono text-sm h-16 resize-none"
+                placeholder="TDB * 2.5"
+                value={formula}
+                onChange={e => setFormula(e.target.value)}
               />
-
-              {/* Kategori filtresi */}
-              {flatCategories.length > 0 && (
-                <div className="space-y-1.5">
-                  <Label className="text-sm">Tedavi Kategorileri <span className="text-muted-foreground font-normal">(boş = tüm tedaviler)</span></Label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {flatCategories.map(c => (
-                      <button
-                        key={c.publicId}
-                        type="button"
-                        onClick={() => setCategoryPublicIds(prev =>
-                          prev.includes(c.publicId) ? prev.filter(x => x !== c.publicId) : [...prev, c.publicId]
-                        )}
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border transition-colors ${
-                          categoryPublicIds.includes(c.publicId)
-                            ? 'bg-primary text-primary-foreground border-primary'
-                            : 'bg-background text-muted-foreground border-border hover:bg-accent'
-                        }`}
-                        style={{ paddingLeft: `${(c.depth * 8) + 10}px` }}
-                      >
-                        {c.depth > 0 && <span className="mr-1 opacity-50">└</span>}
-                        {c.name}
-                      </button>
-                    ))}
-                  </div>
+              <div className="border rounded-md p-2 bg-muted/40 space-y-1.5">
+                <div className="flex flex-wrap gap-1">
+                  {FORMULA_VARS.map(v => (
+                    <button
+                      key={v.key}
+                      type="button"
+                      onClick={() => insertVar(v.key)}
+                      className="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-mono bg-background border hover:bg-accent transition-colors"
+                      title={v.desc}
+                    >
+                      {v.key}
+                    </button>
+                  ))}
                 </div>
-              )}
+                <div className="flex flex-wrap gap-1">
+                  {FORMULA_EXAMPLES.map(ex => (
+                    <button
+                      key={ex}
+                      type="button"
+                      onClick={() => setFormula(ex)}
+                      className="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-mono bg-background border hover:bg-accent transition-colors text-muted-foreground"
+                    >
+                      {ex}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="ossOnly"
-                  checked={ossOnly}
-                  onCheckedChange={v => setOssOnly(!!v)}
+          {(ruleType === 'percentage' || ruleType === 'fixed') && (
+            <div className="space-y-1">
+              <Label className="text-xs">
+                {ruleType === 'percentage' ? 'Çarpan (örn: 2.5 = TDB x 2.5)' : 'Sabit Fiyat (₺)'}
+              </Label>
+              <Input
+                type="number"
+                step="0.01"
+                placeholder={ruleType === 'percentage' ? '2.5' : '500'}
+                value={formula}
+                onChange={e => setFormula(e.target.value)}
+                className="h-8 max-w-xs"
+              />
+            </div>
+          )}
+
+          {/* Row 5: Uygulama Koşulları */}
+          <div className="space-y-2">
+            <Label className="text-xs">Uygulama Koşulları <span className="text-muted-foreground font-normal">(boş = her hastaya)</span></Label>
+            <div className="border rounded-lg p-3 space-y-3 bg-muted/30">
+              <div className="grid grid-cols-2 gap-3">
+                <InstitutionPicker
+                  selected={institutionIds}
+                  onChange={setInstitutionIds}
                 />
-                <Label htmlFor="ossOnly" className="font-normal cursor-pointer text-sm">
-                  ÖSS Kapsamı
-                </Label>
+
+                {flatCategories.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Tedavi Kategorileri <span className="text-muted-foreground font-normal">(boş = tümü)</span></Label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        type="button"
+                        className={cn(
+                          'flex h-9 w-full items-center justify-between gap-1.5 rounded-md border border-input bg-transparent py-2 pr-2 pl-3 text-sm transition-colors outline-none select-none shadow-xs hover:bg-accent/50',
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'truncate text-left',
+                            categoryPublicIds.length === 0 ? 'text-muted-foreground' : 'text-foreground',
+                          )}
+                        >
+                          {categoryPublicIds.length === 0
+                            ? 'Tüm tedaviler'
+                            : `${categoryPublicIds.length} kategori seçili`}
+                        </span>
+                        <ChevronDown className="pointer-events-none size-3.5 shrink-0 text-muted-foreground" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="max-h-64 min-w-[var(--anchor-width)]">
+                        <DropdownMenuGroup>
+                          <DropdownMenuCheckboxItem
+                            closeOnClick={false}
+                            checked={categoryPublicIds.length === flatCategories.length && flatCategories.length > 0}
+                            onCheckedChange={() =>
+                              setCategoryPublicIds(prev =>
+                                prev.length === flatCategories.length ? [] : flatCategories.map(c => c.publicId),
+                              )
+                            }
+                            className="text-sm font-medium"
+                          >
+                            Tümünü Seç
+                            <span className="ml-auto text-xs font-normal text-muted-foreground">
+                              {categoryPublicIds.length}/{flatCategories.length}
+                            </span>
+                          </DropdownMenuCheckboxItem>
+                          <DropdownMenuSeparator />
+                          {flatCategories.map(c => (
+                            <DropdownMenuCheckboxItem
+                              key={c.publicId}
+                              closeOnClick={false}
+                              checked={categoryPublicIds.includes(c.publicId)}
+                              onCheckedChange={() =>
+                                setCategoryPublicIds(prev =>
+                                  prev.includes(c.publicId) ? prev.filter(x => x !== c.publicId) : [...prev, c.publicId],
+                                )
+                              }
+                              className="text-sm"
+                              style={{ paddingLeft: `${(c.depth * 12) + 8}px` }}
+                            >
+                              {c.depth > 0 && <span className="mr-1 text-muted-foreground">└</span>}
+                              {c.name}
+                            </DropdownMenuCheckboxItem>
+                          ))}
+                        </DropdownMenuGroup>
+                        {categoryPublicIds.length > 0 && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-xs text-muted-foreground"
+                              onClick={() => setCategoryPublicIds([])}
+                            >
+                              Seçimi temizle
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                )}
               </div>
 
-              <div className="flex items-center gap-2">
-                <Label className="text-sm whitespace-nowrap shrink-0">Kampanya Kodu:</Label>
-                <Input
-                  placeholder="Örn: YAZ2026 (boş = kampanyasız da uygula)"
-                  value={campaignCode}
-                  onChange={e => setCampaignCode(e.target.value.toUpperCase())}
-                  className="h-7 text-sm font-mono"
-                />
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="ossOnly"
+                    checked={ossOnly}
+                    onCheckedChange={v => setOssOnly(!!v)}
+                  />
+                  <Label htmlFor="ossOnly" className="font-normal cursor-pointer text-sm">
+                    ÖSS Kapsamı
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2 flex-1">
+                  <Label className="text-sm whitespace-nowrap shrink-0">Kampanya:</Label>
+                  <Input
+                    placeholder="YAZ2026"
+                    value={campaignCode}
+                    onChange={e => setCampaignCode(e.target.value.toUpperCase())}
+                    className="h-7 text-sm font-mono max-w-[160px]"
+                  />
+                </div>
               </div>
 
               {(institutionIds.length > 0 || ossOnly || campaignCode.trim() || categoryPublicIds.length > 0) && (
@@ -1182,69 +1343,9 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
               )}
             </div>
           </div>
-
-          {/* Formula */}
-          {ruleType === 'formula' && (
-            <div className="col-span-2 space-y-2">
-              <Label>Formül</Label>
-              <Textarea
-                className="font-mono text-sm h-20 resize-none"
-                placeholder="TDB * 2.5"
-                value={formula}
-                onChange={e => setFormula(e.target.value)}
-              />
-
-              {/* Variable hints */}
-              <div className="border rounded-lg p-3 bg-muted/40 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">Değişkenler</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {FORMULA_VARS.map(v => (
-                    <button
-                      key={v.key}
-                      type="button"
-                      onClick={() => insertVar(v.key)}
-                      className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-mono bg-background border hover:bg-accent transition-colors"
-                      title={v.desc}
-                    >
-                      {v.key}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  <p className="text-xs text-muted-foreground w-full">Örnekler:</p>
-                  {FORMULA_EXAMPLES.map(ex => (
-                    <button
-                      key={ex}
-                      type="button"
-                      onClick={() => setFormula(ex)}
-                      className="inline-flex items-center rounded px-2 py-0.5 text-xs font-mono bg-background border hover:bg-accent transition-colors"
-                    >
-                      {ex}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Percentage / fixed */}
-          {(ruleType === 'percentage' || ruleType === 'fixed') && (
-            <div className="col-span-2 space-y-1">
-              <Label>
-                {ruleType === 'percentage' ? 'Çarpan (örn: 2.5 = TDB x 2.5)' : 'Sabit Fiyat (₺)'}
-              </Label>
-              <Input
-                type="number"
-                step="0.01"
-                placeholder={ruleType === 'percentage' ? '2.5' : '500'}
-                value={formula}
-                onChange={e => setFormula(e.target.value)}
-              />
-            </div>
-          )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="px-5 pb-5 pt-3 border-t shrink-0">
           <Button variant="outline" onClick={onClose} disabled={isPending}>İptal</Button>
           <Button onClick={handleSave} disabled={isPending}>
             {isPending ? 'Kaydediliyor...' : (editing ? 'Güncelle' : 'Oluştur')}
@@ -1626,7 +1727,7 @@ function PriceTestTab() {
 
   const { data: institutions } = useQuery({
     queryKey: ['institutions'],
-    queryFn: () => institutionsApi.getAll().then(r => r.data),
+    queryFn: () => institutionsApi.list().then(r => r.data),
     staleTime: 60_000,
   });
 

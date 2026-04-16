@@ -114,7 +114,23 @@ export function Sidebar() {
             if (!expanded) {
               return (
                 <Tooltip key={to}>
-                  <TooltipTrigger asChild>{link}</TooltipTrigger>
+                  <TooltipTrigger
+                    render={
+                      <NavLink
+                        to={to}
+                        className={({ isActive }: { isActive: boolean }) =>
+                          cn(
+                            'flex items-center rounded-xl transition-all duration-200 whitespace-nowrap h-9 w-9 justify-center',
+                            isActive
+                              ? 'bg-accent text-foreground shadow-sm'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
+                          )
+                        }
+                      />
+                    }
+                  >
+                    <Icon className="h-[18px] w-[18px] shrink-0" />
+                  </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={10} className="text-xs">
                     {label}
                   </TooltipContent>
@@ -151,15 +167,12 @@ export function Sidebar() {
             </Button>
           ) : (
             <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={togglePin}
-                  className="text-muted-foreground hover:text-foreground h-8 w-9 p-0 mx-auto flex"
-                >
-                  <ChevronsRight className="h-4 w-4 shrink-0" />
-                </Button>
+              <TooltipTrigger
+                render={<button type="button" />}
+                onClick={togglePin}
+                className="text-muted-foreground hover:text-foreground h-8 w-9 p-0 mx-auto flex items-center justify-center rounded-md hover:bg-accent transition-colors"
+              >
+                <ChevronsRight className="h-4 w-4 shrink-0" />
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={10} className="text-xs">
                 Genişlet
