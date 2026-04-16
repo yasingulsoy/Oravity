@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Search, User } from 'lucide-react';
 import { patientsApi } from '@/api/patients';
+import type { PatientListRequest } from '@/types/patient';
+import { buildPatientListRequest } from '@/lib/patientListSearch';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
@@ -20,20 +22,30 @@ export function PatientSearch({ className }: { className?: string }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [listParams, setListParams] = useState<PatientListRequest | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const debouncedQuery = useDebounce(query.trim(), 300);
+  const debouncedQuery = useDebounce(query.trim(), 350);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const next = await buildPatientListRequest(debouncedQuery, 1, 8);
+      if (!cancelled) setListParams(next);
+    })();
+    return () => { cancelled = true; };
+  }, [debouncedQuery]);
 
   const { data, isFetching } = useQuery({
-    queryKey: ['patient-search', debouncedQuery],
-    queryFn: () => patientsApi.getList({ page: 1, pageSize: 8, search: debouncedQuery }),
-    enabled: debouncedQuery.length >= 2,
+    queryKey: ['patient-search', listParams],
+    queryFn: () => patientsApi.list(listParams!),
+    enabled: listParams !== null,
     select: (res) => res.data?.items ?? [],
     staleTime: 30_000,
   });
 
   const results = data ?? [];
-  const showDropdown = open && debouncedQuery.length >= 2;
+  const showDropdown = open && debouncedQuery.length >= 3;
 
   // Dışarı tıklanınca kapat
   useEffect(() => {
@@ -49,8 +61,8 @@ export function PatientSearch({ className }: { className?: string }) {
   // Query değişince aktif indexi sıfırla
   useEffect(() => setActiveIndex(-1), [debouncedQuery]);
 
-  const goToPatient = useCallback((id: number) => {
-    navigate(`/patients/${id}`);
+  const goToPatient = useCallback((publicId: string) => {
+    navigate(`/patients/${publicId}`);
     setQuery('');
     setOpen(false);
   }, [navigate]);
@@ -66,7 +78,7 @@ export function PatientSearch({ className }: { className?: string }) {
       setActiveIndex((i) => Math.max(i - 1, -1));
     } else if (e.key === 'Enter' && activeIndex >= 0) {
       e.preventDefault();
-      goToPatient(results[activeIndex].id);
+      goToPatient(results[activeIndex].publicId);
     } else if (e.key === 'Escape') {
       setOpen(false);
     }
@@ -82,21 +94,25 @@ export function PatientSearch({ className }: { className?: string }) {
           onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
-          placeholder="Hasta ara..."
+          placeholder="Ad soyad, telefon veya TC…"
           className="h-8 pl-8 pr-3 text-sm"
+          autoComplete="off"
+          spellCheck={false}
         />
       </div>
 
       {showDropdown && (
         <div className="absolute top-full mt-1 left-0 right-0 z-50 rounded-md border bg-popover shadow-md overflow-hidden">
-          {isFetching && results.length === 0 ? (
+          {listParams === null ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground">Aranıyor...</div>
+          ) : isFetching && results.length === 0 ? (
             <div className="px-3 py-2 text-xs text-muted-foreground">Aranıyor...</div>
           ) : results.length === 0 ? (
             <div className="px-3 py-2 text-xs text-muted-foreground">Sonuç bulunamadı</div>
           ) : (
             <ul>
               {results.map((p, i) => (
-                <li key={p.id}>
+                <li key={p.publicId}>
                   <button
                     type="button"
                     className={cn(
@@ -106,7 +122,7 @@ export function PatientSearch({ className }: { className?: string }) {
                         : 'hover:bg-accent/60',
                     )}
                     onMouseEnter={() => setActiveIndex(i)}
-                    onMouseDown={(e) => { e.preventDefault(); goToPatient(p.id); }}
+                    onMouseDown={(e) => { e.preventDefault(); goToPatient(p.publicId); }}
                   >
                     <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted">
                       <User className="h-3.5 w-3.5 text-muted-foreground" />

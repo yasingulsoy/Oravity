@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { Plus, Search, Phone, CreditCard, User, Eye, Users } from 'lucide-react';
 import { patientsApi } from '@/api/patients';
 import type { PatientListRequest } from '@/types/patient';
+import { buildPatientListRequest, detectMode, type SearchMode } from '@/lib/patientListSearch';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -17,38 +18,6 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-
-// ─── Yardımcı: TC hash ────────────────────────────────────────────────────
-async function sha256hex(text: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-// ─── Arama tipi tespiti ───────────────────────────────────────────────────
-type SearchMode = 'name' | 'phone' | 'tc' | 'empty';
-
-/**
- * TC Kimlik No: tam olarak 11 hane, asla 0 ile başlamaz.
- * Türk GSM: 05XXXXXXXXX (11 hane, 0 ile başlar) veya 5XXXXXXXXX (10 hane).
- */
-function detectMode(raw: string): SearchMode {
-  const t = raw.trim();
-  if (!t) return 'empty';
-
-  const digits = t.replace(/[\s\-]/g, '');
-
-  if (/^[1-9]\d{10}$/.test(digits)) return 'tc';
-
-  if (
-    /^(\+90|0090)\d{10}$/.test(digits) ||
-    /^05\d{9}$/.test(digits) ||
-    /^5\d{9}$/.test(digits)
-  ) return 'phone';
-
-  return 'name';
-}
 
 const modeLabel: Record<SearchMode, { label: string; icon: React.ElementType } | null> = {
   empty: null,
@@ -75,32 +44,15 @@ export function PatientListPage() {
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
-    debounceRef.current = setTimeout(async () => {
-      const t = raw.trim();
-
-      // 3 karakterden azsa query'yi sıfırla
-      if (t.length < 3) {
-        setParams(null);
-        return;
-      }
-
-      let next: PatientListRequest = { page, pageSize };
-
-      if (mode === 'tc') {
-        next.tcHash = await sha256hex(t);
-      } else if (mode === 'phone') {
-        next.phone = t.replace(/[\s\-]/g, '');
-      } else {
-        const parts = t.split(/\s+/);
-        next.firstName = parts[0];
-        if (parts.length > 1) next.lastName = parts.slice(1).join(' ');
-      }
-
-      setParams(next);
+    debounceRef.current = setTimeout(() => {
+      void (async () => {
+        const next = await buildPatientListRequest(raw, page, pageSize);
+        setParams(next);
+      })();
     }, 350);
 
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [raw, page, mode]);
+  }, [raw, page, pageSize]);
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['patients', params],
