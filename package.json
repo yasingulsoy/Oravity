@@ -1,0 +1,12 @@
+{
+  "name": "oravity",
+  "private": true,
+  "scripts": {
+    "start": "concurrently -n backend,frontend -c cyan,magenta \"npm run start:backend\" \"npm run start:frontend\"",
+    "start:backend": "dotnet run --project src/Oravity.Core/Oravity.Core.csproj --launch-profile Development",
+    "start:frontend": "npm run dev --prefix src/Oravity.Web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

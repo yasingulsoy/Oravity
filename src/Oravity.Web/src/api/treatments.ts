@@ -80,12 +80,13 @@ export const treatmentsApi = {
   }) =>
     apiClient.put<TreatmentDetail>(`/treatments/${publicId}`, data),
 
-  getPrice: (publicId: string, opts?: { branchId?: number; institutionId?: number; isOss?: boolean }) =>
+  getPrice: (publicId: string, opts?: { branchId?: number; institutionId?: number; isOss?: boolean; campaignCode?: string }) =>
     apiClient.get<TreatmentPriceResponse>(`/pricing/treatment/${publicId}/price`, {
       params: {
         ...(opts?.branchId      ? { branchId:      opts.branchId }      : {}),
         ...(opts?.institutionId ? { institutionId: opts.institutionId } : {}),
         ...(opts?.isOss         ? { isOss:         true }               : {}),
+        ...(opts?.campaignCode  ? { campaignCode:  opts.campaignCode }  : {}),
       },
     }),
 };

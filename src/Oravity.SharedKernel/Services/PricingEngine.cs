@@ -153,6 +153,7 @@ public class PricingEngine
         IReadOnlyList<PricingRule> rules)
     {
         var now = DateTime.UtcNow;
+        PricingResult? lastResult = null;
 
         foreach (var rule in rules.OrderBy(r => r.Priority))
         {
@@ -162,13 +163,8 @@ public class PricingEngine
 
             if (!MatchesFilters(ctx, rule.IncludeFilters, rule.ExcludeFilters)) continue;
 
-            // TDB_2026 gibi prefix'li key'leri de kabul et
-            var tdbKey = ctx.ReferencePrices.Keys
-                .FirstOrDefault(k => k.StartsWith("TDB", StringComparison.OrdinalIgnoreCase))
-                ?? ctx.ReferencePrices.Keys.FirstOrDefault();
-            var tdb  = tdbKey != null ? ctx.ReferencePrices[tdbKey] : 0m;
-            var sut  = ctx.ReferencePrices.GetValueOrDefault("SUT", tdb);
-            var cari = ctx.ReferencePrices.GetValueOrDefault("CARI", tdb);
+            var vars = BuildFormulaVariables(ctx);
+            var tdb = vars["TDB"];
 
             decimal finalPrice;
             try
@@ -176,14 +172,7 @@ public class PricingEngine
                 finalPrice = rule.RuleType switch
                 {
                     "formula" when !string.IsNullOrWhiteSpace(rule.Formula) =>
-                        _formula.Evaluate(rule.Formula, new Dictionary<string, decimal>
-                        {
-                            ["TDB"]   = tdb,
-                            ["CARI"]  = cari,
-                            ["SUT"]   = sut,
-                            ["ISAK"]  = ctx.IsInstitutionAgreement ? 1m : 0m,
-                            ["MULTI"] = ctx.PricingMultiplier,
-                        }),
+                        _formula.Evaluate(rule.Formula, vars),
 
                     "percentage" when !string.IsNullOrWhiteSpace(rule.Formula) =>
                         tdb * (1m - decimal.Parse(rule.Formula, System.Globalization.CultureInfo.InvariantCulture) / 100m),
@@ -191,12 +180,12 @@ public class PricingEngine
                     "fixed" when !string.IsNullOrWhiteSpace(rule.Formula) =>
                         decimal.Parse(rule.Formula, System.Globalization.CultureInfo.InvariantCulture),
 
-                    _ => tdb  // fallback: TDB fiyatını direkt kullan
+                    _ => tdb
                 };
             }
             catch
             {
-                continue; // formül hatası → sonraki kurala geç
+                continue;
             }
 
             finalPrice = Math.Max(0, Math.Round(finalPrice, 2));
@@ -213,11 +202,39 @@ public class PricingEngine
 
             if (rule.StopProcessing) return result;
 
-            // StopProcessing=false ise ilk eşleşeni döndür (zincirleme yok)
-            return result;
+            lastResult = result;
         }
 
-        return null;
+        return lastResult;
+    }
+
+    /// <summary>
+    /// RuleEvalContext'teki referans fiyat sözlüğünden formül değişkenlerini çözümler.
+    /// TDB_2026 → TDB, CARI_2026 → CARI, SUT_2025 → SUT, ISAK_2026 → ISAK şeklinde
+    /// prefix eşleştirmesi yapar.
+    /// </summary>
+    private static Dictionary<string, decimal> BuildFormulaVariables(RuleEvalContext ctx)
+    {
+        decimal Resolve(string prefix, decimal fallback)
+        {
+            var key = ctx.ReferencePrices.Keys
+                .FirstOrDefault(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+            return key != null ? ctx.ReferencePrices[key] : fallback;
+        }
+
+        var tdb  = Resolve("TDB",  ctx.ReferencePrices.Values.FirstOrDefault());
+        var cari = Resolve("CARI", tdb);
+        var sut  = Resolve("SUT",  tdb);
+        var isak = Resolve("ISAK", 0m);
+
+        return new Dictionary<string, decimal>
+        {
+            ["TDB"]   = tdb,
+            ["CARI"]  = cari,
+            ["SUT"]   = sut,
+            ["ISAK"]  = isak,
+            ["MULTI"] = ctx.PricingMultiplier,
+        };
     }
 
     // ─── Yardımcılar ─────────────────────────────────────────────────────────

@@ -15,7 +15,7 @@ function useDebounce<T>(value: T, delay: number): T {
   return debounced;
 }
 
-export function PatientSearch() {
+export function PatientSearch({ className }: { className?: string }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -73,7 +73,7 @@ export function PatientSearch() {
   }
 
   return (
-    <div ref={containerRef} className="relative w-56">
+    <div ref={containerRef} className={cn('relative w-56', className)}>
       <div className="relative">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
         <Input

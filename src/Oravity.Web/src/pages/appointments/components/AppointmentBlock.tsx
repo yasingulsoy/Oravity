@@ -94,10 +94,10 @@ export function AppointmentBlock({
     >
       <div className="flex items-center gap-1 leading-tight">
         {appointment.isUrgent && (
-          <span className="shrink-0 text-[9px] font-bold text-red-600 bg-red-100 px-0.5 rounded leading-none">ACİL</span>
+          <span className="shrink-0 text-[9px] font-bold text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/50 px-0.5 rounded leading-none">ACİL</span>
         )}
         {appointment.isEarlierRequest && !appointment.isUrgent && (
-          <span className="shrink-0 text-[9px] font-bold text-orange-600 bg-orange-100 px-0.5 rounded leading-none">ERKEN</span>
+          <span className="shrink-0 text-[9px] font-bold text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/50 px-0.5 rounded leading-none">ERKEN</span>
         )}
         <span className="font-medium truncate">{timeStr}</span>
       </div>

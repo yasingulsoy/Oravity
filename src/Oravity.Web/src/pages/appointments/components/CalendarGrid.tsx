@@ -262,7 +262,7 @@ export function CalendarGrid({
                   title={`${doctor.title ? doctor.title + ' ' : ''}${doctor.fullName}${doctor.isChiefPhysician ? ' (Başhekim)' : ''}`}
                 >
                   {doctor.isChiefPhysician && (
-                    <span className="shrink-0 text-[9px] font-bold bg-yellow-100 text-yellow-700 px-0.5 py-px rounded leading-none">BŞ</span>
+                    <span className="shrink-0 text-[9px] font-bold bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-400 px-0.5 py-px rounded leading-none">BŞ</span>
                   )}
                   {doctor.title ? `${doctor.title} ` : ''}{doctor.fullName}
                 </span>
@@ -274,9 +274,9 @@ export function CalendarGrid({
                     <span
                       className={cn(
                         'inline-block shrink-0 text-[9px] font-bold px-0.5 py-px rounded leading-none',
-                        doctor.specialDayType === DoctorSpecialDayType.ExtraWork  && 'bg-green-100 text-green-700',
-                        doctor.specialDayType === DoctorSpecialDayType.HourChange && 'bg-blue-100 text-blue-700',
-                        doctor.specialDayType === DoctorSpecialDayType.DayOff     && 'bg-red-100 text-red-700',
+                        doctor.specialDayType === DoctorSpecialDayType.ExtraWork  && 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400',
+                        doctor.specialDayType === DoctorSpecialDayType.HourChange && 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-400',
+                        doctor.specialDayType === DoctorSpecialDayType.DayOff     && 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400',
                       )}
                       title={doctor.specialDayReason ?? (
                         doctor.specialDayType === DoctorSpecialDayType.ExtraWork  ? 'Ekstra mesai' :
@@ -323,12 +323,12 @@ export function CalendarGrid({
                       key={minutes}
                       className={cn(
                         'border-b relative',
-                        slotType === 'closed' && 'bg-gray-100',
-                        slotType === 'break' && 'bg-amber-50',
-                        isPast && slotType === 'open' && 'bg-gray-50',
-                        isBookable && !isDragging && 'bg-white hover:bg-blue-50/50 cursor-crosshair',
-                        isBookable && isDragging && isCurrentDragCol && 'bg-white cursor-crosshair',
-                        isBookable && isDragging && !isCurrentDragCol && 'bg-white',
+                        slotType === 'closed' && 'bg-gray-100 dark:bg-gray-800/60',
+                        slotType === 'break' && 'bg-amber-50 dark:bg-amber-950/30',
+                        isPast && slotType === 'open' && 'bg-gray-50 dark:bg-gray-800/30',
+                        isBookable && !isDragging && 'bg-white dark:bg-gray-900 hover:bg-blue-50/50 dark:hover:bg-blue-950/30 cursor-crosshair',
+                        isBookable && isDragging && isCurrentDragCol && 'bg-white dark:bg-gray-900 cursor-crosshair',
+                        isBookable && isDragging && !isCurrentDragCol && 'bg-white dark:bg-gray-900',
                         !isBookable && slotType === 'open' && 'cursor-default',
                       )}
                       style={{ height: `${slotHeight}px` }}
@@ -354,7 +354,7 @@ export function CalendarGrid({
                       }}
                     >
                       {isBreakStart && breakLabel && (
-                        <span className="absolute inset-x-1 top-0.5 text-[10px] text-amber-700 font-medium truncate leading-none pointer-events-none">
+                        <span className="absolute inset-x-1 top-0.5 text-[10px] text-amber-700 dark:text-amber-400 font-medium truncate leading-none pointer-events-none">
                           {breakLabel}
                         </span>
                       )}

@@ -117,11 +117,12 @@ public class PricingController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetTreatmentPrice(
         Guid publicId,
-        [FromQuery] long? branchId      = null,
-        [FromQuery] long? institutionId = null,
-        [FromQuery] bool  isOss         = false)
+        [FromQuery] long?   branchId      = null,
+        [FromQuery] long?   institutionId = null,
+        [FromQuery] bool    isOss         = false,
+        [FromQuery] string? campaignCode  = null)
     {
-        var result = await _mediator.Send(new GetTreatmentPriceQuery(publicId, branchId, institutionId, isOss));
+        var result = await _mediator.Send(new GetTreatmentPriceQuery(publicId, branchId, institutionId, isOss, campaignCode));
         return Ok(result);
     }
 

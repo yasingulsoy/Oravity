@@ -8,10 +8,11 @@ using Oravity.SharedKernel.Services;
 namespace Oravity.Core.Modules.Core.Pricing.Application.Queries;
 
 public record GetTreatmentPriceQuery(
-    Guid  TreatmentPublicId,
-    long? BranchId       = null,
-    long? InstitutionId  = null,
-    bool  IsOss          = false
+    Guid    TreatmentPublicId,
+    long?   BranchId       = null,
+    long?   InstitutionId  = null,
+    bool    IsOss          = false,
+    string? CampaignCode   = null
 ) : IRequest<TreatmentPriceResponse>;
 
 public class GetTreatmentPriceQueryHandler
@@ -147,6 +148,7 @@ public class GetTreatmentPriceQueryHandler
                 PricingMultiplier = pricingMultiplier,
                 InstitutionId     = request.InstitutionId,
                 IsOss             = request.IsOss,
+                CampaignCode      = request.CampaignCode,
             };
 
             var result = _engine.CalculateWithRules(evalCtx, rules);

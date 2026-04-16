@@ -75,3 +75,6 @@ desktop.ini
 .env
 .env.local
 .env.*.local
+
+# Node (root tooling: npm start)
+node_modules/

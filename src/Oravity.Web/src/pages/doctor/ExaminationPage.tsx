@@ -1255,6 +1255,7 @@ function PlanBuilderPanel({
     enabled: open && !!patientPublicId,
   });
   const patientInstitutionId = patientData?.agreementInstitutionId ?? undefined;
+  const patientIsOss = !!patientData?.insuranceInstitutionId;
   const catalog: TreatmentCatalogItem[] = catalogData?.items ?? [];
 
   // Diş şeması verisi (status göstermek için)
@@ -1327,6 +1328,7 @@ function PlanBuilderPanel({
     try {
       const { data } = await treatmentsApi.getPrice(t.publicId, {
         institutionId: patientInstitutionId,
+        isOss: patientIsOss,
       });
       if (data.unitPrice > 0) {
         const ids = new Set(placeholders.map(p => p.localId));

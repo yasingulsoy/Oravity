@@ -267,7 +267,7 @@ const FORMULA_VARS = [
   { key: 'TDB',   desc: 'TDB referans fiyatı (TDB_2026 listesi)' },
   { key: 'SUT',   desc: 'SUT (SGK) fiyatı' },
   { key: 'CARI',  desc: 'Cari liste fiyatı (CARI_2026 listesi)' },
-  { key: 'ISAK',  desc: 'Anlaşmalı kurum (1=evet, 0=hayır)' },
+  { key: 'ISAK',  desc: 'ISAK_* referans listesindeki fiyat (anlaşmalı kurum)' },
   { key: 'MULTI', desc: 'Şube fiyat çarpanı (Şube Ayarları\'ndan)' },
   { key: 'MIN',   desc: 'MIN(A, B) — küçük olanı seç' },
   { key: 'MAX',   desc: 'MAX(A, B) — büyük olanı seç' },

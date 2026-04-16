@@ -1,5 +1,7 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useUiStore } from '@/store/uiStore';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Toaster } from '@/components/ui/sonner';
 import { Layout } from '@/components/layout/Layout';
@@ -29,9 +31,30 @@ const queryClient = new QueryClient({
   },
 });
 
+/** Kayıtlı temayı DOM + favicon ile senkronlar (ilk yükleme ve persist sonrası). */
+function ThemeSync() {
+  const theme = useUiStore((s) => s.theme);
+  const setTheme = useUiStore((s) => s.setTheme);
+
+  useEffect(() => {
+    setTheme(theme);
+  }, [theme, setTheme]);
+
+  useEffect(() => {
+    if (theme !== 'system') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => setTheme('system');
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [theme, setTheme]);
+
+  return null;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <ThemeSync />
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<LoginPage />} />

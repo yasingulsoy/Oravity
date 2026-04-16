@@ -27,8 +27,8 @@ function ProtocolRow({ protocol: p }: { protocol: WaitingProtocolItem }) {
         className={cn(
           'text-[9px] px-1 py-0.5 rounded leading-none font-medium shrink-0',
           isOpen
-            ? 'bg-blue-100 text-blue-700'
-            : 'bg-green-100 text-green-700',
+            ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-400'
+            : 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400',
         )}
       >
         {isOpen ? 'Açık' : 'Tamam'}
@@ -249,7 +249,7 @@ export function WaitingList() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-6 text-[11px] px-2 flex-1 border-blue-300 text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                        className="h-6 text-[11px] px-2 flex-1 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 disabled:opacity-50"
                         disabled={item.hasOpenProtocol || checkOutMutation.isPending}
                         title={item.hasOpenProtocol ? 'Önce açık protokolleri tamamlayın' : undefined}
                         onClick={() => checkOutMutation.mutate(item.publicId)}

@@ -41,7 +41,11 @@ Oluşturulan tablolar (her şey migrations ile yönetiliyor):
 ## Fiyatlandırma Sistemi
 - **PricingEngine**: kural motoru, `RuleEvalContext` ile çalışır
 - **FormulaEngine**: `TDB`, `CARI`, `SUT`, `ISAK`, `MULTI` değişkenleri + `MIN()`, `MAX()` fonksiyonları
+  - Prefix eşleştirme: `TDB_2026` → `TDB`, `CARI_2026` → `CARI`, `ISAK_2026` → `ISAK` vb.
+  - `ISAK` artık referans fiyat listesinden çekiliyor (ISAK_* prefix), boolean değil
 - **MULTI**: `Branch.PricingMultiplier` — şube bazlı fiyat katsayısı (ör: Bodrum=1.10)
+- **CampaignCode**: `GetTreatmentPrice` endpoint'ine `?campaignCode=YAZ2026` ile aktarılır
+- **StopProcessing**: `true` → ilk eşleşen kuralda dur; `false` → sonraki kurallarla devam et, son eşleşen kazanır
 - **TenantCompanyResolver**: branch-level kullanıcılar için CompanyId çözümleme
   - JWT.CompanyId → BranchId→Branch.CompanyId → UserRoleAssignment sıralaması
   - `_tenant.CompanyId ?? throw` KULLANMA, her zaman bu resolver'ı kullan
@@ -66,7 +70,7 @@ Oluşturulan tablolar (her şey migrations ile yönetiliyor):
 - `GET /api/treatments/{id}/mappings` — tedavinin referans eşleştirmeleri
 - `POST /api/treatments/{id}/mappings` — eşleştirme ekle
 - `DELETE /api/treatments/{id}/mappings/{mappingId}` — eşleştirme sil
-- `GET /api/pricing/treatment/{id}/price?branchId=&institutionId=&isOss=` — fiyat hesapla
+- `GET /api/pricing/treatment/{id}/price?branchId=&institutionId=&isOss=&campaignCode=` — fiyat hesapla
 - `GET/PATCH /api/pricing/branches[/{id}/multiplier]` — şube MULTI ayarı
 - `GET/PUT /api/pricing/reference-lists[/{id}/items/{code}]` — referans listeler
 
