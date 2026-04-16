@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Search, Plus, Pencil, Check, X, ChevronLeft, ChevronRight,
-  Tag, Zap, ListChecks, AlertCircle, Building2,
+  Tag, Zap, ListChecks, AlertCircle, Building2, Copy, Loader2,
+  Trash2, Upload, FlaskConical,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { pricingApi, type PricingRule, type ReferencePriceList, type BranchPricing } from '@/api/pricing';
+import { pricingApi, type PricingRule, type ReferencePriceList, type BranchPricing, type TreatmentPriceResponse } from '@/api/pricing';
+import { treatmentsApi, treatmentCategoriesApi, type TreatmentCategory } from '@/api/treatments';
 import { institutionsApi } from '@/api/institutions';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -38,6 +40,480 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
+// ─── Add Item Dialog ────────────────────────────────────────────────────────
+
+function AddItemDialog({ open, onClose, list }: { open: boolean; onClose: () => void; list: ReferencePriceList }) {
+  const qc = useQueryClient();
+  const [code, setCode] = useState('');
+  const [name, setName] = useState('');
+  const [price, setPrice] = useState('');
+  const [priceKdv, setPriceKdv] = useState('');
+
+  useEffect(() => {
+    if (open) { setCode(''); setName(''); setPrice(''); setPriceKdv(''); }
+  }, [open]);
+
+  const mutation = useMutation({
+    mutationFn: () => pricingApi.upsertReferenceItem(list.id, code.trim().toUpperCase(), {
+      treatmentName: name.trim(),
+      price: parseFloat(price) || 0,
+      priceKdv: parseFloat(priceKdv) || 0,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pricing', 'reference-items'] });
+      qc.invalidateQueries({ queryKey: ['pricing', 'reference-lists'] });
+      toast.success('Kalem eklendi');
+      onClose();
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(msg ?? 'Kalem eklenemedi');
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Yeni Kalem — {list.code}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-1">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Kod</Label>
+              <Input
+                placeholder="ör. D001"
+                value={code}
+                onChange={e => setCode(e.target.value)}
+                className="uppercase"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Fiyat (₺)</Label>
+              <Input
+                type="number"
+                placeholder="0.00"
+                value={price}
+                onChange={e => setPrice(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Tedavi Adı</Label>
+            <Input
+              placeholder="Tedavi adı"
+              value={name}
+              onChange={e => setName(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>KDV'li Fiyat (₺) <span className="text-muted-foreground text-xs">(opsiyonel)</span></Label>
+            <Input
+              type="number"
+              placeholder="0.00"
+              value={priceKdv}
+              onChange={e => setPriceKdv(e.target.value)}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>İptal</Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending || !code.trim() || !name.trim()}
+          >
+            {mutation.isPending ? 'Ekleniyor...' : 'Ekle'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Confirm Delete Dialog ───────────────────────────────────────────────────
+
+function ConfirmDialog({ open, title, message, onConfirm, onCancel, loading }: {
+  open: boolean; title: string; message: string;
+  onConfirm: () => void; onCancel: () => void; loading?: boolean;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onCancel()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+        <p className="text-sm text-muted-foreground">{message}</p>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel} disabled={loading}>İptal</Button>
+          <Button variant="destructive" onClick={onConfirm} disabled={loading}>
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Sil'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── CSV Import Dialog ────────────────────────────────────────────────────────
+
+function CsvImportDialog({ open, onClose, list }: { open: boolean; onClose: () => void; list: ReferencePriceList }) {
+  const qc = useQueryClient();
+  const [csvText, setCsvText] = useState('');
+  const [preview, setPreview] = useState<{ code: string; name: string; price: number; currency: string }[]>([]);
+  const [parseError, setParseError] = useState('');
+  const [importing, setImporting] = useState(false);
+
+  useEffect(() => { if (open) { setCsvText(''); setPreview([]); setParseError(''); } }, [open]);
+
+  function parseCsv(text: string) {
+    setParseError('');
+    const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) { setPreview([]); return; }
+
+    // Skip header if first cell looks like "kod" or "code" (case-insensitive)
+    const firstCell = lines[0].split(/[,;\t]/)[0].toLowerCase().replace(/"/g, '').trim();
+    const start = (firstCell === 'kod' || firstCell === 'code' || isNaN(Number(firstCell)) && firstCell.length < 10) ? 1 : 0;
+
+    const rows: typeof preview = [];
+    for (let i = start; i < lines.length; i++) {
+      const cols = lines[i].split(/[,;\t]/).map(c => c.replace(/^"|"$/g, '').trim());
+      // Format: kod, ad, fiyat[, para_birimi]  OR  ad, fiyat (no code)
+      if (cols.length < 2) continue;
+      const price = parseFloat(cols[cols.length >= 3 ? 2 : 1].replace(',', '.'));
+      if (isNaN(price)) continue;
+      const code = cols.length >= 3 ? cols[0].toUpperCase() : `ROW${i}`;
+      const name = cols.length >= 3 ? cols[1] : cols[0];
+      const currency = (cols[3] ?? 'TRY').toUpperCase() || 'TRY';
+      rows.push({ code, name, price, currency });
+    }
+
+    if (rows.length === 0) {
+      setParseError('Hiç geçerli satır bulunamadı. Format: Kod, Ad, Fiyat[, Para Birimi]');
+    }
+    setPreview(rows);
+  }
+
+  async function doImport() {
+    if (preview.length === 0) return;
+    setImporting(true);
+    try {
+      const res = await pricingApi.bulkUpsertReferenceItems(list.id, preview.map(r => ({
+        code: r.code, name: r.name, price: r.price, currency: r.currency,
+      })));
+      qc.invalidateQueries({ queryKey: ['pricing', 'reference-items'] });
+      qc.invalidateQueries({ queryKey: ['pricing', 'reference-lists'] });
+      toast.success(`${res.data.count} kalem ${list.code} listesine aktarıldı`);
+      onClose();
+    } catch {
+      toast.error('İçe aktarma başarısız');
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v && !importing) onClose(); }}>
+      <DialogContent className="sm:max-w-[700px]">
+        <DialogHeader>
+          <DialogTitle>CSV/Excel İçe Aktar — {list.code}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 text-sm">
+          <div className="bg-muted/50 rounded-md p-3 text-xs text-muted-foreground space-y-1">
+            <p className="font-medium text-foreground">Format (virgül, noktalı virgül veya tab):</p>
+            <p className="font-mono">Kod, Ad, Fiyat, Para Birimi</p>
+            <p className="font-mono text-xs opacity-70">D001, Kompozit Dolgu (1 yüz), 1500, TRY</p>
+            <p className="font-mono text-xs opacity-70">IMPL-BEGO, İmplant-Bego, 444, EUR</p>
+            <p className="mt-1">Excel'den kopyala-yapıştır çalışır. Başlık satırı otomatik atlanır.</p>
+          </div>
+          <Textarea
+            className="font-mono text-xs h-36 resize-none"
+            placeholder="Buraya CSV içeriğini yapıştırın..."
+            value={csvText}
+            onChange={e => { setCsvText(e.target.value); parseCsv(e.target.value); }}
+          />
+          {parseError && <p className="text-xs text-destructive">{parseError}</p>}
+          {preview.length > 0 && (
+            <div className="border rounded-md max-h-40 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-muted sticky top-0">
+                  <tr>
+                    <th className="text-left px-2 py-1">Kod</th>
+                    <th className="text-left px-2 py-1">Ad</th>
+                    <th className="text-right px-2 py-1">Fiyat</th>
+                    <th className="text-left px-2 py-1">Birim</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.map((r, i) => (
+                    <tr key={i} className="border-t">
+                      <td className="px-2 py-1 font-mono">{r.code}</td>
+                      <td className="px-2 py-1 truncate max-w-[200px]">{r.name}</td>
+                      <td className="px-2 py-1 text-right tabular-nums">{r.price.toLocaleString('tr-TR')}</td>
+                      <td className="px-2 py-1">{r.currency}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={importing}>İptal</Button>
+          <Button onClick={doImport} disabled={importing || preview.length === 0}>
+            {importing
+              ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Aktarılıyor...</>
+              : <><Upload className="h-4 w-4 mr-1.5" />{preview.length} Kalem Aktar</>
+            }
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Category helpers ─────────────────────────────────────────────────────────
+
+interface FlatCategory extends TreatmentCategory { depth: number; label: string }
+
+function flattenCategoryTree(categories: TreatmentCategory[]): FlatCategory[] {
+  const result: FlatCategory[] = [];
+  function walk(parentId: string | null, depth: number) {
+    const children = categories
+      .filter(c => c.parentPublicId === parentId)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'tr'));
+    for (const c of children) {
+      result.push({ ...c, depth, label: '\u00A0\u00A0\u00A0\u00A0'.repeat(depth) + (depth > 0 ? '└ ' : '') + c.name });
+      walk(c.publicId, depth + 1);
+    }
+  }
+  walk(null, 0);
+  return result;
+}
+
+/** Returns publicIds of `root` and all its descendants */
+function subtreeIds(categories: TreatmentCategory[], rootId: string): Set<string> {
+  const ids = new Set<string>();
+  function walk(id: string) {
+    ids.add(id);
+    categories.filter(c => c.parentPublicId === id).forEach(c => walk(c.publicId));
+  }
+  walk(rootId);
+  return ids;
+}
+
+// ─── Seed From Catalog Dialog ────────────────────────────────────────────────
+
+function SeedFromCatalogDialog({ open, onClose, list }: { open: boolean; onClose: () => void; list: ReferencePriceList }) {
+  const qc = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [running, setRunning] = useState(false);
+
+  const { data: treatmentsPage } = useQuery({
+    queryKey: ['treatments', 'list', 'seed'],
+    queryFn: () => treatmentsApi.list({ activeOnly: true, pageSize: 500 }).then(r => r.data),
+    enabled: open,
+  });
+
+  const { data: existingPage } = useQuery({
+    queryKey: ['pricing', 'ref-items-seed', list.id],
+    queryFn: () => pricingApi.getReferenceItems(list.id, { pageSize: 1000 }).then(r => r.data),
+    enabled: open,
+  });
+
+  const { data: allCategories } = useQuery({
+    queryKey: ['treatment-categories'],
+    queryFn: () => treatmentCategoriesApi.list().then(r => r.data),
+    enabled: open,
+  });
+
+  const flatCategories = allCategories ? flattenCategoryTree(allCategories) : [];
+
+  const existingCodes = new Set(existingPage?.items.map(i => i.treatmentCode) ?? []);
+  const candidates = (treatmentsPage?.items ?? []).filter(t => !existingCodes.has(t.code));
+
+  const allowedCategoryIds = categoryFilter && allCategories
+    ? subtreeIds(allCategories, categoryFilter)
+    : null;
+
+  const filtered = candidates.filter(t => {
+    const matchSearch = !search || t.name.toLowerCase().includes(search.toLowerCase()) || t.code.toLowerCase().includes(search.toLowerCase());
+    const matchCategory = !allowedCategoryIds || (t.category != null && allowedCategoryIds.has(t.category.publicId));
+    return matchSearch && matchCategory;
+  });
+
+  // Init selection when candidates load
+  useEffect(() => {
+    if (candidates.length > 0 && selected.size === 0) {
+      setSelected(new Set(candidates.map(t => t.code)));
+    }
+  }, [candidates.length]);
+
+  // Reset on open
+  useEffect(() => {
+    if (open) { setSearch(''); setCategoryFilter(''); setSelected(new Set()); setProgress(null); }
+  }, [open]);
+
+  const allFilteredSelected = filtered.length > 0 && filtered.every(t => selected.has(t.code));
+
+  function toggleAll() {
+    if (allFilteredSelected) {
+      setSelected(prev => { const s = new Set(prev); filtered.forEach(t => s.delete(t.code)); return s; });
+    } else {
+      setSelected(prev => { const s = new Set(prev); filtered.forEach(t => s.add(t.code)); return s; });
+    }
+  }
+
+  function toggle(code: string) {
+    setSelected(prev => { const s = new Set(prev); s.has(code) ? s.delete(code) : s.add(code); return s; });
+  }
+
+  const toAdd = candidates.filter(t => selected.has(t.code));
+
+  async function runSeed() {
+    if (toAdd.length === 0) return;
+    setRunning(true);
+    setProgress({ done: 0, total: toAdd.length });
+    let done = 0;
+    for (const t of toAdd) {
+      try {
+        await pricingApi.upsertReferenceItem(list.id, t.code, { treatmentName: t.name, price: 0, priceKdv: 0 });
+      } catch { /* skip */ }
+      done++;
+      setProgress({ done, total: toAdd.length });
+    }
+    qc.invalidateQueries({ queryKey: ['pricing', 'reference-items'] });
+    qc.invalidateQueries({ queryKey: ['pricing', 'reference-lists'] });
+    toast.success(`${done} kalem ${list.code} listesine eklendi`);
+    setRunning(false);
+    onClose();
+  }
+
+  const ready = !!treatmentsPage && !!existingPage;
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v && !running) onClose(); }}>
+      <DialogContent className="sm:max-w-[860px]">
+        <DialogHeader>
+          <DialogTitle>Katalogdan Doldur — {list.code}</DialogTitle>
+          {ready && candidates.length > 0 && (
+            <p className="text-sm text-muted-foreground mt-1">
+              Listede olmayan <strong>{candidates.length}</strong> tedavi gösteriliyor.
+              {existingCodes.size > 0 && ` (${existingCodes.size} zaten mevcut, gizlendi)`}
+            </p>
+          )}
+        </DialogHeader>
+
+        {!ready ? (
+          <div className="flex items-center justify-center gap-2 py-10 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Yükleniyor...
+          </div>
+        ) : candidates.length === 0 ? (
+          <p className="text-center text-muted-foreground py-8 text-sm">
+            Katalogdaki tüm tedaviler zaten bu listede mevcut.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {/* Controls */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  className="pl-8 h-8 text-sm"
+                  placeholder="Ara..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                />
+              </div>
+              {flatCategories.length > 0 && (
+                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                  <SelectTrigger className="h-8 w-48 text-sm shrink-0">
+                    <SelectValue placeholder="Tüm kategoriler" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Tüm kategoriler</SelectItem>
+                    {flatCategories.map(c => (
+                      <SelectItem key={c.publicId} value={c.publicId}>{c.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            {/* Select all row */}
+            <div className="flex items-center gap-2 px-1">
+              <Checkbox
+                checked={allFilteredSelected}
+                onCheckedChange={toggleAll}
+                id="select-all"
+              />
+              <label htmlFor="select-all" className="text-sm cursor-pointer select-none text-muted-foreground">
+                {allFilteredSelected ? 'Tümünü kaldır' : 'Tümünü seç'}
+                {search && ` (filtre: ${filtered.length})`}
+              </label>
+              <span className="ml-auto text-sm text-muted-foreground">
+                <strong className="text-foreground">{toAdd.length}</strong> seçili
+              </span>
+            </div>
+
+            {/* Treatment list */}
+            <div className="border rounded-md max-h-64 overflow-y-auto">
+              {filtered.length === 0 ? (
+                <p className="text-center text-muted-foreground py-6 text-sm">Sonuç yok</p>
+              ) : (
+                filtered.map(t => (
+                  <label
+                    key={t.code}
+                    className="flex items-center gap-3 px-3 py-2 hover:bg-muted/50 cursor-pointer border-b last:border-b-0"
+                  >
+                    <Checkbox
+                      checked={selected.has(t.code)}
+                      onCheckedChange={() => toggle(t.code)}
+                    />
+                    <span className="font-mono text-xs text-muted-foreground w-20 shrink-0">{t.code}</span>
+                    <span className="text-sm flex-1 truncate">{t.name}</span>
+                    {t.category && (
+                      <span className="text-xs text-muted-foreground shrink-0">{t.category.name}</span>
+                    )}
+                  </label>
+                ))
+              )}
+            </div>
+
+            {/* Progress */}
+            {progress && (
+              <div className="space-y-1">
+                <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-150"
+                    style={{ width: `${(progress.done / progress.total) * 100}%` }}
+                  />
+                </div>
+                <p className="text-xs text-center text-muted-foreground">
+                  {progress.done} / {progress.total} eklendi
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={running}>İptal</Button>
+          {candidates.length > 0 && (
+            <Button onClick={runSeed} disabled={running || toAdd.length === 0}>
+              {running
+                ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Ekleniyor...</>
+                : <><Copy className="h-4 w-4 mr-1.5" />{toAdd.length} Kalem Ekle</>
+              }
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Referans Fiyatlar Tab ──────────────────────────────────────────────────
 
 function ReferencePricesTab() {
@@ -48,6 +524,10 @@ function ReferencePricesTab() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editPrice, setEditPrice] = useState('');
   const [editKdv, setEditKdv] = useState('');
+  const [addItemOpen, setAddItemOpen] = useState(false);
+  const [seedOpen, setSeedOpen] = useState(false);
+  const [csvImportOpen, setCsvImportOpen] = useState(false);
+  const [deletingItem, setDeletingItem] = useState<{ code: string } | null>(null);
 
   const PAGE_SIZE = 50;
 
@@ -80,6 +560,17 @@ function ReferencePricesTab() {
       toast.success('Fiyat güncellendi');
     },
     onError: () => toast.error('Fiyat güncellenemedi'),
+  });
+
+  const deleteItemMutation = useMutation({
+    mutationFn: (code: string) => pricingApi.deleteReferenceItem(selectedList!.id, code),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pricing', 'reference-items'] });
+      qc.invalidateQueries({ queryKey: ['pricing', 'reference-lists'] });
+      setDeletingItem(null);
+      toast.success('Kalem silindi');
+    },
+    onError: () => toast.error('Kalem silinemedi'),
   });
 
   const items = itemsPage?.items ?? [];
@@ -137,7 +628,21 @@ function ReferencePricesTab() {
                   className="pl-8"
                 />
               </div>
-              <span className="text-sm text-muted-foreground ml-auto">{total} kalem</span>
+              <span className="text-sm text-muted-foreground">{total} kalem</span>
+              <div className="flex items-center gap-1.5 ml-auto">
+                <Button size="sm" variant="outline" onClick={() => setCsvImportOpen(true)}>
+                  <Upload className="h-3.5 w-3.5 mr-1.5" />
+                  CSV/Excel Aktar
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setSeedOpen(true)}>
+                  <Copy className="h-3.5 w-3.5 mr-1.5" />
+                  Katalogdan Doldur
+                </Button>
+                <Button size="sm" onClick={() => setAddItemOpen(true)}>
+                  <Plus className="h-3.5 w-3.5 mr-1.5" />
+                  Yeni Kalem
+                </Button>
+              </div>
             </div>
 
             <div className="border rounded-lg overflow-auto flex-1">
@@ -216,14 +721,24 @@ function ReferencePricesTab() {
                                 </Button>
                               </>
                             ) : (
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="h-6 w-6"
-                                onClick={() => startEdit(item)}
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
+                              <>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6"
+                                  onClick={() => startEdit(item)}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6 text-destructive hover:text-destructive"
+                                  onClick={() => setDeletingItem({ code: item.treatmentCode })}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </>
                             )}
                           </div>
                         </TableCell>
@@ -251,6 +766,24 @@ function ReferencePricesTab() {
           </>
         )}
       </div>
+
+      {selectedList && addItemOpen && (
+        <AddItemDialog open list={selectedList} onClose={() => setAddItemOpen(false)} />
+      )}
+      {selectedList && seedOpen && (
+        <SeedFromCatalogDialog open list={selectedList} onClose={() => setSeedOpen(false)} />
+      )}
+      {selectedList && csvImportOpen && (
+        <CsvImportDialog open list={selectedList} onClose={() => setCsvImportOpen(false)} />
+      )}
+      <ConfirmDialog
+        open={!!deletingItem}
+        title="Kalemi Sil"
+        message={`"${deletingItem?.code}" kodlu kalemi listeden kaldırmak istediğinizden emin misiniz?`}
+        loading={deleteItemMutation.isPending}
+        onConfirm={() => deletingItem && deleteItemMutation.mutate(deletingItem.code)}
+        onCancel={() => setDeletingItem(null)}
+      />
     </div>
   );
 }
@@ -285,24 +818,27 @@ function buildIncludeFilters(opts: {
   institutionIds: number[];
   ossOnly: boolean;
   campaignCode: string;
+  categoryPublicIds: string[];
 }): string | null {
   const obj: Record<string, unknown> = {};
-  if (opts.institutionIds.length > 0) obj['institutionIds'] = opts.institutionIds;
-  if (opts.ossOnly)                   obj['ossOnly']        = true;
-  if (opts.campaignCode.trim())       obj['campaignCodes']  = [opts.campaignCode.trim()];
+  if (opts.institutionIds.length > 0)    obj['institutionIds']    = opts.institutionIds;
+  if (opts.ossOnly)                      obj['ossOnly']           = true;
+  if (opts.campaignCode.trim())          obj['campaignCodes']     = [opts.campaignCode.trim()];
+  if (opts.categoryPublicIds.length > 0) obj['categoryPublicIds'] = opts.categoryPublicIds;
   return Object.keys(obj).length > 0 ? JSON.stringify(obj) : null;
 }
 
 // IncludeFilters JSON'undan koşulları parse et
 function parseIncludeFilters(json: string | null) {
-  const defaults = { institutionIds: [] as number[], ossOnly: false, campaignCode: '' };
+  const defaults = { institutionIds: [] as number[], ossOnly: false, campaignCode: '', categoryPublicIds: [] as string[] };
   if (!json) return defaults;
   try {
     const obj = JSON.parse(json);
     return {
-      institutionIds: Array.isArray(obj.institutionIds) ? (obj.institutionIds as number[]) : [],
-      ossOnly:        !!obj.ossOnly,
-      campaignCode:   Array.isArray(obj.campaignCodes) ? (obj.campaignCodes[0] ?? '') : '',
+      institutionIds:    Array.isArray(obj.institutionIds) ? (obj.institutionIds as number[]) : [],
+      ossOnly:           !!obj.ossOnly,
+      campaignCode:      Array.isArray(obj.campaignCodes) ? (obj.campaignCodes[0] ?? '') : '',
+      categoryPublicIds: Array.isArray(obj.categoryPublicIds) ? (obj.categoryPublicIds as string[]) : [],
     };
   } catch { return defaults; }
 }
@@ -378,6 +914,14 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
   const [institutionIds, setInstitutionIds] = useState<number[]>([]);
   const [ossOnly, setOssOnly] = useState(false);
   const [campaignCode, setCampaignCode] = useState('');
+  const [categoryPublicIds, setCategoryPublicIds] = useState<string[]>([]);
+
+  const { data: allCategories } = useQuery({
+    queryKey: ['treatment-categories'],
+    queryFn: () => treatmentCategoriesApi.list().then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  });
+  const flatCategories = allCategories ? flattenCategoryTree(allCategories) : [];
 
   useEffect(() => {
     if (editing) {
@@ -393,6 +937,7 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
       setInstitutionIds(parsed.institutionIds);
       setOssOnly(parsed.ossOnly);
       setCampaignCode(parsed.campaignCode);
+      setCategoryPublicIds(parsed.categoryPublicIds);
     } else {
       setName('');
       setDescription('');
@@ -405,11 +950,12 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
       setInstitutionIds([]);
       setOssOnly(false);
       setCampaignCode('');
+      setCategoryPublicIds([]);
     }
   }, [editing, open]);
 
   function buildFilters() {
-    return buildIncludeFilters({ institutionIds, ossOnly, campaignCode });
+    return buildIncludeFilters({ institutionIds, ossOnly, campaignCode, categoryPublicIds });
   }
 
   const createMutation = useMutation({
@@ -574,6 +1120,33 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
                 onChange={setInstitutionIds}
               />
 
+              {/* Kategori filtresi */}
+              {flatCategories.length > 0 && (
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Tedavi Kategorileri <span className="text-muted-foreground font-normal">(boş = tüm tedaviler)</span></Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {flatCategories.map(c => (
+                      <button
+                        key={c.publicId}
+                        type="button"
+                        onClick={() => setCategoryPublicIds(prev =>
+                          prev.includes(c.publicId) ? prev.filter(x => x !== c.publicId) : [...prev, c.publicId]
+                        )}
+                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border transition-colors ${
+                          categoryPublicIds.includes(c.publicId)
+                            ? 'bg-primary text-primary-foreground border-primary'
+                            : 'bg-background text-muted-foreground border-border hover:bg-accent'
+                        }`}
+                        style={{ paddingLeft: `${(c.depth * 8) + 10}px` }}
+                      >
+                        {c.depth > 0 && <span className="mr-1 opacity-50">└</span>}
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center gap-2">
                 <Checkbox
                   id="ossOnly"
@@ -595,13 +1168,14 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
                 />
               </div>
 
-              {(institutionIds.length > 0 || ossOnly || campaignCode.trim()) && (
+              {(institutionIds.length > 0 || ossOnly || campaignCode.trim() || categoryPublicIds.length > 0) && (
                 <p className="text-xs text-amber-600">
                   Bu kural yalnızca:{' '}
                   {[
                     institutionIds.length > 0 && `seçili ${institutionIds.length} kurum hastası`,
                     ossOnly && 'ÖSS kapsamındakiler',
                     campaignCode.trim() && `"${campaignCode.trim()}" kampanyası aktifken`,
+                    categoryPublicIds.length > 0 && `seçili ${categoryPublicIds.length} kategori`,
                   ].filter(Boolean).join(' + ')}
                   {' '}uygulanır.
                 </p>
@@ -682,8 +1256,20 @@ function RuleDialog({ open, onClose, editing }: RuleDialogProps) {
 }
 
 function PricingRulesTab() {
+  const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<PricingRule | null>(null);
+  const [deletingRule, setDeletingRule] = useState<PricingRule | null>(null);
+
+  const deleteRuleMutation = useMutation({
+    mutationFn: (publicId: string) => pricingApi.deleteRule(publicId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pricing', 'rules'] });
+      setDeletingRule(null);
+      toast.success('Kural silindi');
+    },
+    onError: () => toast.error('Kural silinemedi'),
+  });
 
   const { data: rules, isLoading } = useQuery({
     queryKey: ['pricing', 'rules'],
@@ -775,9 +1361,19 @@ function PricingRulesTab() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(rule)}>
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
+                          <div className="flex gap-1">
+                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(rule)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-destructive hover:text-destructive"
+                              onClick={() => setDeletingRule(rule)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))
@@ -790,6 +1386,14 @@ function PricingRulesTab() {
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         editing={editingRule}
+      />
+      <ConfirmDialog
+        open={!!deletingRule}
+        title="Kuralı Sil"
+        message={`"${deletingRule?.name}" kuralını kalıcı olarak silmek istediğinizden emin misiniz?`}
+        loading={deleteRuleMutation.isPending}
+        onConfirm={() => deletingRule && deleteRuleMutation.mutate(deletingRule.publicId)}
+        onCancel={() => setDeletingRule(null)}
       />
     </div>
   );
@@ -997,6 +1601,215 @@ function BranchSettingsTab() {
   );
 }
 
+// ─── Price Test Tab ──────────────────────────────────────────────────────────
+
+function PriceTestTab() {
+  const [selectedTreatment, setSelectedTreatment] = useState<{ publicId: string; name: string; code: string } | null>(null);
+  const [treatmentSearch, setTreatmentSearch] = useState('');
+  const [selectedBranch, setSelectedBranch] = useState<number | null>(null);
+  const [selectedInstitution, setSelectedInstitution] = useState<number | null>(null);
+  const [isOss, setIsOss] = useState(false);
+  const [result, setResult] = useState<TreatmentPriceResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const { data: treatmentsPage } = useQuery({
+    queryKey: ['treatments', 'list', 'pricetest', treatmentSearch],
+    queryFn: () => treatmentsApi.list({ search: treatmentSearch || undefined, activeOnly: true, pageSize: 20 }).then(r => r.data),
+    staleTime: 30_000,
+  });
+
+  const { data: branches } = useQuery({
+    queryKey: ['pricing', 'branches'],
+    queryFn: () => pricingApi.getBranchPricing().then(r => r.data),
+    staleTime: 60_000,
+  });
+
+  const { data: institutions } = useQuery({
+    queryKey: ['institutions'],
+    queryFn: () => institutionsApi.getAll().then(r => r.data),
+    staleTime: 60_000,
+  });
+
+  async function runTest() {
+    if (!selectedTreatment) return;
+    setLoading(true);
+    setResult(null);
+    try {
+      const res = await pricingApi.getTreatmentPrice(selectedTreatment.publicId, {
+        branchId: selectedBranch ?? undefined,
+        institutionId: selectedInstitution ?? undefined,
+        isOss,
+      });
+      setResult(res.data);
+    } catch {
+      toast.error('Fiyat hesaplanamadı');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const strategyLabel: Record<string, string> = {
+    Rule:             'Kural eşleşti',
+    ReferencePrice:   'Referans fiyat (kural yok)',
+    NoPriceConfigured: 'Fiyat tanımlı değil',
+  };
+
+  const strategyColor: Record<string, string> = {
+    Rule:             'text-green-600',
+    ReferencePrice:   'text-blue-600',
+    NoPriceConfigured: 'text-destructive',
+  };
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <p className="text-sm text-muted-foreground">
+        Kural motorunu test edin. Tedaviyi ve koşulları seçin, hangi kuralın uygulandığını görün.
+      </p>
+
+      <div className="border rounded-lg p-4 space-y-4">
+        {/* Treatment picker */}
+        <div className="space-y-1.5">
+          <Label>Tedavi</Label>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              className="pl-8"
+              placeholder="Tedavi ara..."
+              value={treatmentSearch}
+              onChange={e => { setTreatmentSearch(e.target.value); setSelectedTreatment(null); setResult(null); }}
+            />
+          </div>
+          {treatmentsPage && treatmentSearch && !selectedTreatment && (
+            <div className="border rounded-md max-h-40 overflow-y-auto">
+              {(treatmentsPage.items ?? []).map(t => (
+                <button
+                  key={t.publicId}
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex items-center gap-2 border-b last:border-b-0"
+                  onClick={() => { setSelectedTreatment({ publicId: t.publicId, name: t.name, code: t.code }); setTreatmentSearch(t.name); setResult(null); }}
+                >
+                  <span className="font-mono text-xs text-muted-foreground w-20 shrink-0">{t.code}</span>
+                  {t.name}
+                </button>
+              ))}
+              {treatmentsPage.items.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">Sonuç yok</p>
+              )}
+            </div>
+          )}
+          {selectedTreatment && (
+            <div className="flex items-center gap-2 text-sm">
+              <Badge variant="outline" className="font-mono">{selectedTreatment.code}</Badge>
+              <span>{selectedTreatment.name}</span>
+              <button onClick={() => { setSelectedTreatment(null); setTreatmentSearch(''); setResult(null); }} className="ml-auto text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          {/* Branch */}
+          <div className="space-y-1.5">
+            <Label>Şube <span className="text-muted-foreground font-normal text-xs">(MULTI için)</span></Label>
+            <Select
+              value={selectedBranch ? String(selectedBranch) : ''}
+              onValueChange={v => setSelectedBranch(v ? Number(v) : null)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Şube seç (opsiyonel)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Şube yok</SelectItem>
+                {(branches ?? []).map(b => (
+                  <SelectItem key={b.branchId} value={String(b.branchId)}>
+                    {b.branchName} <span className="text-muted-foreground text-xs">MULTI={b.pricingMultiplier}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Institution */}
+          <div className="space-y-1.5">
+            <Label>Anlaşmalı Kurum</Label>
+            <Select
+              value={selectedInstitution ? String(selectedInstitution) : ''}
+              onValueChange={v => setSelectedInstitution(v ? Number(v) : null)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Kurum yok" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Kurum yok</SelectItem>
+                {(institutions ?? []).filter(i => i.isActive).map(i => (
+                  <SelectItem key={i.id} value={String(i.id)}>{i.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* OSS */}
+        <div className="flex items-center gap-2">
+          <Checkbox id="test-oss" checked={isOss} onCheckedChange={v => setIsOss(!!v)} />
+          <Label htmlFor="test-oss" className="font-normal cursor-pointer">ÖSS Kapsamı</Label>
+        </div>
+
+        <Button onClick={runTest} disabled={!selectedTreatment || loading} className="w-full">
+          {loading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Hesaplanıyor...</> : 'Fiyatı Hesapla'}
+        </Button>
+      </div>
+
+      {result && (
+        <div className="border rounded-lg p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <h3 className="font-medium">Sonuç</h3>
+            <span className={`text-sm font-medium ${strategyColor[result.strategy] ?? ''}`}>
+              {strategyLabel[result.strategy] ?? result.strategy}
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-4 text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground">Uygulanan Fiyat</p>
+              <p className="text-2xl font-bold tabular-nums">
+                {result.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                <span className="text-sm font-normal text-muted-foreground ml-1">{result.currency}</span>
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Referans Fiyat</p>
+              <p className="text-lg font-medium tabular-nums text-muted-foreground">
+                {result.referencePrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {result.currency}
+              </p>
+            </div>
+            {result.unitPrice < result.referencePrice && (
+              <div>
+                <p className="text-xs text-muted-foreground">İndirim</p>
+                <p className="text-lg font-medium tabular-nums text-green-600">
+                  -{(((result.referencePrice - result.unitPrice) / result.referencePrice) * 100).toFixed(1)}%
+                </p>
+              </div>
+            )}
+          </div>
+          {result.appliedRuleName && (
+            <div className="bg-muted/50 rounded-md px-3 py-2 text-sm flex items-center gap-2">
+              <Zap className="h-3.5 w-3.5 text-amber-500" />
+              <span className="text-muted-foreground">Uygulanan kural:</span>
+              <span className="font-medium">{result.appliedRuleName}</span>
+            </div>
+          )}
+          {result.strategy === 'NoPriceConfigured' && (
+            <p className="text-sm text-destructive">
+              Bu tedavinin referans fiyat eşleştirmesi yok. /catalog sayfasından eşleştirme yapın.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 export function PricingPage() {
@@ -1019,6 +1832,10 @@ export function PricingPage() {
             <TabsTrigger value="prices">Referans Fiyatlar</TabsTrigger>
             <TabsTrigger value="rules">Fiyat Kuralları</TabsTrigger>
             <TabsTrigger value="branches">Şube Ayarları</TabsTrigger>
+            <TabsTrigger value="test">
+              <FlaskConical className="h-3.5 w-3.5 mr-1.5" />
+              Fiyat Testi
+            </TabsTrigger>
           </TabsList>
           <Button size="sm" variant="outline" onClick={() => setNewListOpen(true)}>
             <Plus className="h-4 w-4 mr-1.5" />
@@ -1036,6 +1853,10 @@ export function PricingPage() {
 
         <TabsContent value="branches" className="mt-4">
           <BranchSettingsTab />
+        </TabsContent>
+
+        <TabsContent value="test" className="mt-4">
+          <PriceTestTab />
         </TabsContent>
 
       </Tabs>

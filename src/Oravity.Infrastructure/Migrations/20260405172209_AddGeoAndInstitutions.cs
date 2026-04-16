@@ -171,7 +171,6 @@ namespace Oravity.Infrastructure.Migrations
                 principalColumn: "Id");
 
             // ── SEED: Countries ──────────────────────────────────────────────
-            var now = "NOW()";
             migrationBuilder.Sql(@"
 INSERT INTO countries (""Name"", ""IsoCode"", ""SortOrder"", ""IsActive"", ""PublicId"", ""CreatedAt"", ""IsDeleted"") VALUES
 ('Türkiye','TR',1,true,gen_random_uuid(),NOW(),false),

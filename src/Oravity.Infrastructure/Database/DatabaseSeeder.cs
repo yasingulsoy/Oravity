@@ -46,6 +46,7 @@ public class DatabaseSeeder
             await SeedPlatformAdminAsync(ct);
             await SeedTestPatientsAsync(ct);
             await SeedDoctorSchedulesAsync(ct);
+            await SeedDemoPricingDataAsync(ct);
         }
 
         _logger.LogInformation("Database seed tamamlandı.");
@@ -1024,6 +1025,232 @@ public class DatabaseSeeder
 
         if (changed) await _db.SaveChangesAsync(ct);
         _logger.LogInformation("Tedavi kataloğu seed tamamlandı ({Count} kategori).", catalog.Length);
+    }
+
+    // ─── Demo Fiyat Verileri (sadece Development) ─────────────────────────
+    private async Task SeedDemoPricingDataAsync(CancellationToken ct)
+    {
+        const string demoCompanyName = "Demo Diş Kliniği";
+
+        var company = await _db.Companies
+            .FirstOrDefaultAsync(c => c.Name == demoCompanyName, ct);
+        if (company is null)
+        {
+            _logger.LogWarning("Demo Diş Kliniği bulunamadı, fiyat seed atlanıyor.");
+            return;
+        }
+
+        // İdempotent guard
+        if (await _db.PricingRules.AnyAsync(r => r.CompanyId == company.Id, ct))
+        {
+            _logger.LogDebug("Demo fiyat verileri zaten mevcut, atlanıyor.");
+            return;
+        }
+
+        // ── 1. Şubeler (MULTI çarpanları) ───────────────────────────────────
+        var branches = await _db.Branches
+            .Where(b => b.CompanyId == company.Id && b.IsActive)
+            .ToListAsync(ct);
+
+        Branch GetOrAddBranch(string name, decimal multiplier)
+        {
+            var b = branches.FirstOrDefault(x => x.Name == name);
+            if (b is null)
+            {
+                b = Branch.Create(name, company.Id);
+                _db.Branches.Add(b);
+                branches.Add(b);
+            }
+            b.SetPricingMultiplier(multiplier);
+            return b;
+        }
+
+        GetOrAddBranch("Nişantaşı Şubesi", 1.15m);
+        GetOrAddBranch("Bodrum Şubesi",    1.10m);
+        await _db.SaveChangesAsync(ct);
+
+        // ── 2. Şirkete özel kurumlar ─────────────────────────────────────────
+        async Task<Institution> GetOrAddInstitutionAsync(string name, string code, string type)
+        {
+            var inst = await _db.Institutions
+                .FirstOrDefaultAsync(i => i.CompanyId == company.Id && i.Code == code, ct);
+            if (inst is null)
+            {
+                inst = Institution.Create(name, code, type, company.Id);
+                await _db.Institutions.AddAsync(inst, ct);
+            }
+            return inst;
+        }
+
+        var thy      = await GetOrAddInstitutionAsync("Türk Hava Yolları", "THY",      "kurumsal");
+        var koc      = await GetOrAddInstitutionAsync("Koç Topluluğu",     "KOC",      "kurumsal");
+        _              = await GetOrAddInstitutionAsync("Turkcell",          "TURKCELL", "kurumsal");
+        await _db.SaveChangesAsync(ct);
+
+        // ── 3. CARI referans fiyat listesi ────────────────────────────────────
+        var cariList = await _db.ReferencePriceLists
+            .FirstOrDefaultAsync(l => l.Code == "CARI", ct);
+        if (cariList is null)
+        {
+            cariList = ReferencePriceList.Create("CARI", "Cari Fiyat Listesi 2026", "private", 2026);
+            await _db.ReferencePriceLists.AddAsync(cariList, ct);
+            await _db.SaveChangesAsync(ct);
+        }
+
+        // CARI fiyatları: klinik piyasa fiyatı (TDB'den ~%15-20 yüksek)
+        var cariItems = new Dictionary<string, (string Name, decimal Price)>
+        {
+            ["1-18"] = ("Panoramik Film",                                  2200m),
+            ["2-4"]  = ("Kompozit Dolgu (Bir Yüzlü)",                     3500m),
+            ["2-5"]  = ("Kompozit Dolgu (İki Yüzlü)",                     4400m),
+            ["2-27"] = ("Kanal Tedavisi (1 Kanallı)",                      4800m),
+            ["2-28"] = ("Kanal Tedavisi (2 Kanallı)",                      7500m),
+            ["2-29"] = ("Kanal Tedavisi (3 Kanallı)",                     10800m),
+            ["4-29"] = ("Tam Seramik Kuron",                              22000m),
+            ["4-51"] = ("Zirkonyum Kuron",                                14500m),
+            ["5-1"]  = ("Diş Çekimi (Basit)",                              2600m),
+            ["5-34"] = ("Kemik İçi İmplant",                              23000m),
+            ["6-1"]  = ("Detartraj (Tek Çene)",                            3500m),
+            ["7-62"] = ("Şeffaf Plak Ortodontik Tedavi (Hafif)",          55000m),
+        };
+
+        var globalTreatments = await _db.Treatments
+            .Where(t => t.CompanyId == null)
+            .ToListAsync(ct);
+
+        var anyChanged = false;
+        foreach (var (code, (name, price)) in cariItems)
+        {
+            if (!await _db.ReferencePriceItems.AnyAsync(
+                    i => i.ListId == cariList.Id && i.TreatmentCode == code, ct))
+            {
+                await _db.ReferencePriceItems.AddAsync(
+                    ReferencePriceItem.Create(cariList.Id, code, name, price, 0m, "TRY", null, null), ct);
+                anyChanged = true;
+            }
+
+            var treatment = globalTreatments.FirstOrDefault(t => t.Code == code);
+            if (treatment is not null &&
+                !await _db.TreatmentMappings.AnyAsync(
+                    m => m.InternalTreatmentId == treatment.Id && m.ReferenceListId == cariList.Id, ct))
+            {
+                await _db.TreatmentMappings.AddAsync(
+                    TreatmentMapping.Create(treatment.Id, cariList.Id, code, "exact", null), ct);
+                anyChanged = true;
+            }
+        }
+
+        if (anyChanged) await _db.SaveChangesAsync(ct);
+
+        // ── 4. Fiyatlandırma kuralları ─────────────────────────────────────
+        var thyId = thy.Id;
+        var kocId = koc.Id;
+
+        var rules = new[]
+        {
+            PricingRule.Create(
+                companyId:      company.Id,
+                branchId:       null,
+                name:           "THY + ÖSS VIP",
+                description:    "THY çalışanı ve ÖSS kapsamındaki hastalar için özel tarife",
+                ruleType:       "formula",
+                priority:       5,
+                includeFilters: $$$"""{"institutionIds":[{{{thyId}}}],"ossOnly":true}""",
+                excludeFilters: null,
+                formula:        "TDB * 0.70",
+                outputCurrency: "TRY",
+                validFrom:      null,
+                validUntil:     null,
+                stopProcessing: true,
+                createdBy:      null),
+
+            PricingRule.Create(
+                companyId:      company.Id,
+                branchId:       null,
+                name:           "THY Kurumsal",
+                description:    "Türk Hava Yolları anlaşmalı personel fiyatı (%18 indirim)",
+                ruleType:       "formula",
+                priority:       10,
+                includeFilters: $$$"""{"institutionIds":[{{{thyId}}}]}""",
+                excludeFilters: null,
+                formula:        "TDB * 0.82",
+                outputCurrency: "TRY",
+                validFrom:      null,
+                validUntil:     null,
+                stopProcessing: true,
+                createdBy:      null),
+
+            PricingRule.Create(
+                companyId:      company.Id,
+                branchId:       null,
+                name:           "Koç / Turkcell Kurumsal",
+                description:    "Koç Topluluğu çalışanları için kurumsal anlaşma fiyatı (%15 indirim)",
+                ruleType:       "formula",
+                priority:       15,
+                includeFilters: $$$"""{"institutionIds":[{{{kocId}}}]}""",
+                excludeFilters: null,
+                formula:        "TDB * 0.85",
+                outputCurrency: "TRY",
+                validFrom:      null,
+                validUntil:     null,
+                stopProcessing: true,
+                createdBy:      null),
+
+            PricingRule.Create(
+                companyId:      company.Id,
+                branchId:       null,
+                name:           "ÖSS Genel",
+                description:    "Özel sağlık sigortası kapsamındaki tüm hastalar (%22 indirim)",
+                ruleType:       "formula",
+                priority:       20,
+                includeFilters: """{"ossOnly":true}""",
+                excludeFilters: null,
+                formula:        "TDB * 0.78",
+                outputCurrency: "TRY",
+                validFrom:      null,
+                validUntil:     null,
+                stopProcessing: true,
+                createdBy:      null),
+
+            PricingRule.Create(
+                companyId:      company.Id,
+                branchId:       null,
+                name:           "Kurumsal Anlaşmalı",
+                description:    "Herhangi bir anlaşmalı kurumun hastası (%10 indirim)",
+                ruleType:       "formula",
+                priority:       25,
+                includeFilters: """{"institutionAgreement":true}""",
+                excludeFilters: null,
+                formula:        "TDB * 0.90",
+                outputCurrency: "TRY",
+                validFrom:      null,
+                validUntil:     null,
+                stopProcessing: true,
+                createdBy:      null),
+
+            PricingRule.Create(
+                companyId:      company.Id,
+                branchId:       null,
+                name:           "Standart Cari Tarife",
+                description:    "Tüm özel hastalar — şube çarpanı (MULTI) ile uygulanır",
+                ruleType:       "formula",
+                priority:       50,
+                includeFilters: null,
+                excludeFilters: null,
+                formula:        "TDB * MULTI",
+                outputCurrency: "TRY",
+                validFrom:      null,
+                validUntil:     null,
+                stopProcessing: true,
+                createdBy:      null),
+        };
+
+        await _db.PricingRules.AddRangeAsync(rules, ct);
+        await _db.SaveChangesAsync(ct);
+
+        _logger.LogInformation(
+            "Demo fiyat seed tamamlandı: 2 şube (MULTI), 3 kurum, {Cari} CARI kalemi, {Rules} kural.",
+            cariItems.Count, rules.Length);
     }
 
     private static CategorySeed[] GetDentalTreatmentCatalog() =>

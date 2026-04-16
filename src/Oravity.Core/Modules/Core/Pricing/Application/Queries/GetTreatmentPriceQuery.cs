@@ -68,9 +68,10 @@ public class GetTreatmentPriceQueryHandler
         if (companyId == null)
             return new TreatmentPriceResponse(0, 0, "TRY", null, "NoPriceConfigured");
 
-        // Tedaviyi bul
+        // Tedaviyi bul (kategori PublicId'si filtre motoru için gerekli)
         var treatment = await _db.Treatments
             .AsNoTracking()
+            .Include(t => t.Category)
             .FirstOrDefaultAsync(
                 t => t.PublicId == request.TreatmentPublicId
                   && (t.CompanyId == null || t.CompanyId == companyId),
@@ -143,6 +144,7 @@ public class GetTreatmentPriceQueryHandler
             {
                 TreatmentId       = treatment.Id,
                 CategoryId        = treatment.CategoryId,
+                CategoryPublicId  = treatment.Category?.PublicId,
                 TreatmentCode     = treatment.Code,
                 ReferencePrices   = referencePrices,
                 PricingMultiplier = pricingMultiplier,

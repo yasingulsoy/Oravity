@@ -35,9 +35,10 @@ public record PricingResult
 /// </summary>
 public record RuleEvalContext
 {
-    public long    TreatmentId   { get; init; }
-    public long?   CategoryId    { get; init; }
-    public string  TreatmentCode { get; init; } = string.Empty;
+    public long    TreatmentId        { get; init; }
+    public long?   CategoryId         { get; init; }
+    public Guid?   CategoryPublicId   { get; init; }
+    public string  TreatmentCode      { get; init; } = string.Empty;
 
     /// <summary>Referans listelerinden çekilen fiyatlar: ListCode → Price</summary>
     public IReadOnlyDictionary<string, decimal> ReferencePrices { get; init; }
@@ -324,6 +325,17 @@ public class PricingEngine
             if (hasCategoryFilter && ctx.CategoryId.HasValue)
                 foreach (var id in cIds.EnumerateArray())
                     if (id.GetInt64() == ctx.CategoryId.Value) return true;
+
+            // categoryPublicIds: GUID dizisi (frontend'den gelen publicId formatı)
+            bool hasCategoryPublicIdFilter = root.TryGetProperty("categoryPublicIds", out var cpIds)
+                                             && cpIds.ValueKind == JsonValueKind.Array
+                                             && cpIds.GetArrayLength() > 0;
+            if (hasCategoryPublicIdFilter && ctx.CategoryPublicId.HasValue)
+                foreach (var id in cpIds.EnumerateArray())
+                    if (Guid.TryParse(id.GetString(), out var g) && g == ctx.CategoryPublicId.Value) return true;
+
+            if (!hasTreatmentFilter && !hasCategoryFilter && hasCategoryPublicIdFilter)
+                return false; // had public id filter but nothing matched
 
             return false;
         }
