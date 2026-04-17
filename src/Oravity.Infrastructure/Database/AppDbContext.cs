@@ -154,6 +154,15 @@ public class AppDbContext : DbContext
     // ─── Kurumlar ─────────────────────────────────────────────────────────
     public DbSet<Institution> Institutions => Set<Institution>();
 
+    // ── Laboratuvar ──────────────────────────────────────────────────────
+    public DbSet<Laboratory>                 Laboratories                 => Set<Laboratory>();
+    public DbSet<LaboratoryBranchAssignment> LaboratoryBranchAssignments  => Set<LaboratoryBranchAssignment>();
+    public DbSet<LaboratoryPriceItem>        LaboratoryPriceItems         => Set<LaboratoryPriceItem>();
+    public DbSet<LaboratoryWork>             LaboratoryWorks              => Set<LaboratoryWork>();
+    public DbSet<LaboratoryWorkItem>         LaboratoryWorkItems          => Set<LaboratoryWorkItem>();
+    public DbSet<LaboratoryWorkHistory>      LaboratoryWorkHistories      => Set<LaboratoryWorkHistory>();
+    public DbSet<LaboratoryApprovalAuthority> LaboratoryApprovalAuthorities => Set<LaboratoryApprovalAuthority>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -1953,6 +1962,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.Tags).HasColumnType("jsonb");
             e.Property(x => x.KdvRate).HasColumnType("numeric(5,2)");
             e.Property(x => x.AllowedScopes).HasColumnType("integer[]");
+            e.Property(x => x.LabDefaultCategory).HasMaxLength(200);
 
             e.HasIndex(x => new { x.CompanyId, x.IsActive })
              .HasDatabaseName("ix_treatments_company_active");
@@ -2165,6 +2175,233 @@ public class AppDbContext : DbContext
             e.HasIndex(x => x.CompanyId)
              .HasDatabaseName("ix_backup_logs_company");
         });
+
+        ConfigureLaboratoryEntities(m);
+    }
+
+    // ─── Laboratuvar ───────────────────────────────────────────────────────
+    private static void ConfigureLaboratoryEntities(ModelBuilder m)
+    {
+        // Laboratory
+        m.Entity<Laboratory>(e =>
+        {
+            e.ToTable("laboratories");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique()
+             .HasDatabaseName("ix_laboratories_public_id");
+
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Code).HasMaxLength(50);
+            e.Property(x => x.Phone).HasMaxLength(30);
+            e.Property(x => x.Email).HasMaxLength(200);
+            e.Property(x => x.Website).HasMaxLength(200);
+            e.Property(x => x.Country).HasMaxLength(100);
+            e.Property(x => x.City).HasMaxLength(100);
+            e.Property(x => x.District).HasMaxLength(100);
+            e.Property(x => x.Address).HasColumnType("text");
+            e.Property(x => x.ContactPerson).HasMaxLength(200);
+            e.Property(x => x.ContactPhone).HasMaxLength(30);
+            e.Property(x => x.WorkingDays).HasColumnType("jsonb");
+            e.Property(x => x.WorkingHours).HasMaxLength(100);
+            e.Property(x => x.PaymentTerms).HasColumnType("text");
+            e.Property(x => x.Notes).HasColumnType("text");
+
+            e.HasIndex(x => new { x.CompanyId, x.IsActive })
+             .HasDatabaseName("ix_laboratories_company_active");
+
+            e.HasIndex(x => new { x.CompanyId, x.Code })
+             .IsUnique()
+             .HasFilter("\"Code\" IS NOT NULL")
+             .HasDatabaseName("ix_laboratories_company_code");
+        });
+
+        // LaboratoryBranchAssignment
+        m.Entity<LaboratoryBranchAssignment>(e =>
+        {
+            e.ToTable("laboratory_branch_assignments");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+
+            e.HasIndex(x => new { x.LaboratoryId, x.BranchId }).IsUnique()
+             .HasDatabaseName("ix_lab_branch_unique");
+
+            e.HasIndex(x => x.BranchId).HasDatabaseName("ix_lab_branch_branch");
+            e.HasIndex(x => x.LaboratoryId).HasDatabaseName("ix_lab_branch_lab");
+
+            e.HasOne(x => x.Laboratory)
+             .WithMany()
+             .HasForeignKey(x => x.LaboratoryId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // LaboratoryPriceItem
+        m.Entity<LaboratoryPriceItem>(e =>
+        {
+            e.ToTable("laboratory_price_items");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique()
+             .HasDatabaseName("ix_lab_price_items_public_id");
+
+            e.Property(x => x.ItemName).HasMaxLength(500).IsRequired();
+            e.Property(x => x.ItemCode).HasMaxLength(100);
+            e.Property(x => x.Description).HasColumnType("text");
+            e.Property(x => x.Price).HasColumnType("numeric(12,2)");
+            e.Property(x => x.Currency).HasMaxLength(3).HasDefaultValue("TRY");
+            e.Property(x => x.PricingType).HasMaxLength(50);
+            e.Property(x => x.Category).HasMaxLength(200);
+
+            e.HasIndex(x => x.LaboratoryId).HasDatabaseName("ix_lab_prices_lab");
+            e.HasIndex(x => x.Category).HasDatabaseName("ix_lab_prices_category");
+
+            e.HasOne(x => x.Laboratory)
+             .WithMany()
+             .HasForeignKey(x => x.LaboratoryId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // LaboratoryWork
+        m.Entity<LaboratoryWork>(e =>
+        {
+            e.ToTable("laboratory_works");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique()
+             .HasDatabaseName("ix_lab_works_public_id");
+
+            e.Property(x => x.WorkNo).HasMaxLength(50).IsRequired();
+            e.HasIndex(x => new { x.CompanyId, x.WorkNo }).IsUnique()
+             .HasDatabaseName("ix_lab_works_company_no");
+
+            e.Property(x => x.WorkType).HasMaxLength(50).IsRequired();
+            e.Property(x => x.DeliveryType).HasMaxLength(50).IsRequired();
+            e.Property(x => x.ToothNumbers).HasMaxLength(200);
+            e.Property(x => x.ShadeColor).HasMaxLength(50);
+            e.Property(x => x.Status).HasMaxLength(50).IsRequired();
+            e.Property(x => x.Currency).HasMaxLength(3);
+            e.Property(x => x.TotalCost).HasColumnType("numeric(12,2)");
+            e.Property(x => x.CostDetails).HasColumnType("jsonb");
+            e.Property(x => x.Attachments).HasColumnType("jsonb");
+            e.Property(x => x.DoctorNotes).HasColumnType("text");
+            e.Property(x => x.LabNotes).HasColumnType("text");
+            e.Property(x => x.ApprovalNotes).HasColumnType("text");
+
+            e.HasIndex(x => x.PatientId).HasDatabaseName("ix_lab_works_patient");
+            e.HasIndex(x => x.DoctorId).HasDatabaseName("ix_lab_works_doctor");
+            e.HasIndex(x => x.LaboratoryId).HasDatabaseName("ix_lab_works_lab");
+            e.HasIndex(x => x.Status).HasDatabaseName("ix_lab_works_status");
+            e.HasIndex(x => new { x.BranchId, x.Status })
+             .HasDatabaseName("ix_lab_works_branch_status");
+            e.HasIndex(x => new { x.SentToLabAt, x.EstimatedDeliveryDate })
+             .HasDatabaseName("ix_lab_works_dates");
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Doctor)
+             .WithMany()
+             .HasForeignKey(x => x.DoctorId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Laboratory)
+             .WithMany()
+             .HasForeignKey(x => x.LaboratoryId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.TreatmentPlanItem)
+             .WithMany()
+             .HasForeignKey(x => x.TreatmentPlanItemId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasMany(x => x.Items)
+             .WithOne(x => x.Work)
+             .HasForeignKey(x => x.WorkId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasMany(x => x.History)
+             .WithOne(x => x.Work)
+             .HasForeignKey(x => x.WorkId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // LaboratoryWorkItem
+        m.Entity<LaboratoryWorkItem>(e =>
+        {
+            e.ToTable("laboratory_work_items");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+
+            e.Property(x => x.ItemName).HasMaxLength(500).IsRequired();
+            e.Property(x => x.UnitPrice).HasColumnType("numeric(12,2)");
+            e.Property(x => x.TotalPrice).HasColumnType("numeric(12,2)");
+            e.Property(x => x.Currency).HasMaxLength(3);
+            e.Property(x => x.Notes).HasColumnType("text");
+
+            e.HasIndex(x => x.WorkId).HasDatabaseName("ix_lab_work_items_work");
+
+            e.HasOne(x => x.LabPriceItem)
+             .WithMany()
+             .HasForeignKey(x => x.LabPriceItemId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // LaboratoryWorkHistory
+        m.Entity<LaboratoryWorkHistory>(e =>
+        {
+            e.ToTable("laboratory_work_history");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+
+            e.Property(x => x.OldStatus).HasMaxLength(50);
+            e.Property(x => x.NewStatus).HasMaxLength(50).IsRequired();
+            e.Property(x => x.Notes).HasColumnType("text");
+
+            e.HasIndex(x => x.WorkId).HasDatabaseName("ix_lab_history_work");
+        });
+
+        // LaboratoryApprovalAuthority
+        m.Entity<LaboratoryApprovalAuthority>(e =>
+        {
+            e.ToTable("laboratory_approval_authorities");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+
+            e.HasIndex(x => new { x.UserId, x.BranchId }).IsUnique()
+             .HasDatabaseName("ix_lab_approval_user_branch");
+
+            e.HasOne(x => x.User)
+             .WithMany()
+             .HasForeignKey(x => x.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
     }
 
     // ─── Global Soft-Delete Filters ───────────────────────────────────────
@@ -2201,7 +2438,10 @@ public class AppDbContext : DbContext
                 // Audit / KVKK: bu tablolar hiçbir zaman soft-delete almaz
                 typeof(AuditLog),
                 typeof(KvkkConsentLog),
-                typeof(DataExportRequest)
+                typeof(DataExportRequest),
+                // Laboratuvar: iş emri geçmişi append-only, iş kalemleri cascade siliniyor
+                typeof(LaboratoryWorkHistory),
+                typeof(LaboratoryWorkItem)
                 // PatientMedication, PaymentAllocation, DoctorCommission, SmsQueue,
                 // ToothConditionHistory, DoctorOnlineBookingSettings, DoctorOnlineSchedule,
                 // DoctorOnlineBlock, BranchOnlineBookingSettings, TranslationKey, Translation,

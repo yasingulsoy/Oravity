@@ -21,6 +21,7 @@ import { ExaminationPage } from '@/pages/doctor/ExaminationPage';
 import { PricingPage } from '@/pages/pricing/PricingPage';
 import { TreatmentCatalogPage } from '@/pages/treatments/TreatmentCatalogPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
+import { LaboratoryPage } from '@/pages/laboratory/LaboratoryPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -75,6 +76,7 @@ function App() {
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/pricing" element={<PricingPage />} />
               <Route path="/catalog" element={<TreatmentCatalogPage />} />
+              <Route path="/laboratory" element={<LaboratoryPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
           </Route>

@@ -30,6 +30,9 @@ public class Treatment : AuditableEntity
     public bool RequiresSurfaceSelection { get; private set; }
     public bool RequiresLaboratory { get; private set; }
 
+    /// <summary>Lab işlemi öneri kategorisi (örn. "Zirkonyum", "Porselen", "Protez").</summary>
+    public string? LabDefaultCategory { get; private set; }
+
     /// <summary>İzin verilen kapsam kodları. PostgreSQL integer[] kolonu.</summary>
     public int[] AllowedScopes { get; private set; } = [];
 
@@ -47,7 +50,8 @@ public class Treatment : AuditableEntity
         bool requiresLaboratory,
         int[]? allowedScopes,
         string? tags,
-        string? sutCode = null)
+        string? sutCode = null,
+        string? labDefaultCategory = null)
     {
         if (string.IsNullOrWhiteSpace(code))
             throw new ArgumentException("Tedavi kodu boş olamaz.", nameof(code));
@@ -66,6 +70,7 @@ public class Treatment : AuditableEntity
             AllowedScopes            = allowedScopes ?? [],
             Tags                     = tags,
             SutCode                  = sutCode?.Trim(),
+            LabDefaultCategory       = string.IsNullOrWhiteSpace(labDefaultCategory) ? null : labDefaultCategory.Trim(),
             IsActive                 = true
         };
     }
@@ -79,7 +84,8 @@ public class Treatment : AuditableEntity
         bool requiresLaboratory,
         int[]? allowedScopes,
         string? tags,
-        string? sutCode = null)
+        string? sutCode = null,
+        string? labDefaultCategory = null)
     {
         if (string.IsNullOrWhiteSpace(code))
             throw new ArgumentException("Tedavi kodu boş olamaz.", nameof(code));
@@ -95,6 +101,7 @@ public class Treatment : AuditableEntity
         AllowedScopes            = allowedScopes ?? [];
         Tags                     = tags;
         SutCode                  = sutCode?.Trim();
+        LabDefaultCategory       = string.IsNullOrWhiteSpace(labDefaultCategory) ? null : labDefaultCategory.Trim();
         MarkUpdated();
     }
 

@@ -125,6 +125,8 @@ public class DatabaseSeeder
                 "complaint.view", "complaint.create",
                 "report.view",
                 "pricing.view",
+                "laboratory.view", "laboratory.work_create",
+                "laboratory.work_receive", "laboratory.work_fit", "laboratory.work_complete",
             ],
             ["ASSISTANT"] =
             [
@@ -135,6 +137,7 @@ public class DatabaseSeeder
                 "treatment_plan.view",
                 "note.write_patient",
                 "complaint.view",
+                "laboratory.view", "laboratory.work_create", "laboratory.work_send",
             ],
             ["RECEPTIONIST"] =
             [
@@ -188,6 +191,10 @@ public class DatabaseSeeder
                 "report.view_daily",
                 "institution.view",
                 "pricing.view", "pricing.create", "pricing.edit", "pricing.delete",
+                "laboratory.view", "laboratory.manage",
+                "laboratory.work_create", "laboratory.work_send", "laboratory.work_receive",
+                "laboratory.work_fit", "laboratory.work_complete",
+                "laboratory.work_approve", "laboratory.work_cancel",
             ],
         };
 
@@ -360,6 +367,17 @@ public class DatabaseSeeder
             ("pricing",          "create",           false),
             ("pricing",          "edit",             false),
             ("pricing",          "delete",           true),
+
+            // Laboratory
+            ("laboratory",       "view",             false),
+            ("laboratory",       "manage",           false),   // lab + fiyat + şube atama CRUD
+            ("laboratory",       "work_create",      false),
+            ("laboratory",       "work_send",        false),
+            ("laboratory",       "work_receive",     false),
+            ("laboratory",       "work_fit",         false),
+            ("laboratory",       "work_complete",    false),
+            ("laboratory",       "work_approve",     true),    // hakediş açar → dangerous
+            ("laboratory",       "work_cancel",      true),
         };
 
         var existingCodes = await _db.Permissions
