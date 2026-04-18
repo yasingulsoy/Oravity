@@ -27,6 +27,13 @@ public class Treatment : AuditableEntity
     public string? Tags { get; private set; }
 
     public decimal KdvRate { get; private set; }
+
+    /// <summary>
+    /// Tedavinin klinik maliyet tahmini (hakediş hesabında kesinti olarak kullanılır).
+    /// Null ya da 0 ise tedavi maliyeti kesintisi uygulanmaz.
+    /// </summary>
+    public decimal? CostPrice { get; private set; }
+
     public bool RequiresSurfaceSelection { get; private set; }
     public bool RequiresLaboratory { get; private set; }
 
@@ -51,12 +58,15 @@ public class Treatment : AuditableEntity
         int[]? allowedScopes,
         string? tags,
         string? sutCode = null,
-        string? labDefaultCategory = null)
+        string? labDefaultCategory = null,
+        decimal? costPrice = null)
     {
         if (string.IsNullOrWhiteSpace(code))
             throw new ArgumentException("Tedavi kodu boş olamaz.", nameof(code));
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Tedavi adı boş olamaz.", nameof(name));
+        if (costPrice.HasValue && costPrice.Value < 0)
+            throw new ArgumentException("Tedavi maliyeti negatif olamaz.", nameof(costPrice));
 
         return new Treatment
         {
@@ -65,6 +75,7 @@ public class Treatment : AuditableEntity
             Name                     = name.Trim(),
             CategoryId               = categoryId,
             KdvRate                  = kdvRate,
+            CostPrice                = costPrice,
             RequiresSurfaceSelection = requiresSurfaceSelection,
             RequiresLaboratory       = requiresLaboratory,
             AllowedScopes            = allowedScopes ?? [],
@@ -85,17 +96,21 @@ public class Treatment : AuditableEntity
         int[]? allowedScopes,
         string? tags,
         string? sutCode = null,
-        string? labDefaultCategory = null)
+        string? labDefaultCategory = null,
+        decimal? costPrice = null)
     {
         if (string.IsNullOrWhiteSpace(code))
             throw new ArgumentException("Tedavi kodu boş olamaz.", nameof(code));
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Tedavi adı boş olamaz.", nameof(name));
+        if (costPrice.HasValue && costPrice.Value < 0)
+            throw new ArgumentException("Tedavi maliyeti negatif olamaz.", nameof(costPrice));
 
         Code                     = code.Trim();
         Name                     = name.Trim();
         CategoryId               = categoryId;
         KdvRate                  = kdvRate;
+        CostPrice                = costPrice;
         RequiresSurfaceSelection = requiresSurfaceSelection;
         RequiresLaboratory       = requiresLaboratory;
         AllowedScopes            = allowedScopes ?? [];

@@ -53,12 +53,13 @@ public class GetPatientBalanceQueryHandler
         var totalPaid = await paymentQuery
             .SumAsync(p => (decimal?)p.Amount, cancellationToken) ?? 0m;
 
-        // Toplam dağıtılan (iade edilmemiş allocation'lar)
+        // Toplam dağıtılan (iade edilmemiş, hasta ödemesine bağlı allocation'lar)
         var totalAllocated = await _db.PaymentAllocations
             .AsNoTracking()
             .Where(a =>
-                a.Payment.PatientId == request.PatientId &&
-                !a.IsRefunded)
+                a.PaymentId.HasValue &&
+                !a.IsRefunded &&
+                a.Payment!.PatientId == request.PatientId)
             .SumAsync(a => (decimal?)a.AllocatedAmount, cancellationToken) ?? 0m;
 
         // Bakiye = Ödenen − Tedavi Tutarı

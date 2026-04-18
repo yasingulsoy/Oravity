@@ -79,9 +79,13 @@ public class CommissionCalculator : ICommissionCalculator
 
         if (deductCost)
         {
-            // TODO: Treatment.CostPrice alanı eklenince hesaplanacak
-            // Şimdilik 0 — laboratuvar dışı maliyet kaydı henüz modellenmedi
-            treatmentCost = 0m;
+            // Treatment.CostPrice * tamamlanan miktar (varsayılan 1 birim)
+            var costPrice = await _db.Treatments.AsNoTracking()
+                .Where(t => t.Id == item.TreatmentId)
+                .Select(t => (decimal?)t.CostPrice)
+                .FirstOrDefaultAsync(ct) ?? 0m;
+
+            treatmentCost = costPrice;
         }
 
         if (deductPlanCom)

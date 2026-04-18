@@ -2182,6 +2182,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.SutCode).HasMaxLength(20);
             e.Property(x => x.Tags).HasColumnType("jsonb");
             e.Property(x => x.KdvRate).HasColumnType("numeric(5,2)");
+            e.Property(x => x.CostPrice).HasColumnType("numeric(12,2)");
             e.Property(x => x.AllowedScopes).HasColumnType("integer[]");
             e.Property(x => x.LabDefaultCategory).HasMaxLength(200);
 
