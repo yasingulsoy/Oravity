@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Building2, GitBranch, Users, Shield, KeyRound, Plus, Pencil, Check, X,
+  Building2, GitBranch, Users, Shield, KeyRound, Plus, Pencil, Check, X, Percent,
   Loader2, UserPlus, Eye, EyeOff, ChevronDown, ChevronRight, AlertTriangle,
   Trash2, ArrowLeft, MapPin, Calendar, User as UserIcon, Info,
 } from 'lucide-react';
@@ -39,6 +39,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { CommissionTemplatesTab } from './tabs/CommissionTemplatesTab';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ŞİRKET SEKMESI
@@ -1247,6 +1248,10 @@ export function SettingsPage() {
             <Shield className="h-3.5 w-3.5 mr-1.5" />
             Güvenlik
           </TabsTrigger>
+          <TabsTrigger value="commission">
+            <Percent className="h-3.5 w-3.5 mr-1.5" />
+            Hakediş
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="company" className="mt-4">
@@ -1263,6 +1268,9 @@ export function SettingsPage() {
         </TabsContent>
         <TabsContent value="security" className="mt-4">
           <SecurityTab />
+        </TabsContent>
+        <TabsContent value="commission" className="mt-4">
+          <CommissionTemplatesTab />
         </TabsContent>
       </Tabs>
     </div>

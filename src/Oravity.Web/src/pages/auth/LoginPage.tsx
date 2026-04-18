@@ -43,18 +43,18 @@ export function LoginPage() {
   };
 
   return (
-    <div className="relative min-h-[100dvh] overflow-hidden bg-muted/30 dark:bg-background">
+    <div className="relative min-h-[100dvh] overflow-hidden bg-muted/30 dark:bg-black">
       {/* Nokta dokusu + radial geçişler */}
       <div
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(oklch(0.55_0_0/0.09)_1px,transparent_1px)] bg-[length:24px_24px] dark:bg-[radial-gradient(oklch(1_0_0/0.07)_1px,transparent_1px)]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(oklch(0.55_0_0/0.09)_1px,transparent_1px)] bg-[length:24px_24px] dark:bg-[radial-gradient(oklch(1_0_0/0.05)_1px,transparent_1px)]"
         aria-hidden
       />
       <div
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-30%,oklch(0.75_0.05_260/0.35),transparent)] dark:bg-[radial-gradient(ellipse_70%_50%_at_50%_-25%,oklch(0.45_0.12_260/0.45),transparent)]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-30%,oklch(0.75_0.05_260/0.35),transparent)] dark:bg-[radial-gradient(ellipse_70%_45%_at_50%_-20%,oklch(0.35_0.08_260/0.35),transparent)]"
         aria-hidden
       />
       <div
-        className="pointer-events-none absolute bottom-0 left-1/2 h-[40vh] w-[120%] max-w-6xl -translate-x-1/2 rounded-[100%] bg-gradient-to-t from-background to-transparent dark:from-background/80"
+        className="pointer-events-none absolute bottom-0 left-1/2 h-[40vh] w-[120%] max-w-6xl -translate-x-1/2 rounded-[100%] bg-gradient-to-t from-background to-transparent dark:from-black dark:to-transparent"
         aria-hidden
       />
 
@@ -63,7 +63,7 @@ export function LoginPage() {
           type="button"
           variant="ghost"
           size="icon"
-          className="relative h-11 w-11 rounded-2xl border border-border/70 bg-background/70 shadow-sm backdrop-blur-md hover:bg-accent dark:bg-card/50"
+          className="relative h-11 w-11 rounded-2xl border border-border/70 bg-background/70 shadow-sm backdrop-blur-md hover:bg-accent dark:border-white/10 dark:bg-black/60"
           onClick={() => setTheme(isDark ? 'light' : 'dark')}
           aria-label={isDark ? 'Aydınlık temaya geç' : 'Karanlık temaya geç'}
         >
@@ -91,7 +91,7 @@ export function LoginPage() {
           <div
             className={cn(
               'relative overflow-hidden rounded-[28px] border border-border/80 bg-card/90 shadow-[0_24px_64px_-12px_rgba(15,23,42,0.12)] backdrop-blur-xl',
-              'dark:border-white/10 dark:bg-card/85 dark:shadow-[0_24px_80px_-8px_rgba(0,0,0,0.55)]',
+              'dark:border-white/10 dark:bg-black/80 dark:shadow-[0_24px_80px_-8px_rgba(0,0,0,0.8)]',
             )}
           >
             <div
@@ -101,7 +101,7 @@ export function LoginPage() {
             <div className="px-8 pb-9 pt-10 sm:px-10 sm:pb-10 sm:pt-11">
               <div className="mb-8 flex flex-col items-center text-center">
                 <div
-                  className="relative mb-5 flex h-[72px] w-[72px] items-center justify-center overflow-hidden rounded-[22px] border border-border/60 bg-gradient-to-b from-background to-muted/50 shadow-inner ring-1 ring-black/[0.04] dark:from-card dark:to-muted/30 dark:ring-white/[0.06]"
+                  className="relative mb-5 flex h-[72px] w-[72px] items-center justify-center overflow-hidden rounded-[22px] border border-border/60 bg-gradient-to-b from-background to-muted/50 shadow-inner ring-1 ring-black/[0.04] dark:border-white/10 dark:from-neutral-900 dark:to-black dark:ring-white/[0.06]"
                   aria-hidden
                 >
                   <img
@@ -124,7 +124,7 @@ export function LoginPage() {
                 <h1 className="sidebar-logo-shine text-[1.65rem] font-semibold tracking-tight sm:text-[1.75rem]">
                   Oravity
                 </h1>
-                <div className="mt-4 h-px w-10 rounded-full bg-border" />
+                <div className="mt-4 h-px w-10 rounded-full bg-border dark:bg-white/15" />
               </div>
 
               <h2 className="mb-6 text-left text-lg font-semibold tracking-tight text-foreground">
@@ -141,7 +141,7 @@ export function LoginPage() {
                     type="email"
                     autoComplete="username"
                     placeholder="ornek@oravity.com"
-                    className="h-12 rounded-xl border-border/70 bg-background px-4 text-[15px] shadow-sm transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 dark:bg-background/80"
+                    className="h-12 rounded-xl border-border/70 bg-background px-4 text-[15px] shadow-sm transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 dark:border-white/10 dark:bg-black/60"
                     {...register('email')}
                   />
                   {errors.email && (
@@ -158,7 +158,7 @@ export function LoginPage() {
                     type="password"
                     autoComplete="current-password"
                     placeholder="••••••••"
-                    className="h-12 rounded-xl border-border/70 bg-background px-4 text-[15px] shadow-sm transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 dark:bg-background/80"
+                    className="h-12 rounded-xl border-border/70 bg-background px-4 text-[15px] shadow-sm transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 dark:border-white/10 dark:bg-black/60"
                     {...register('password')}
                   />
                   {errors.password && (

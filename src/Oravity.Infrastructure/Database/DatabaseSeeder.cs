@@ -154,7 +154,11 @@ public class DatabaseSeeder
                 "payment.view", "payment.create",
                 "invoice.view", "invoice.create",
                 "report.view", "report.export",
-                "commission.view",
+                "commission.view", "commission.distribute",
+                "commission.manage",
+                "allocation.view", "allocation.request",
+                "institution_invoice.view", "institution_invoice.create",
+                "institution_invoice.payment", "institution_invoice.follow_up",
                 "patient.view",
                 "pricing.view",
             ],
@@ -186,6 +190,11 @@ public class DatabaseSeeder
                 "anamnesis.edit",
                 "complaint.view", "complaint.create", "complaint.manage",
                 "commission.view", "commission.distribute",
+                "commission.manage", "commission.approve_dist",
+                "allocation.view", "allocation.request", "allocation.approve",
+                "institution_invoice.view", "institution_invoice.create",
+                "institution_invoice.payment", "institution_invoice.follow_up",
+                "institution_invoice.cancel",
                 "survey.manage", "survey.view_results",
                 "audit.view",
                 "report.view_daily",
@@ -378,6 +387,23 @@ public class DatabaseSeeder
             ("laboratory",       "work_complete",    false),
             ("laboratory",       "work_approve",     true),    // hakediş açar → dangerous
             ("laboratory",       "work_cancel",      true),
+
+            // Commission / Hakediş
+            ("commission",       "manage",           false),   // şablon + atama + hedef
+            ("commission",       "approve_dist",     true),    // hakediş dağıtım onayı
+            ("commission",       "view_doctor_self", false),   // hekim kendi hakedişini görür
+
+            // Allocation / Ödeme Dağıtım
+            ("allocation",       "view",             false),
+            ("allocation",       "request",          false),   // manuel dağıtım talebi
+            ("allocation",       "approve",          true),    // manuel dağıtım onayı
+
+            // Institution Invoice / Kurum Fatura
+            ("institution_invoice", "view",          false),
+            ("institution_invoice", "create",        false),
+            ("institution_invoice", "payment",       false),   // ödeme kaydı
+            ("institution_invoice", "follow_up",     false),   // takip / hatırlatma
+            ("institution_invoice", "cancel",        true),
         };
 
         var existingCodes = await _db.Permissions

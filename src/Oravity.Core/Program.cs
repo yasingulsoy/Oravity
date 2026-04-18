@@ -123,6 +123,10 @@ try
     builder.Services.AddScoped<TcmbExchangeRateJob>();
     builder.Services.AddScoped<FinancialTransactionService>();
 
+    // Hakediş hesaplayıcı
+    builder.Services.AddScoped<Oravity.Core.Modules.Commission.Infrastructure.ICommissionCalculator,
+        Oravity.Core.Modules.Commission.Infrastructure.CommissionCalculator>();
+
     // Localization
     builder.Services.AddMemoryCache();
     // ExchangeRateService (IDistributedCache) — üretimde Redis ile değiştirilebilir

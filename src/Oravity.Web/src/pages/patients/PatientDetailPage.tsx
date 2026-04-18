@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PatientAccountTab } from './tabs/PatientAccountTab';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -257,6 +258,7 @@ export function PatientDetailPage() {
           <TabsTrigger value="info">Bilgiler</TabsTrigger>
           <TabsTrigger value="appointments">Randevular</TabsTrigger>
           <TabsTrigger value="treatments">Tedaviler</TabsTrigger>
+          <TabsTrigger value="account">Cari Hesap</TabsTrigger>
         </TabsList>
 
         <TabsContent value="info" className="mt-4">
@@ -700,6 +702,10 @@ export function PatientDetailPage() {
             <CardHeader><CardTitle>Tedavi Geçmişi</CardTitle></CardHeader>
             <CardContent><p className="text-sm text-muted-foreground">Yakında eklenecek.</p></CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="account" className="mt-4">
+          <PatientAccountTab patientId={patient.id} />
         </TabsContent>
       </Tabs>
     </div>

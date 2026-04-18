@@ -20,8 +20,11 @@ public record PaymentResponse(
 
 public record PaymentAllocationResponse(
     long Id,
-    long PaymentId,
+    long? PaymentId,
+    long? InstitutionPaymentId,
     long TreatmentPlanItemId,
+    AllocationSource Source,
+    AllocationMethod Method,
     decimal AllocatedAmount,
     bool IsRefunded,
     DateTime CreatedAt
@@ -81,7 +84,8 @@ public static class FinanceMappings
         p.PaymentDate, p.Notes, p.IsRefunded, p.CreatedAt);
 
     public static PaymentAllocationResponse ToResponse(PaymentAllocation a) => new(
-        a.Id, a.PaymentId, a.TreatmentPlanItemId,
+        a.Id, a.PaymentId, a.InstitutionPaymentId, a.TreatmentPlanItemId,
+        a.Source, a.Method,
         a.AllocatedAmount, a.IsRefunded, a.CreatedAt);
 
     public static DoctorCommissionResponse ToResponse(DoctorCommission c) => new(

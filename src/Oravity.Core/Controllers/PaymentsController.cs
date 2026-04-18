@@ -39,6 +39,20 @@ public class PaymentsController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Hasta cari hesap özeti — tedavi kalemleri, ödemeler, dağıtımlar
+    /// ve bakiyeyi birlikte döner.
+    /// </summary>
+    [HttpGet("api/patients/{patientId:long}/account")]
+    [RequirePermission("payment:view")]
+    [ProducesResponseType(typeof(PatientAccountSummaryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetAccount(long patientId)
+    {
+        var result = await _mediator.Send(new GetPatientAccountQuery(patientId));
+        return Ok(result);
+    }
+
     // ── Ödeme ─────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -64,7 +78,7 @@ public class PaymentsController : ControllerBase
         return StatusCode(StatusCodes.Status201Created, result);
     }
 
-    /// <summary>Ödemeyi tedavi kalemlerine dağıtır.</summary>
+    /// <summary>Ödemeyi tedavi kalemlerine otomatik dağıtır.</summary>
     [HttpPost("api/payments/{id:guid}/allocate")]
     [RequirePermission("payment:create")]
     [ProducesResponseType(typeof(IReadOnlyList<PaymentAllocationResponse>), StatusCodes.Status200OK)]
@@ -78,7 +92,55 @@ public class PaymentsController : ControllerBase
             .Select(a => new AllocationItem(a.TreatmentPlanItemId, a.Amount))
             .ToList();
 
-        var result = await _mediator.Send(new AllocatePaymentCommand(id, allocations));
+        var result = await _mediator.Send(new AllocatePaymentCommand(
+            id, allocations, AllocationMethod.Automatic, request.Notes));
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Manuel dağıtım talebi oluşturur. Yetkili onayı bekler.
+    /// İzin: allocation:request
+    /// </summary>
+    [HttpPost("api/allocations/request")]
+    [RequirePermission("allocation:request")]
+    [ProducesResponseType(typeof(AllocationApprovalResponse), StatusCodes.Status201Created)]
+    public async Task<IActionResult> RequestManual([FromBody] RequestManualAllocationRequest request)
+    {
+        var result = await _mediator.Send(new RequestManualAllocationCommand(
+            request.PaymentPublicId, request.TreatmentPlanItemId,
+            request.Amount, request.Notes, request.Source));
+        return Created($"api/allocations/approvals/{result.PublicId}", result);
+    }
+
+    /// <summary>Bekleyen manuel dağıtım taleplerini listeler.</summary>
+    [HttpGet("api/allocations/approvals")]
+    [RequirePermission("allocation:view")]
+    [ProducesResponseType(typeof(IReadOnlyList<AllocationApprovalResponse>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetApprovals(
+        [FromQuery] AllocationApprovalStatus? status = null,
+        [FromQuery] long? patientId = null)
+    {
+        var result = await _mediator.Send(new GetAllocationApprovalsQuery(status, patientId));
+        return Ok(result);
+    }
+
+    /// <summary>Manuel dağıtım talebini onaylar — allocation kaydı oluşur.</summary>
+    [HttpPost("api/allocations/approvals/{id:guid}/approve")]
+    [RequirePermission("allocation:approve")]
+    [ProducesResponseType(typeof(AllocationApprovalResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ApproveAllocation(Guid id, [FromBody] ApproveAllocationRequest? request)
+    {
+        var result = await _mediator.Send(new ApproveAllocationCommand(id, request?.Notes));
+        return Ok(result);
+    }
+
+    /// <summary>Manuel dağıtım talebini reddeder.</summary>
+    [HttpPost("api/allocations/approvals/{id:guid}/reject")]
+    [RequirePermission("allocation:approve")]
+    [ProducesResponseType(typeof(AllocationApprovalResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RejectAllocation(Guid id, [FromBody] RejectAllocationRequest request)
+    {
+        var result = await _mediator.Send(new RejectAllocationCommand(id, request.Reason));
         return Ok(result);
     }
 
@@ -174,7 +236,18 @@ public record CreatePaymentRequest(
 
 public record AllocationItemRequest(long TreatmentPlanItemId, decimal Amount);
 
-public record AllocatePaymentRequest(IReadOnlyList<AllocationItemRequest> Allocations);
+public record AllocatePaymentRequest(IReadOnlyList<AllocationItemRequest> Allocations, string? Notes = null);
+
+public record RequestManualAllocationRequest(
+    Guid PaymentPublicId,
+    long TreatmentPlanItemId,
+    decimal Amount,
+    string? Notes,
+    AllocationSource Source = AllocationSource.Patient
+);
+
+public record ApproveAllocationRequest(string? Notes);
+public record RejectAllocationRequest(string Reason);
 
 public record RefundPaymentRequest(string? Reason);
 

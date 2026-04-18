@@ -71,7 +71,15 @@ public class AppDbContext : DbContext
     // ─── Finance ───────────────────────────────────────────────────────────
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<PaymentAllocation> PaymentAllocations => Set<PaymentAllocation>();
+    public DbSet<AllocationApproval> AllocationApprovals => Set<AllocationApproval>();
     public DbSet<DoctorCommission> DoctorCommissions => Set<DoctorCommission>();
+    public DbSet<DoctorCommissionTemplate> DoctorCommissionTemplates => Set<DoctorCommissionTemplate>();
+    public DbSet<TemplateJobStartPrice> TemplateJobStartPrices => Set<TemplateJobStartPrice>();
+    public DbSet<DoctorTemplateAssignment> DoctorTemplateAssignments => Set<DoctorTemplateAssignment>();
+    public DbSet<DoctorTarget> DoctorTargets => Set<DoctorTarget>();
+    public DbSet<BranchTarget> BranchTargets => Set<BranchTarget>();
+    public DbSet<InstitutionInvoice> InstitutionInvoices => Set<InstitutionInvoice>();
+    public DbSet<InstitutionPayment> InstitutionPayments => Set<InstitutionPayment>();
 
     // ─── Notifications ─────────────────────────────────────────────────────
     public DbSet<Notification> Notifications => Set<Notification>();
@@ -909,14 +917,59 @@ public class AppDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).UseIdentityByDefaultColumn();
             e.Property(x => x.AllocatedAmount).HasColumnType("numeric(12,2)").IsRequired();
+            e.Property(x => x.Source).HasDefaultValue(AllocationSource.Patient);
+            e.Property(x => x.Method).HasDefaultValue(AllocationMethod.Automatic);
+            e.Property(x => x.BranchId).HasDefaultValue(0L);
+            e.Property(x => x.AllocatedByUserId).HasDefaultValue(0L);
+            e.Property(x => x.Notes).HasColumnType("text");
 
             e.HasIndex(x => x.PaymentId).HasDatabaseName("ix_payment_alloc_payment");
+            e.HasIndex(x => x.InstitutionPaymentId).HasDatabaseName("ix_payment_alloc_inst_payment");
             e.HasIndex(x => x.TreatmentPlanItemId).HasDatabaseName("ix_payment_alloc_item");
+            e.HasIndex(x => new { x.BranchId, x.CreatedAt }).HasDatabaseName("ix_payment_alloc_branch_created");
 
             e.HasOne(x => x.TreatmentPlanItem)
              .WithMany()
              .HasForeignKey(x => x.TreatmentPlanItemId)
              .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.InstitutionPayment)
+             .WithMany()
+             .HasForeignKey(x => x.InstitutionPaymentId)
+             .OnDelete(DeleteBehavior.Restrict)
+             .IsRequired(false);
+
+            e.HasOne(x => x.Approval)
+             .WithMany()
+             .HasForeignKey(x => x.ApprovalId)
+             .OnDelete(DeleteBehavior.SetNull)
+             .IsRequired(false);
+        });
+
+        // ── AllocationApproval ─────────────────────────────────────────────
+        m.Entity<AllocationApproval>(e =>
+        {
+            e.ToTable("allocation_approvals");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_allocation_approvals_public_id");
+
+            e.Property(x => x.RequestedAmount).HasColumnType("numeric(14,2)").IsRequired();
+            e.Property(x => x.Status).IsRequired();
+            e.Property(x => x.Source).IsRequired();
+            e.Property(x => x.RequestNotes).HasColumnType("text");
+            e.Property(x => x.ApprovalNotes).HasColumnType("text");
+            e.Property(x => x.RejectionReason).HasColumnType("text");
+            e.Property(x => x.TenantId).IsRequired();
+
+            e.HasIndex(x => new { x.BranchId, x.Status, x.CreatedAt })
+             .HasDatabaseName("ix_allocation_approvals_branch_status");
+            e.HasIndex(x => x.PatientId).HasDatabaseName("ix_allocation_approvals_patient");
+            e.HasIndex(x => x.TreatmentPlanItemId).HasDatabaseName("ix_allocation_approvals_item");
+
+            e.HasOne(x => x.Patient).WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.TreatmentPlanItem).WithMany().HasForeignKey(x => x.TreatmentPlanItemId).OnDelete(DeleteBehavior.Restrict);
         });
 
         // ── DoctorCommission ───────────────────────────────────────────────
@@ -930,9 +983,29 @@ public class AppDbContext : DbContext
             e.Property(x => x.CommissionAmount).HasColumnType("numeric(12,2)").IsRequired();
             e.Property(x => x.Status).IsRequired();
 
+            e.Property(x => x.PosCommissionRate).HasColumnType("numeric(5,2)").HasDefaultValue(0m);
+            e.Property(x => x.PosCommissionAmount).HasColumnType("numeric(12,2)").HasDefaultValue(0m);
+            e.Property(x => x.LabCostDeducted).HasColumnType("numeric(12,2)").HasDefaultValue(0m);
+            e.Property(x => x.TreatmentCostDeducted).HasColumnType("numeric(12,2)").HasDefaultValue(0m);
+            e.Property(x => x.TreatmentPlanCommissionDeducted).HasColumnType("numeric(12,2)").HasDefaultValue(0m);
+            e.Property(x => x.ExtraExpenseRate).HasColumnType("numeric(5,2)").HasDefaultValue(0m);
+            e.Property(x => x.ExtraExpenseAmount).HasColumnType("numeric(12,2)").HasDefaultValue(0m);
+            e.Property(x => x.NetBaseAmount).HasColumnType("numeric(12,2)").HasDefaultValue(0m);
+            e.Property(x => x.FixedFee).HasColumnType("numeric(12,2)").HasDefaultValue(0m);
+            e.Property(x => x.KdvRate).HasColumnType("numeric(5,2)").HasDefaultValue(0m);
+            e.Property(x => x.KdvAmount).HasColumnType("numeric(12,2)").HasDefaultValue(0m);
+            e.Property(x => x.WithholdingTaxRate).HasColumnType("numeric(5,2)").HasDefaultValue(0m);
+            e.Property(x => x.WithholdingTaxAmount).HasColumnType("numeric(12,2)").HasDefaultValue(0m);
+            e.Property(x => x.NetCommissionAmount).HasColumnType("numeric(12,2)").HasDefaultValue(0m);
+            e.Property(x => x.BonusApplied).HasDefaultValue(false);
+            e.Property(x => x.PeriodYear).HasDefaultValue(0);
+            e.Property(x => x.PeriodMonth).HasDefaultValue(0);
+
             e.HasIndex(x => x.DoctorId).HasDatabaseName("ix_doctor_commission_doctor");
             e.HasIndex(x => x.TreatmentPlanItemId).HasDatabaseName("ix_doctor_commission_item");
             e.HasIndex(x => new { x.BranchId, x.Status }).HasDatabaseName("ix_doctor_commission_branch_status");
+            e.HasIndex(x => new { x.DoctorId, x.BranchId, x.PeriodYear, x.PeriodMonth })
+             .HasDatabaseName("ix_doctor_commission_period");
 
             e.HasOne(x => x.Doctor)
              .WithMany()
@@ -948,6 +1021,154 @@ public class AppDbContext : DbContext
              .WithMany()
              .HasForeignKey(x => x.TreatmentPlanItemId)
              .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── DoctorCommissionTemplate ──────────────────────────────────────
+        m.Entity<DoctorCommissionTemplate>(e =>
+        {
+            e.ToTable("doctor_commission_templates");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_commission_templates_public_id");
+
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            e.Property(x => x.FixedFee).HasColumnType("numeric(14,2)").HasDefaultValue(0m);
+            e.Property(x => x.PrimRate).HasColumnType("numeric(5,2)").HasDefaultValue(0m);
+            e.Property(x => x.ClinicTargetBonusRate).HasColumnType("numeric(5,2)");
+            e.Property(x => x.DoctorTargetBonusRate).HasColumnType("numeric(5,2)");
+            e.Property(x => x.KdvRate).HasColumnType("numeric(5,2)");
+            e.Property(x => x.KdvAppliedPaymentTypes).HasMaxLength(200);
+            e.Property(x => x.ExtraExpenseRate).HasColumnType("numeric(5,2)");
+            e.Property(x => x.WithholdingTaxRate).HasColumnType("numeric(5,2)");
+            e.Property(x => x.TenantId).IsRequired();
+
+            e.HasIndex(x => new { x.CompanyId, x.Name }).IsUnique()
+             .HasDatabaseName("ix_commission_templates_company_name");
+
+            e.HasMany(x => x.JobStartPrices)
+             .WithOne(x => x.Template)
+             .HasForeignKey(x => x.TemplateId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── TemplateJobStartPrice ─────────────────────────────────────────
+        m.Entity<TemplateJobStartPrice>(e =>
+        {
+            e.ToTable("commission_template_job_start_prices");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.Value).HasColumnType("numeric(14,2)").IsRequired();
+            e.HasIndex(x => new { x.TemplateId, x.TreatmentId }).IsUnique()
+             .HasDatabaseName("ix_job_start_prices_template_treatment");
+
+            e.HasOne(x => x.Treatment)
+             .WithMany()
+             .HasForeignKey(x => x.TreatmentId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── DoctorTemplateAssignment ──────────────────────────────────────
+        m.Entity<DoctorTemplateAssignment>(e =>
+        {
+            e.ToTable("doctor_template_assignments");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_doctor_template_assign_public_id");
+            e.Property(x => x.TenantId).IsRequired();
+
+            e.HasIndex(x => new { x.DoctorId, x.IsActive })
+             .HasDatabaseName("ix_doctor_template_assign_doctor_active");
+
+            e.HasOne(x => x.Doctor).WithMany().HasForeignKey(x => x.DoctorId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Template).WithMany().HasForeignKey(x => x.TemplateId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── DoctorTarget ──────────────────────────────────────────────────
+        m.Entity<DoctorTarget>(e =>
+        {
+            e.ToTable("doctor_targets");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.Property(x => x.TargetAmount).HasColumnType("numeric(14,2)").IsRequired();
+            e.Property(x => x.TenantId).IsRequired();
+
+            e.HasIndex(x => new { x.DoctorId, x.BranchId, x.Year, x.Month }).IsUnique()
+             .HasDatabaseName("ix_doctor_targets_doctor_branch_ym");
+
+            e.HasOne(x => x.Doctor).WithMany().HasForeignKey(x => x.DoctorId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── BranchTarget ──────────────────────────────────────────────────
+        m.Entity<BranchTarget>(e =>
+        {
+            e.ToTable("branch_targets");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.Property(x => x.TargetAmount).HasColumnType("numeric(14,2)").IsRequired();
+            e.Property(x => x.TenantId).IsRequired();
+
+            e.HasIndex(x => new { x.BranchId, x.Year, x.Month }).IsUnique()
+             .HasDatabaseName("ix_branch_targets_branch_ym");
+
+            e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── InstitutionInvoice ────────────────────────────────────────────
+        m.Entity<InstitutionInvoice>(e =>
+        {
+            e.ToTable("institution_invoices");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_institution_invoices_public_id");
+
+            e.Property(x => x.InvoiceNo).HasMaxLength(50).IsRequired();
+            e.Property(x => x.Amount).HasColumnType("numeric(14,2)").IsRequired();
+            e.Property(x => x.PaidAmount).HasColumnType("numeric(14,2)").HasDefaultValue(0m);
+            e.Property(x => x.Currency).HasMaxLength(3).HasDefaultValue("TRY");
+            e.Property(x => x.PaymentReferenceNo).HasMaxLength(100);
+            e.Property(x => x.TreatmentItemIdsJson).HasColumnType("text");
+            e.Property(x => x.Notes).HasColumnType("text");
+            e.Property(x => x.TenantId).IsRequired();
+
+            e.HasIndex(x => new { x.BranchId, x.Status, x.DueDate })
+             .HasDatabaseName("ix_institution_invoices_branch_status_due");
+            e.HasIndex(x => x.InstitutionId).HasDatabaseName("ix_institution_invoices_institution");
+            e.HasIndex(x => x.PatientId).HasDatabaseName("ix_institution_invoices_patient");
+            e.HasIndex(x => new { x.BranchId, x.InvoiceNo }).IsUnique()
+             .HasDatabaseName("ix_institution_invoices_branch_no");
+
+            e.HasOne(x => x.Patient).WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Institution).WithMany().HasForeignKey(x => x.InstitutionId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Restrict);
+
+            e.HasMany(x => x.Payments)
+             .WithOne(x => x.Invoice)
+             .HasForeignKey(x => x.InvoiceId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── InstitutionPayment ────────────────────────────────────────────
+        m.Entity<InstitutionPayment>(e =>
+        {
+            e.ToTable("institution_payments");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_institution_payments_public_id");
+
+            e.Property(x => x.Amount).HasColumnType("numeric(14,2)").IsRequired();
+            e.Property(x => x.Currency).HasMaxLength(3).HasDefaultValue("TRY");
+            e.Property(x => x.ReferenceNo).HasMaxLength(100);
+            e.Property(x => x.Notes).HasColumnType("text");
+            e.Property(x => x.TenantId).IsRequired();
+
+            e.HasIndex(x => x.InvoiceId).HasDatabaseName("ix_institution_payments_invoice");
         });
 
         // ── Notification ───────────────────────────────────────────────────
