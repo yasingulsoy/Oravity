@@ -5,7 +5,9 @@ import { Plus, CreditCard, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   institutionInvoicesApi,
+  type InstitutionInvoice,
   type InstitutionInvoiceStatus,
+  type InstitutionPaymentMethod,
 } from '@/api/institutionInvoices';
 import { institutionsApi } from '@/api/institutions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,25 +31,32 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
-const STATUS_OPTIONS: { value: InstitutionInvoiceStatus; label: string; color: 'default' | 'secondary' | 'destructive' | 'outline' }[] = [
-  { value: 'Draft',          label: 'Taslak',       color: 'outline' },
-  { value: 'Issued',         label: 'Oluşturuldu',  color: 'secondary' },
-  { value: 'Submitted',      label: 'Gönderildi',   color: 'secondary' },
-  { value: 'PartiallyPaid',  label: 'Kısmi Ödendi', color: 'secondary' },
-  { value: 'Paid',           label: 'Ödendi',       color: 'default' },
-  { value: 'Rejected',       label: 'Reddedildi',   color: 'destructive' },
-  { value: 'Cancelled',      label: 'İptal',        color: 'outline' },
+const STATUS_OPTIONS: {
+  value: InstitutionInvoiceStatus;
+  label: string;
+  color: 'default' | 'secondary' | 'destructive' | 'outline';
+}[] = [
+  { value: 'Issued',         label: 'Kesildi',       color: 'secondary' },
+  { value: 'PartiallyPaid',  label: 'Kısmi Ödendi',  color: 'secondary' },
+  { value: 'Paid',           label: 'Ödendi',        color: 'default'   },
+  { value: 'Overdue',        label: 'Vadesi Geçti',  color: 'destructive' },
+  { value: 'InFollowUp',     label: 'Takipte',       color: 'destructive' },
+  { value: 'Rejected',       label: 'Reddedildi',    color: 'destructive' },
 ];
 
 function formatCurrency(n: number) {
   return `₺${n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function hasActiveFollowUp(inv: InstitutionInvoice) {
+  return inv.followUpStatus !== 'None';
+}
+
 export function InstitutionInvoicesTab() {
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [createOpen, setCreateOpen] = useState(false);
-  const [paymentTarget, setPaymentTarget] = useState<string | null>(null);
+  const [paymentTarget, setPaymentTarget] = useState<InstitutionInvoice | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['institution-invoices', statusFilter],
@@ -64,6 +73,7 @@ export function InstitutionInvoicesTab() {
 
   const items = data?.data.items ?? [];
   const insts = institutions?.data ?? [];
+  const followUpCount = items.filter(hasActiveFollowUp).length;
 
   return (
     <div className="space-y-4">
@@ -73,10 +83,10 @@ export function InstitutionInvoicesTab() {
             <CardTitle>Kurum Fatura Takibi</CardTitle>
             <p className="text-sm text-muted-foreground">
               Toplam: {items.length}
-              {items.some(i => i.followUpScheduled) && (
+              {followUpCount > 0 && (
                 <span className="ml-2 inline-flex items-center gap-1 text-amber-600">
                   <AlertTriangle className="h-3 w-3" />
-                  {items.filter(i => i.followUpScheduled).length} takipte
+                  {followUpCount} takipte
                 </span>
               )}
             </p>
@@ -132,19 +142,22 @@ export function InstitutionInvoicesTab() {
               ) : (
                 items.map(inv => {
                   const opt = STATUS_OPTIONS.find(o => o.value === inv.status);
+                  const followUp = hasActiveFollowUp(inv);
                   return (
                     <TableRow key={inv.id}>
-                      <TableCell className="font-mono font-medium">{inv.invoiceNumber}</TableCell>
+                      <TableCell className="font-mono font-medium">{inv.invoiceNo}</TableCell>
                       <TableCell>{inv.institutionName}</TableCell>
                       <TableCell>{inv.patientName ?? '—'}</TableCell>
                       <TableCell>{format(new Date(inv.invoiceDate), 'dd.MM.yyyy')}</TableCell>
                       <TableCell>
-                        {inv.dueDate ? format(new Date(inv.dueDate), 'dd.MM.yyyy') : '—'}
-                        {inv.followUpScheduled && (
-                          <Badge variant="outline" className="ml-1">Takip</Badge>
+                        {format(new Date(inv.dueDate), 'dd.MM.yyyy')}
+                        {followUp && (
+                          <Badge variant="outline" className="ml-1">
+                            {inv.followUpStatusLabel}
+                          </Badge>
                         )}
                       </TableCell>
-                      <TableCell className="text-right">{formatCurrency(inv.totalAmount)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(inv.amount)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(inv.paidAmount)}</TableCell>
                       <TableCell className="text-right font-semibold">
                         {formatCurrency(inv.remainingAmount)}
@@ -153,11 +166,11 @@ export function InstitutionInvoicesTab() {
                         <Badge variant={opt?.color ?? 'secondary'}>{inv.statusLabel}</Badge>
                       </TableCell>
                       <TableCell>
-                        {inv.remainingAmount > 0 && (
+                        {inv.remainingAmount > 0 && inv.status !== 'Rejected' && (
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => setPaymentTarget(inv.publicId)}
+                            onClick={() => setPaymentTarget(inv)}
                           >
                             <CreditCard className="h-4 w-4" />
                           </Button>
@@ -174,7 +187,6 @@ export function InstitutionInvoicesTab() {
 
       {createOpen && (
         <CreateInvoiceDialog
-          open={createOpen}
           onClose={() => setCreateOpen(false)}
           institutions={insts}
           onSuccess={() => {
@@ -185,8 +197,7 @@ export function InstitutionInvoicesTab() {
       )}
       {paymentTarget && (
         <RegisterPaymentDialog
-          publicId={paymentTarget}
-          invoice={items.find(i => i.publicId === paymentTarget)!}
+          invoice={paymentTarget}
           onClose={() => setPaymentTarget(null)}
           onSuccess={() => {
             setPaymentTarget(null);
@@ -201,27 +212,32 @@ export function InstitutionInvoicesTab() {
 // ── Create dialog ────────────────────────────────────────────────────────
 
 function CreateInvoiceDialog({
-  open, onClose, onSuccess, institutions,
+  onClose, onSuccess, institutions,
 }: {
-  open: boolean;
   onClose: () => void;
   onSuccess: () => void;
   institutions: { id: number; name: string }[];
 }) {
   const [institutionId, setInstitutionId] = useState<string>('');
-  const [invoiceNumber, setInvoiceNumber] = useState('');
+  const [patientId, setPatientId] = useState<string>('');
+  const [invoiceNo, setInvoiceNo] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [dueDate, setDueDate] = useState('');
-  const [totalAmount, setTotalAmount] = useState<string>('');
+  const [dueDate, setDueDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return format(d, 'yyyy-MM-dd');
+  });
+  const [amount, setAmount] = useState<string>('');
   const [notes, setNotes] = useState('');
 
   const create = useMutation({
     mutationFn: () => institutionInvoicesApi.create({
+      patientId: parseInt(patientId, 10),
       institutionId: parseInt(institutionId, 10),
-      invoiceNumber,
+      invoiceNo,
       invoiceDate,
-      dueDate: dueDate || undefined,
-      totalAmount: parseFloat(totalAmount),
+      dueDate,
+      amount: parseFloat(amount),
       notes: notes || undefined,
     }),
     onSuccess: () => {
@@ -231,43 +247,61 @@ function CreateInvoiceDialog({
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const canSubmit = institutionId && invoiceNumber && totalAmount && parseFloat(totalAmount) > 0;
+  const canSubmit =
+    institutionId &&
+    patientId &&
+    invoiceNo &&
+    amount &&
+    parseFloat(amount) > 0 &&
+    invoiceDate &&
+    dueDate;
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent>
         <DialogHeader><DialogTitle>Yeni Kurum Faturası</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <div>
-            <label className="text-sm mb-1 block">Kurum</label>
-            <Select value={institutionId} onValueChange={setInstitutionId}>
-              <SelectTrigger><SelectValue placeholder="Seçiniz" /></SelectTrigger>
-              <SelectContent>
-                {institutions.map(i => (
-                  <SelectItem key={i.id} value={String(i.id)}>{i.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm mb-1 block">Kurum</label>
+              <Select value={institutionId} onValueChange={setInstitutionId}>
+                <SelectTrigger><SelectValue placeholder="Seçiniz" /></SelectTrigger>
+                <SelectContent>
+                  {institutions.map(i => (
+                    <SelectItem key={i.id} value={String(i.id)}>{i.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm mb-1 block">Hasta ID</label>
+              <Input
+                type="number"
+                value={patientId}
+                onChange={e => setPatientId(e.target.value)}
+                placeholder="Hasta ID"
+              />
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm mb-1 block">Fatura No</label>
-              <Input value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} />
+              <Input value={invoiceNo} onChange={e => setInvoiceNo(e.target.value)} />
             </div>
             <div>
-              <label className="text-sm mb-1 block">Toplam (₺)</label>
+              <label className="text-sm mb-1 block">Tutar (₺)</label>
               <Input
                 type="number" step="0.01" min="0"
-                value={totalAmount}
-                onChange={e => setTotalAmount(e.target.value)}
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
               />
             </div>
             <div>
-              <label className="text-sm mb-1 block">Tarih</label>
+              <label className="text-sm mb-1 block">Fatura Tarihi</label>
               <Input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} />
             </div>
             <div>
-              <label className="text-sm mb-1 block">Vade (opsiyonel)</label>
+              <label className="text-sm mb-1 block">Vade</label>
               <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
             </div>
           </div>
@@ -290,24 +324,23 @@ function CreateInvoiceDialog({
 // ── Register payment dialog ──────────────────────────────────────────────
 
 function RegisterPaymentDialog({
-  publicId, invoice, onClose, onSuccess,
+  invoice, onClose, onSuccess,
 }: {
-  publicId: string;
-  invoice: { invoiceNumber: string; remainingAmount: number };
+  invoice: InstitutionInvoice;
   onClose: () => void;
   onSuccess: () => void;
 }) {
   const [amount, setAmount] = useState(String(invoice.remainingAmount));
   const [paymentDate, setPaymentDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [method, setMethod] = useState('BankTransfer');
-  const [reference, setReference] = useState('');
+  const [method, setMethod] = useState<InstitutionPaymentMethod>('BankTransfer');
+  const [referenceNo, setReferenceNo] = useState('');
 
   const mut = useMutation({
-    mutationFn: () => institutionInvoicesApi.registerPayment(publicId, {
+    mutationFn: () => institutionInvoicesApi.registerPayment(invoice.publicId, {
       amount: parseFloat(amount),
       paymentDate,
       method,
-      reference: reference || undefined,
+      referenceNo: referenceNo || undefined,
     }),
     onSuccess: () => {
       toast.success('Ödeme kaydedildi');
@@ -320,7 +353,7 @@ function RegisterPaymentDialog({
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Ödeme Kaydet — {invoice.invoiceNumber}</DialogTitle>
+          <DialogTitle>Ödeme Kaydet — {invoice.invoiceNo}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div>
@@ -339,19 +372,21 @@ function RegisterPaymentDialog({
           </div>
           <div>
             <label className="text-sm mb-1 block">Yöntem</label>
-            <Select value={method} onValueChange={setMethod}>
+            <Select
+              value={method}
+              onValueChange={v => setMethod(v as InstitutionPaymentMethod)}
+            >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="Cash">Nakit</SelectItem>
                 <SelectItem value="BankTransfer">Havale/EFT</SelectItem>
-                <SelectItem value="CreditCard">Kredi Kartı</SelectItem>
-                <SelectItem value="Cheque">Çek</SelectItem>
+                <SelectItem value="Check">Çek</SelectItem>
+                <SelectItem value="Other">Diğer</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div>
             <label className="text-sm mb-1 block">Referans</label>
-            <Input value={reference} onChange={e => setReference(e.target.value)} />
+            <Input value={referenceNo} onChange={e => setReferenceNo(e.target.value)} />
           </div>
         </div>
         <DialogFooter>

@@ -119,7 +119,7 @@ export function PendingCommissionsTab() {
                   <TableCell>{String(i.periodMonth).padStart(2, '0')}/{i.periodYear}</TableCell>
                   <TableCell className="text-right">{formatCurrency(i.grossAmount)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(i.netBaseAmount)}</TableCell>
-                  <TableCell className="text-right">%{(i.commissionRate * 100).toFixed(1)}</TableCell>
+                  <TableCell className="text-right">%{i.commissionRate.toFixed(1)}</TableCell>
                   <TableCell className="text-right font-semibold">{formatCurrency(i.netCommissionAmount)}</TableCell>
                   <TableCell>
                     {i.bonusApplied ? <Badge variant="default">Bonus</Badge> : <span className="text-muted-foreground">—</span>}

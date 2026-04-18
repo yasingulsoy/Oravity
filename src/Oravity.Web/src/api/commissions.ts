@@ -1,49 +1,82 @@
 import apiClient from './client';
 
-// ── Commission Templates ───────────────────────────────────────────────
-
-export interface JobStartPrice {
-  id?: number;
-  treatmentId: number;
-  treatmentName?: string;
-  customPrice: number;
-}
+// ── Enums (backend JsonStringEnumConverter ile string olarak gelir) ────
 
 export type WorkingStyle = 'Accrual' | 'Collection';
-export type PaymentType = 'Fix' | 'Prim' | 'PerJob' | 'PriceRange';
-export type JobStartCalculation = 'FromPriceList' | 'CustomPrices';
-export type TargetSystem = 'None' | 'Clinic' | 'Doctor';
-export type InstitutionPayOnInvoice = 'OnPayment' | 'OnCollection' | 'OnInvoice';
 
-export interface CommissionTemplate {
+export type PaymentType =
+  | 'Fix'
+  | 'Prim'
+  | 'FixPlusPrim'
+  | 'PerJob'
+  | 'PerJobSelectedPlusFixPrim'
+  | 'PriceRange';
+
+export type JobStartCalculation = 'FromPriceList' | 'CustomPrices';
+
+export type JobStartPriceType = 'FixedAmount' | 'Percentage';
+
+// ── Commission Templates ───────────────────────────────────────────────
+
+export interface JobStartPriceResponse {
   id: number;
+  treatmentId: number;
+  priceType: JobStartPriceType;
+  value: number;
+}
+
+export interface JobStartPriceRequest {
+  treatmentId: number;
+  priceType: JobStartPriceType;
+  value: number;
+}
+
+/**
+ * Backend DoctorCommissionTemplate → CommissionTemplateResponse.
+ * Tüm oranlar 0-100 aralığında yüzde değer olarak tutulur (SPEC 9126: DECIMAL(5,2)).
+ */
+export interface CommissionTemplate {
   publicId: string;
+  id: number;
   name: string;
+
   workingStyle: WorkingStyle;
   workingStyleLabel: string;
+
   paymentType: PaymentType;
   paymentTypeLabel: string;
-  fixedAmount?: number;
-  primRate?: number;
-  jobStartCalculation: JobStartCalculation;
-  jobStartCalculationLabel: string;
-  targetSystem: TargetSystem;
-  targetSystemLabel: string;
-  targetBonusRate?: number;
-  institutionPayOnInvoice: InstitutionPayOnInvoice;
-  institutionPayOnInvoiceLabel: string;
+
+  jobStartCalculation: JobStartCalculation | null;
+
+  fixedFee: number;
+  primRate: number;
+
+  clinicTargetEnabled: boolean;
+  clinicTargetBonusRate: number | null;
+  doctorTargetEnabled: boolean;
+  doctorTargetBonusRate: number | null;
+
+  /** SPEC 9136: true=Fatura kesilince, false=Kurum ödeyince. */
+  institutionPayOnInvoice: boolean;
+
+  deductTreatmentPlanCommission: boolean;
   deductLabCost: boolean;
   deductTreatmentCost: boolean;
-  deductTreatmentPlanCommission: boolean;
   deductCreditCardCommission: boolean;
-  applyKdv: boolean;
-  kdvRate?: number;
-  applyWithholdingTax: boolean;
-  withholdingTaxRate?: number;
-  extraExpenseAmount?: number;
-  notes?: string;
+
+  kdvEnabled: boolean;
+  kdvRate: number | null;
+  /** JSON array string; ör: "[1,2,3]". */
+  kdvAppliedPaymentTypes: string | null;
+
+  extraExpenseEnabled: boolean;
+  extraExpenseRate: number | null;
+
+  withholdingTaxEnabled: boolean;
+  withholdingTaxRate: number | null;
+
   isActive: boolean;
-  jobStartPrices: JobStartPrice[];
+  jobStartPrices: JobStartPriceResponse[];
   createdAt: string;
 }
 
@@ -51,53 +84,67 @@ export interface CommissionTemplateInput {
   name: string;
   workingStyle: WorkingStyle;
   paymentType: PaymentType;
-  fixedAmount?: number;
-  primRate?: number;
-  jobStartCalculation: JobStartCalculation;
-  targetSystem: TargetSystem;
-  targetBonusRate?: number;
-  institutionPayOnInvoice: InstitutionPayOnInvoice;
+  fixedFee: number;
+  primRate: number;
+  institutionPayOnInvoice: boolean;
+  jobStartCalculation: JobStartCalculation | null;
+
+  clinicTargetEnabled: boolean;
+  clinicTargetBonusRate: number | null;
+  doctorTargetEnabled: boolean;
+  doctorTargetBonusRate: number | null;
+
+  deductTreatmentPlanCommission: boolean;
   deductLabCost: boolean;
   deductTreatmentCost: boolean;
-  deductTreatmentPlanCommission: boolean;
-  deductCreditCardCommission: boolean;
-  applyKdv: boolean;
-  kdvRate?: number;
-  applyWithholdingTax: boolean;
-  withholdingTaxRate?: number;
-  extraExpenseAmount?: number;
-  notes?: string;
-  jobStartPrices: JobStartPrice[];
+
+  kdvEnabled: boolean;
+  kdvRate: number | null;
+  kdvAppliedPaymentTypes: string | null;
+
+  extraExpenseEnabled: boolean;
+  extraExpenseRate: number | null;
+
+  withholdingTaxEnabled: boolean;
+  withholdingTaxRate: number | null;
+
+  jobStartPrices: JobStartPriceRequest[];
 }
 
+// ── Assignments ────────────────────────────────────────────────────────
+
 export interface TemplateAssignment {
-  id: number;
   publicId: string;
   doctorId: number;
   doctorName: string;
   templateId: number;
   templateName: string;
-  startDate: string;
-  endDate?: string;
+  effectiveDate: string;
+  expiryDate: string | null;
   isActive: boolean;
+  createdAt: string;
 }
 
+// ── Targets ────────────────────────────────────────────────────────────
+
 export interface DoctorTarget {
-  id: number;
+  publicId: string;
   doctorId: number;
-  doctorName?: string;
+  doctorName: string | null;
   branchId: number;
   year: number;
   month: number;
   targetAmount: number;
+  createdAt: string;
 }
 
 export interface BranchTarget {
-  id: number;
+  publicId: string;
   branchId: number;
   year: number;
   month: number;
   targetAmount: number;
+  createdAt: string;
 }
 
 // ── Pending / Distribute / Doctor Account ──────────────────────────────
@@ -177,7 +224,7 @@ export const commissionsApi = {
   listAssignments: (params?: { doctorId?: number; activeOnly?: boolean }) =>
     apiClient.get<TemplateAssignment[]>('/commission-templates/assignments', { params }),
 
-  assignTemplate: (body: { doctorId: number; templatePublicId: string; startDate: string; endDate?: string }) =>
+  assignTemplate: (body: { doctorId: number; templatePublicId: string; effectiveDate: string; expiryDate?: string }) =>
     apiClient.post<TemplateAssignment>('/commission-templates/assignments', body),
 
   unassign: (publicId: string) =>

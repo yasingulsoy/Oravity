@@ -37,7 +37,14 @@ try
         .WriteTo.Console()
         .WriteTo.Seq(ctx.Configuration["Serilog:SeqUrl"] ?? "http://localhost:5341"));
 
-    builder.Services.AddControllers();
+    builder.Services.AddControllers()
+        .AddJsonOptions(options =>
+        {
+            // Enum'lar JSON'da string olarak serialize/deserialize edilsin.
+            // Frontend'in tüm enum alanlarını string olarak işlemesi için gerekli.
+            options.JsonSerializerOptions.Converters.Add(
+                new System.Text.Json.Serialization.JsonStringEnumConverter());
+        });
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(options =>
     {

@@ -60,7 +60,7 @@ export function CommissionDistributionsTab() {
                   <TableCell className="font-medium">{c.doctorName ?? `#${c.doctorId}`}</TableCell>
                   <TableCell>{c.distributedAt ? format(new Date(c.distributedAt), 'dd.MM.yyyy') : '—'}</TableCell>
                   <TableCell className="text-right">{formatCurrency(c.grossAmount)}</TableCell>
-                  <TableCell className="text-right">%{(c.commissionRate * 100).toFixed(1)}</TableCell>
+                  <TableCell className="text-right">%{c.commissionRate.toFixed(1)}</TableCell>
                   <TableCell className="text-right font-semibold">
                     {formatCurrency(c.netCommissionAmount ?? c.commissionAmount)}
                   </TableCell>

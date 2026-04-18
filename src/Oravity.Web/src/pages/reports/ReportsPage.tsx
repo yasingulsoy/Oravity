@@ -208,7 +208,7 @@ export function ReportsPage() {
                       <div className="mt-2 grid grid-cols-3 gap-2 text-sm text-muted-foreground">
                         <span>{d.completedAppointments} randevu</span>
                         <span>{d.completedTreatmentItems} tedavi</span>
-                        <span>%{(d.commissionRate * 100).toFixed(0)} komisyon</span>
+                        <span>%{d.commissionRate.toFixed(0)} komisyon</span>
                       </div>
                     </div>
                   ))}

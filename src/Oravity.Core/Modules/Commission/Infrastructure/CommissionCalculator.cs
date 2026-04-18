@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Oravity.Infrastructure.Database;
 using Oravity.SharedKernel.Entities;
@@ -119,13 +120,13 @@ public class CommissionCalculator : ICommissionCalculator
 
         var netBase = Math.Max(0, afterDeductions - extraAmount);
 
-        // ── 4. Hedef Bonusu ───────────────────────────────────────────────
+        // ── 4. Hedef Bonusu (SPEC 9584-9587: en yüksek bonus uygulanır) ────
         var appliedRate = primRate;
         var bonusApplied = false;
 
-        if (template != null && (template.DoctorTargetEnabled || template.ClinicTargetEnabled))
+        if (template != null)
         {
-            // Hekim hedefi
+            // Hekim hedefi kontrolü
             if (template.DoctorTargetEnabled && template.DoctorTargetBonusRate.HasValue)
             {
                 var target = await _db.DoctorTargets.AsNoTracking()
@@ -146,14 +147,15 @@ public class CommissionCalculator : ICommissionCalculator
 
                     if (monthRevenue >= target.TargetAmount)
                     {
-                        appliedRate = template.DoctorTargetBonusRate.Value;
+                        appliedRate = Math.Max(appliedRate, template.DoctorTargetBonusRate.Value);
                         bonusApplied = true;
                     }
                 }
             }
 
-            // Klinik hedefi (hekim hedefi uygulanmadıysa)
-            if (!bonusApplied && template.ClinicTargetEnabled && template.ClinicTargetBonusRate.HasValue)
+            // Klinik hedefi kontrolü — hekim bonusundan bağımsız olarak değerlendirilir,
+            // ikisi de sağlanırsa en yüksek oran kullanılır (SPEC 9557).
+            if (template.ClinicTargetEnabled && template.ClinicTargetBonusRate.HasValue)
             {
                 var branchTarget = await _db.BranchTargets.AsNoTracking()
                     .FirstOrDefaultAsync(t =>
@@ -171,15 +173,16 @@ public class CommissionCalculator : ICommissionCalculator
 
                     if (monthRevenue >= branchTarget.TargetAmount)
                     {
-                        appliedRate = template.ClinicTargetBonusRate.Value;
+                        appliedRate = Math.Max(appliedRate, template.ClinicTargetBonusRate.Value);
                         bonusApplied = true;
                     }
                 }
             }
         }
 
-        // ── 5. Prim ───────────────────────────────────────────────────────
-        decimal primAmount = 0m;
+        // ── 5. Brüt Hakediş (SPEC 9590) ──────────────────────────────────
+        //    grossCommission = FixedFee + (netBase * primRate / 100)
+        decimal primAmount;
         if (template?.PaymentType is CommissionPaymentType.Fix)
         {
             primAmount = fixedFee;
@@ -190,17 +193,47 @@ public class CommissionCalculator : ICommissionCalculator
         }
         else
         {
-            // Prim veya PerJob/PriceRange (PerJob/PriceRange için basit fallback)
+            // Prim / PerJob / PriceRange (PerJob/PriceRange için basit fallback)
             primAmount = Math.Round(netBase * appliedRate / 100m, 2);
         }
 
-        // ── 6. Vergi ──────────────────────────────────────────────────────
-        decimal kdvAmount = kdvEnabled && kdvRate > 0
-            ? Math.Round(primAmount * kdvRate / 100m, 2) : 0m;
-        decimal stopajAmount = stopajEnabled && stopajRate > 0
-            ? Math.Round(primAmount * stopajRate / 100m, 2) : 0m;
+        // ── 6. KDV (SPEC 9147-9149, 9593-9594) ───────────────────────────
+        //    KDV yalnızca KdvAppliedPaymentTypes listesinde yer alan ödeme
+        //    tipiyle tahsil edilen tedavilere uygulanır. Hiç ödeme yoksa KDV 0.
+        bool kdvShouldApply = false;
+        if (kdvEnabled && kdvRate > 0)
+        {
+            var appliedTypes = ParsePaymentTypes(template?.KdvAppliedPaymentTypes);
+            if (appliedTypes.Count == 0)
+            {
+                // Seçili tip tanımlı değilse tüm ödeme tipleri için uygulanır.
+                kdvShouldApply = true;
+            }
+            else
+            {
+                // TPI'a dağıtılmış ödemelerden en az birinin yöntemi listede olmalı.
+                var usedMethods = await _db.PaymentAllocations.AsNoTracking()
+                    .Where(a => a.TreatmentPlanItemId == treatmentPlanItemId
+                        && a.PaymentId.HasValue && !a.IsRefunded)
+                    .Join(_db.Payments.AsNoTracking(), a => a.PaymentId, p => p.Id, (a, p) => (int)p.Method)
+                    .Distinct()
+                    .ToListAsync(ct);
 
-        var netCommission = primAmount + kdvAmount - stopajAmount;
+                kdvShouldApply = usedMethods.Any(m => appliedTypes.Contains(m));
+            }
+        }
+
+        decimal kdvAmount = kdvShouldApply
+            ? Math.Round(primAmount * kdvRate / 100m, 2)
+            : 0m;
+
+        // ── 7. Stopaj — KDV dahil brüt hakediş üzerinden (SPEC 9597) ─────
+        decimal grossWithKdv = primAmount + kdvAmount;
+        decimal stopajAmount = stopajEnabled && stopajRate > 0
+            ? Math.Round(grossWithKdv * stopajRate / 100m, 2)
+            : 0m;
+
+        var netCommission = grossWithKdv - stopajAmount;
 
         return new CommissionCalculation
         {
@@ -237,5 +270,25 @@ public class CommissionCalculator : ICommissionCalculator
 
             NetCommissionAmount  = netCommission
         };
+    }
+
+    /// <summary>
+    /// KdvAppliedPaymentTypes JSON'unu int listesi olarak parse eder.
+    /// Boş/null/geçersiz veri için boş liste döner.
+    /// </summary>
+    private static HashSet<int> ParsePaymentTypes(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new HashSet<int>();
+
+        try
+        {
+            var arr = JsonSerializer.Deserialize<int[]>(json);
+            return arr == null ? new HashSet<int>() : new HashSet<int>(arr);
+        }
+        catch
+        {
+            return new HashSet<int>();
+        }
     }
 }
