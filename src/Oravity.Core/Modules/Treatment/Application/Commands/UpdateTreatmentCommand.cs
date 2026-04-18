@@ -18,7 +18,8 @@ public record UpdateTreatmentCommand(
     bool     RequiresLaboratory,
     int[]?   AllowedScopes,
     string?  Tags,
-    bool     IsActive
+    bool     IsActive,
+    decimal? CostPrice = null
 ) : IRequest<TreatmentResponse>;
 
 public class UpdateTreatmentCommandHandler
@@ -72,7 +73,8 @@ public class UpdateTreatmentCommandHandler
             request.RequiresSurfaceSelection,
             request.RequiresLaboratory,
             request.AllowedScopes,
-            request.Tags);
+            request.Tags,
+            costPrice: request.CostPrice);
 
         treatment.SetActive(request.IsActive);
 

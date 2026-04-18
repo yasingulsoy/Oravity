@@ -8,6 +8,7 @@ export interface TreatmentCatalogItem {
   name: string;
   category: { publicId: string; name: string } | null;
   kdvRate: number;
+  costPrice: number | null;
   requiresSurfaceSelection: boolean;
   requiresLaboratory: boolean;
   isGlobal: boolean;
@@ -37,6 +38,7 @@ export interface TreatmentDetail {
   category: { publicId: string; name: string } | null;
   tags: string | null;
   kdvRate: number;
+  costPrice: number | null;
   requiresSurfaceSelection: boolean;
   requiresLaboratory: boolean;
   allowedScopes: number[];
@@ -69,6 +71,7 @@ export const treatmentsApi = {
     code: string; name: string; categoryPublicId?: string | null;
     kdvRate: number; requiresSurfaceSelection: boolean;
     requiresLaboratory: boolean; allowedScopes?: number[] | null; tags?: string | null;
+    costPrice?: number | null;
   }) =>
     apiClient.post<TreatmentDetail>('/treatments', data),
 
@@ -77,6 +80,7 @@ export const treatmentsApi = {
     kdvRate: number; requiresSurfaceSelection: boolean;
     requiresLaboratory: boolean; allowedScopes?: number[] | null; tags?: string | null;
     isActive: boolean;
+    costPrice?: number | null;
   }) =>
     apiClient.put<TreatmentDetail>(`/treatments/${publicId}`, data),
 

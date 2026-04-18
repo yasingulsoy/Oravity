@@ -87,7 +87,8 @@ public class TreatmentsController : ControllerBase
             request.RequiresSurfaceSelection,
             request.RequiresLaboratory,
             request.AllowedScopes,
-            request.Tags));
+            request.Tags,
+            request.CostPrice));
 
         return StatusCode(StatusCodes.Status201Created, result);
     }
@@ -112,7 +113,8 @@ public class TreatmentsController : ControllerBase
             request.RequiresLaboratory,
             request.AllowedScopes,
             request.Tags,
-            request.IsActive));
+            request.IsActive,
+            request.CostPrice));
 
         return Ok(result);
     }
@@ -139,7 +141,8 @@ public class TreatmentsController : ControllerBase
             current.RequiresLaboratory,
             current.AllowedScopes,
             current.Tags,
-            IsActive: false));
+            IsActive: false,
+            CostPrice: current.CostPrice));
 
         return NoContent();
     }
@@ -155,7 +158,8 @@ public record CreateTreatmentRequest(
     bool     RequiresSurfaceSelection,
     bool     RequiresLaboratory,
     int[]?   AllowedScopes,
-    string?  Tags
+    string?  Tags,
+    decimal? CostPrice = null
 );
 
 public record UpdateTreatmentRequest(
@@ -167,5 +171,6 @@ public record UpdateTreatmentRequest(
     bool     RequiresLaboratory,
     int[]?   AllowedScopes,
     string?  Tags,
-    bool     IsActive
+    bool     IsActive,
+    decimal? CostPrice = null
 );

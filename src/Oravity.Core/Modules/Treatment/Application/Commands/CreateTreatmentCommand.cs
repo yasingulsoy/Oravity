@@ -17,7 +17,8 @@ public record CreateTreatmentCommand(
     bool     RequiresSurfaceSelection,
     bool     RequiresLaboratory,
     int[]?   AllowedScopes,
-    string?  Tags
+    string?  Tags,
+    decimal? CostPrice = null
 ) : IRequest<TreatmentResponse>;
 
 public class CreateTreatmentCommandHandler
@@ -65,7 +66,8 @@ public class CreateTreatmentCommandHandler
             request.RequiresSurfaceSelection,
             request.RequiresLaboratory,
             request.AllowedScopes,
-            request.Tags);
+            request.Tags,
+            costPrice: request.CostPrice);
 
         _db.Treatments.Add(treatment);
         await _db.SaveChangesAsync(cancellationToken);
