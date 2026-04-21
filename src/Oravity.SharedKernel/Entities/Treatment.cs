@@ -45,6 +45,12 @@ public class Treatment : AuditableEntity
 
     public bool IsActive { get; private set; } = true;
 
+    /// <summary>
+    /// Diş şemasında bu tedavi seçildiğinde dişin üzerine bindirilecek SVG simge kodu.
+    /// Örn: "root-canal", "crown", "implant", "filling-o". Null = simge gösterme.
+    /// </summary>
+    public string? ChartSymbolCode { get; private set; }
+
     private Treatment() { }
 
     public static Treatment Create(
@@ -86,6 +92,12 @@ public class Treatment : AuditableEntity
         };
     }
 
+    public void SetChartSymbol(string? code)
+    {
+        ChartSymbolCode = string.IsNullOrWhiteSpace(code) ? null : code.Trim();
+        MarkUpdated();
+    }
+
     public void Update(
         string code,
         string name,
@@ -97,7 +109,8 @@ public class Treatment : AuditableEntity
         string? tags,
         string? sutCode = null,
         string? labDefaultCategory = null,
-        decimal? costPrice = null)
+        decimal? costPrice = null,
+        string? chartSymbolCode = null)
     {
         if (string.IsNullOrWhiteSpace(code))
             throw new ArgumentException("Tedavi kodu boş olamaz.", nameof(code));
@@ -117,6 +130,7 @@ public class Treatment : AuditableEntity
         Tags                     = tags;
         SutCode                  = sutCode?.Trim();
         LabDefaultCategory       = string.IsNullOrWhiteSpace(labDefaultCategory) ? null : labDefaultCategory.Trim();
+        ChartSymbolCode          = string.IsNullOrWhiteSpace(chartSymbolCode) ? null : chartSymbolCode.Trim();
         MarkUpdated();
     }
 

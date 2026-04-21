@@ -1,17 +1,18 @@
+// Backend JsonStringEnumConverter ile serialize edilir — string enum olmalı.
 export enum ToothStatus {
-  Healthy             = 1,
-  Decayed             = 2,
-  Filled              = 3,
-  Extracted           = 4,
-  Implant             = 5,
-  Crown               = 6,
-  Bridge              = 7,
-  RootCanal           = 8,
-  CongenitallyMissing = 9,
-  Impacted            = 10,
-  Abscess             = 11,
-  Fractured           = 12,
-  Root                = 13,
+  Healthy             = 'Healthy',
+  Decayed             = 'Decayed',
+  Filled              = 'Filled',
+  Extracted           = 'Extracted',
+  Implant             = 'Implant',
+  Crown               = 'Crown',
+  Bridge              = 'Bridge',
+  RootCanal           = 'RootCanal',
+  CongenitallyMissing = 'CongenitallyMissing',
+  Impacted            = 'Impacted',
+  Abscess             = 'Abscess',
+  Fractured           = 'Fractured',
+  Root                = 'Root',
 }
 
 export interface ToothRecord {
@@ -49,7 +50,7 @@ export interface ToothHistoryResponse {
 }
 
 export const STATUS_META: Record<ToothStatus, { label: string; fill: string; stroke: string; text: string }> = {
-  [ToothStatus.Healthy]:             { label: 'Sağlıklı',        fill: '#ffffff', stroke: '#d1d5db', text: '#6b7280' },
+  [ToothStatus.Healthy]:             { label: 'Sağlıklı',        fill: '#ffffff', stroke: '#94a3b8', text: '#6b7280' },
   [ToothStatus.Decayed]:             { label: 'Çürük',           fill: '#fca5a5', stroke: '#ef4444', text: '#991b1b' },
   [ToothStatus.Filled]:              { label: 'Dolgulu',         fill: '#93c5fd', stroke: '#3b82f6', text: '#1e40af' },
   [ToothStatus.Extracted]:           { label: 'Çekilmiş',        fill: '#e5e7eb', stroke: '#9ca3af', text: '#6b7280' },

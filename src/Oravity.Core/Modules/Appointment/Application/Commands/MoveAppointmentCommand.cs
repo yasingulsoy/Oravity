@@ -71,7 +71,10 @@ public class MoveAppointmentCommandHandler : IRequestHandler<MoveAppointmentComm
         if (conflict)
             throw new SlotConflictException("Hedef slot dolu. Lütfen başka bir zaman seçin.");
 
-        appointment.MoveTo(request.NewStartTime, request.NewEndTime, request.NewDoctorId);
+        appointment.MoveTo(
+            DateTime.SpecifyKind(request.NewStartTime, DateTimeKind.Utc),
+            DateTime.SpecifyKind(request.NewEndTime, DateTimeKind.Utc),
+            request.NewDoctorId);
 
         try
         {

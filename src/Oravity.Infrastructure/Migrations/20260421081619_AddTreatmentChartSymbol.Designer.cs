@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Oravity.Infrastructure.Database;
@@ -11,9 +12,11 @@ using Oravity.Infrastructure.Database;
 namespace Oravity.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260421081619_AddTreatmentChartSymbol")]
+    partial class AddTreatmentChartSymbol
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1072,223 +1075,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.HasIndex("CreatedBy");
 
                     b.ToTable("complaint_notes", (string)null);
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.ConsentFormTemplate", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<bool>("AppliesToAllTreatments")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true);
-
-                    b.Property<string>("CheckboxesJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("jsonb")
-                        .HasDefaultValue("[]");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<long>("CompanyId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("ContentHtml")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long?>("CreatedByUserId")
-                        .HasColumnType("bigint");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true);
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Language")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)")
-                        .HasDefaultValue("TR");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<Guid>("PublicId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<bool>("RequireDoctorSignature")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
-
-                    b.Property<bool>("ShowDentalChart")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true);
-
-                    b.Property<bool>("ShowTreatmentTable")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true);
-
-                    b.Property<string>("TreatmentCategoryIdsJson")
-                        .HasColumnType("jsonb");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Version")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasDefaultValue("1.0");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CompanyId", "Code")
-                        .HasDatabaseName("ix_consent_template_company_code");
-
-                    b.HasIndex("CompanyId", "IsActive")
-                        .HasDatabaseName("ix_consent_template_company_active");
-
-                    b.ToTable("consent_form_templates", (string)null);
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.ConsentInstance", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("CheckboxAnswersJson")
-                        .HasColumnType("jsonb");
-
-                    b.Property<long>("CompanyId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("ConsentCode")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long?>("CreatedByUserId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("DeliveryMethod")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)")
-                        .HasDefaultValue("qr");
-
-                    b.Property<long>("FormTemplateId")
-                        .HasColumnType("bigint");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("ItemPublicIdsJson")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("jsonb")
-                        .HasDefaultValue("[]");
-
-                    b.Property<long>("PatientId")
-                        .HasColumnType("bigint");
-
-                    b.Property<Guid>("PublicId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<string>("QrToken")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<DateTime?>("QrTokenExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("SignatureDataBase64")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("SignedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("SignerDevice")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("SignerIp")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("SignerName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("SmsToken")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<DateTime?>("SmsTokenExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("TreatmentPlanId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ConsentCode")
-                        .IsUnique()
-                        .HasDatabaseName("ix_consent_instance_code");
-
-                    b.HasIndex("FormTemplateId");
-
-                    b.HasIndex("QrToken")
-                        .HasDatabaseName("ix_consent_instance_qr_token");
-
-                    b.HasIndex("SmsToken")
-                        .HasDatabaseName("ix_consent_instance_sms_token");
-
-                    b.HasIndex("TreatmentPlanId")
-                        .HasDatabaseName("ix_consent_instance_plan");
-
-                    b.HasIndex("PatientId", "Status")
-                        .HasDatabaseName("ix_consent_instance_patient_status");
-
-                    b.ToTable("consent_instances", (string)null);
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.Country", b =>
@@ -7390,33 +7176,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("Complaint");
 
                     b.Navigation("Creator");
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.ConsentInstance", b =>
-                {
-                    b.HasOne("Oravity.SharedKernel.Entities.ConsentFormTemplate", "FormTemplate")
-                        .WithMany()
-                        .HasForeignKey("FormTemplateId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Oravity.SharedKernel.Entities.Patient", "Patient")
-                        .WithMany()
-                        .HasForeignKey("PatientId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Oravity.SharedKernel.Entities.TreatmentPlan", "TreatmentPlan")
-                        .WithMany()
-                        .HasForeignKey("TreatmentPlanId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("FormTemplate");
-
-                    b.Navigation("Patient");
-
-                    b.Navigation("TreatmentPlan");
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.DataExportRequest", b =>

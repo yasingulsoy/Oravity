@@ -55,8 +55,8 @@ public class CreatePricingRuleCommandHandler
             request.ExcludeFilters,
             request.Formula,
             request.OutputCurrency,
-            request.ValidFrom,
-            request.ValidUntil,
+            request.ValidFrom.HasValue ? DateTime.SpecifyKind(request.ValidFrom.Value, DateTimeKind.Utc) : null,
+            request.ValidUntil.HasValue ? DateTime.SpecifyKind(request.ValidUntil.Value, DateTimeKind.Utc) : null,
             request.StopProcessing,
             _user.IsAuthenticated ? _user.UserId : null);
 

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
 import { useAuthStore } from '@/store/authStore';
 import { reportsApi } from '@/api/reports';
 import { appointmentsApi } from '@/api/appointments';
@@ -184,9 +184,9 @@ function TodaySchedule({
             <p className="max-w-[280px] text-xs leading-relaxed text-muted-foreground">
               Takvime yeni randevu eklemek için aşağıdaki butonu kullanabilirsiniz.
             </p>
-            <Button asChild size="sm" variant="outline" className="mt-1">
-              <Link to="/appointments">Yeni Randevu</Link>
-            </Button>
+            <Link to="/appointments" className={cn(buttonVariants({ size: 'sm', variant: 'outline' }), 'mt-1')}>
+              Yeni Randevu
+            </Link>
           </div>
         ) : (
           <ul className="divide-y divide-border/50">
@@ -508,12 +508,12 @@ export function DashboardPage() {
           </h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button asChild variant="outline" size="sm">
-            <Link to="/doctor">Hekim Ekranı</Link>
-          </Button>
-          <Button asChild size="sm">
-            <Link to="/appointments">Yeni Randevu</Link>
-          </Button>
+          <Link to="/doctor" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}>
+            Hekim Ekranı
+          </Link>
+          <Link to="/appointments" className={cn(buttonVariants({ size: 'sm' }))}>
+            Yeni Randevu
+          </Link>
         </div>
       </header>
 

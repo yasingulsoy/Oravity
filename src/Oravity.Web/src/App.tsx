@@ -22,6 +22,7 @@ import { PricingPage } from '@/pages/pricing/PricingPage';
 import { TreatmentCatalogPage } from '@/pages/treatments/TreatmentCatalogPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
 import { LaboratoryPage } from '@/pages/laboratory/LaboratoryPage';
+import { ConsentSigningPage } from '@/pages/consent/ConsentSigningPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -61,6 +62,7 @@ function App() {
         <Routes>
           <Route path="/" element={<LoginPage />} />
 
+          <Route path="/consent/:token" element={<ConsentSigningPage />} />
           <Route element={<PrivateRoute />}>
             <Route element={<Layout />}>
               <Route path="/dashboard" element={<DashboardPage />} />

@@ -1110,7 +1110,7 @@ function RuleDialog({ open, onClose, editing, institutions }: RuleDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-2xl w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] flex flex-col p-0">
+      <DialogContent className="max-w-4xl w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] flex flex-col p-0">
         <DialogHeader className="px-4 sm:px-5 pt-4 sm:pt-5 pb-0 shrink-0">
           <DialogTitle>{editing ? 'Kural Düzenle' : 'Yeni Fiyat Kuralı'}</DialogTitle>
         </DialogHeader>

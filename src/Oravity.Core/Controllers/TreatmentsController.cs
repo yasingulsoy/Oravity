@@ -114,7 +114,8 @@ public class TreatmentsController : ControllerBase
             request.AllowedScopes,
             request.Tags,
             request.IsActive,
-            request.CostPrice));
+            request.CostPrice,
+            request.ChartSymbolCode));
 
         return Ok(result);
     }
@@ -142,7 +143,8 @@ public class TreatmentsController : ControllerBase
             current.AllowedScopes,
             current.Tags,
             IsActive: false,
-            CostPrice: current.CostPrice));
+            CostPrice: current.CostPrice,
+            ChartSymbolCode: current.ChartSymbolCode));
 
         return NoContent();
     }
@@ -172,5 +174,6 @@ public record UpdateTreatmentRequest(
     int[]?   AllowedScopes,
     string?  Tags,
     bool     IsActive,
-    decimal? CostPrice = null
+    decimal? CostPrice = null,
+    string?  ChartSymbolCode = null
 );

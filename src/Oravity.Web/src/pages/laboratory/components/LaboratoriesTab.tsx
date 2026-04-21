@@ -60,9 +60,10 @@ export function LaboratoriesTab() {
   const updateMut = useMutation({
     mutationFn: ({ publicId, payload }: { publicId: string; payload: CreateLaboratoryPayload & { isActive: boolean } }) =>
       laboratoriesApi.update(publicId, payload),
-    onSuccess: () => {
+    onSuccess: (_, { publicId }) => {
       toast.success('Laboratuvar güncellendi');
       qc.invalidateQueries({ queryKey: ['laboratories'] });
+      qc.invalidateQueries({ queryKey: ['laboratory-detail', publicId] });
       setFormOpen(false);
       setEditing(null);
     },

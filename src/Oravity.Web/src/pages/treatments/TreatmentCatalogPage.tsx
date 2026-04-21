@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Search, Plus, Pencil, Trash2, ChevronsUpDown, Link2Off,
+  Search, Plus, Pencil, Trash2, ChevronsUpDown, Link2Off, Lock,
 } from 'lucide-react';
+import { DentalSymbolPicker } from '@/components/DentalSymbolPicker';
+import { getSymbol } from '@/types/dentalSymbols';
+import { useAuthStore } from '@/store/authStore';
 import {
   Dialog,
   DialogContent,
@@ -227,6 +230,8 @@ function TreatmentSheet({ open, onClose, treatment }: TreatmentSheetProps) {
   const [requiresLab, setRequiresLab] = useState(false);
   const [tags, setTags] = useState('');
   const [isActive, setIsActive] = useState(true);
+  const [chartSymbolCode, setChartSymbolCode] = useState<string | null>(null);
+  const [symbolPickerOpen, setSymbolPickerOpen] = useState(false);
 
   // Reset form when treatment changes
   useEffect(() => {
@@ -239,6 +244,7 @@ function TreatmentSheet({ open, onClose, treatment }: TreatmentSheetProps) {
       setRequiresLab(treatment?.requiresLaboratory ?? false);
       setTags('');
       setIsActive(treatment?.isActive ?? true);
+      setChartSymbolCode(treatment?.chartSymbolCode ?? null);
     }
   }, [open, treatment]);
 
@@ -250,7 +256,10 @@ function TreatmentSheet({ open, onClose, treatment }: TreatmentSheetProps) {
   });
 
   useEffect(() => {
-    if (detail) setTags(detail.tags ?? '');
+    if (detail) {
+      setTags(detail.tags ?? '');
+      setChartSymbolCode(detail.chartSymbolCode ?? null);
+    }
   }, [detail]);
 
   // Mappings
@@ -275,6 +284,7 @@ function TreatmentSheet({ open, onClose, treatment }: TreatmentSheetProps) {
         requiresLaboratory: requiresLab,
         tags: tags || null,
         isActive,
+        chartSymbolCode: chartSymbolCode ?? null,
       };
       return isNew
         ? treatmentsApi.create(payload)
@@ -340,6 +350,71 @@ function TreatmentSheet({ open, onClose, treatment }: TreatmentSheetProps) {
               <Label>Etiketler <span className="text-muted-foreground text-xs">(virgülle ayırın)</span></Label>
               <Input value={tags} onChange={e => setTags(e.target.value)} placeholder="implant, cerrahi, ..." />
             </div>
+
+            {/* Chart Symbol */}
+            <div className="space-y-1.5">
+              <Label>Diş Şeması Simgesi</Label>
+              {requiresSurface ? (
+                <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
+                  <div className="flex gap-1">
+                    {(['M','D','O','V','L'] as const).map(s => (
+                      <span key={s} className="text-[10px] font-mono font-bold w-5 h-5 rounded border border-blue-400 bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center">{s}</span>
+                    ))}
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    Yüzey gerektiren tedavi — plan ekranında seçilen yüzeylerden otomatik türetilir.
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setSymbolPickerOpen(true)}
+                      className="flex items-center gap-2.5 h-9 px-3 rounded-md border border-input bg-background text-sm shadow-sm hover:bg-muted/50 transition-colors"
+                    >
+                      {chartSymbolCode ? (() => {
+                        const sym = getSymbol(chartSymbolCode);
+                        return sym ? (
+                          <>
+                            <svg viewBox="0 0 36 44" width={20} height={24} className="shrink-0 overflow-visible">
+                              <rect x="0" y="0" width="36" height="44" fill="#ffffff" />
+                              <polygon points="0,0 36,0 28,12 8,12"   fill="#f0f9ff" stroke="#94a3b8" strokeWidth="1" />
+                              <polygon points="8,32 28,32 36,44 0,44"  fill="#f0f9ff" stroke="#94a3b8" strokeWidth="1" />
+                              <polygon points="0,0 8,12 8,32 0,44"     fill="#f0f9ff" stroke="#94a3b8" strokeWidth="1" />
+                              <polygon points="28,12 36,0 36,44 28,32" fill="#f0f9ff" stroke="#94a3b8" strokeWidth="1" />
+                              <rect x="8" y="12" width="20" height="20" fill="#e0f2fe" stroke="#94a3b8" strokeWidth="1" />
+                              {sym.overlay()}
+                            </svg>
+                            <span>{sym.label}</span>
+                            <span className="text-[10px] font-mono text-muted-foreground">{sym.code}</span>
+                          </>
+                        ) : <span className="text-muted-foreground">Simge seç…</span>;
+                      })() : <span className="text-muted-foreground">Simge seç…</span>}
+                    </button>
+                    {chartSymbolCode && (
+                      <button
+                        type="button"
+                        onClick={() => setChartSymbolCode(null)}
+                        className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+                      >
+                        Kaldır
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Bu tedavi bir diş üzerine atandığında şemada gösterilecek simge.
+                  </p>
+                </>
+              )}
+            </div>
+
+            <DentalSymbolPicker
+              open={symbolPickerOpen}
+              value={chartSymbolCode}
+              onChange={setChartSymbolCode}
+              onClose={() => setSymbolPickerOpen(false)}
+            />
 
             <div className="flex items-center gap-6">
               <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -413,6 +488,7 @@ function TreatmentSheet({ open, onClose, treatment }: TreatmentSheetProps) {
 
 export function TreatmentCatalogPage() {
   const qc = useQueryClient();
+  const isPlatformAdmin = useAuthStore(s => s.user?.isPlatformAdmin ?? false);
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [showInactive, setShowInactive] = useState(false);
@@ -535,7 +611,16 @@ export function TreatmentCatalogPage() {
               : treatments.map(t => (
                 <TableRow key={t.publicId} className={!t.isActive ? 'opacity-50' : ''}>
                   <TableCell className="font-mono text-xs">{t.code}</TableCell>
-                  <TableCell className="font-medium">{t.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-1.5">
+                      {t.name}
+                      {t.isGlobal && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground border rounded px-1 py-0.5 font-normal">
+                          <Lock className="size-2.5" /> Global
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {t.category?.name ?? '—'}
                   </TableCell>
@@ -547,27 +632,33 @@ export function TreatmentCatalogPage() {
                     }
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-1 justify-end">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7"
-                        onClick={() => setEditingTreatment(t)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      {t.isActive && (
+                    {t.isGlobal && !isPlatformAdmin ? (
+                      <div className="flex justify-end pr-1">
+                        <Lock className="size-3.5 text-muted-foreground/40" />
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 justify-end">
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          onClick={() => deleteMutation.mutate(t)}
-                          disabled={deleteMutation.isPending}
+                          className="h-7 w-7"
+                          onClick={() => setEditingTreatment(t)}
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                      )}
-                    </div>
+                        {t.isActive && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={() => deleteMutation.mutate(t)}
+                            disabled={deleteMutation.isPending}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               ))

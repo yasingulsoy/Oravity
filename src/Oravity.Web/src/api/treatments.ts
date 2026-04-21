@@ -13,6 +13,7 @@ export interface TreatmentCatalogItem {
   requiresLaboratory: boolean;
   isGlobal: boolean;
   isActive: boolean;
+  chartSymbolCode: string | null;
 }
 
 export interface PagedTreatmentResponse {
@@ -45,6 +46,7 @@ export interface TreatmentDetail {
   isActive: boolean;
   isGlobal: boolean;
   createdAt: string;
+  chartSymbolCode: string | null;
 }
 
 export interface TreatmentCategory {
@@ -134,6 +136,9 @@ export const treatmentPlansApi = {
   approve: (planPublicId: string) =>
     apiClient.put<TreatmentPlan>(`/treatment-plans/${planPublicId}/approve`),
 
+  approveItems: (planPublicId: string, itemPublicIds: string[]) =>
+    apiClient.put<TreatmentPlan>(`/treatment-plans/${planPublicId}/items/approve`, { itemPublicIds }),
+
   addItem: (planPublicId: string, data: {
     treatmentPublicId: string;
     unitPrice: number;
@@ -148,4 +153,23 @@ export const treatmentPlansApi = {
 
   completeItem: (planPublicId: string, itemPublicId: string) =>
     apiClient.put<TreatmentPlanItem>(`/treatment-plans/${planPublicId}/items/${itemPublicId}/complete`),
+
+  update: (planPublicId: string, data: { name: string; notes?: string | null }) =>
+    apiClient.put<TreatmentPlan>(`/treatment-plans/${planPublicId}`, data),
+
+  deletePlan: (planPublicId: string) =>
+    apiClient.delete(`/treatment-plans/${planPublicId}`),
+
+  updateItem: (planPublicId: string, itemPublicId: string, data: {
+    unitPrice: number;
+    discountRate: number;
+    toothNumber?: string | null;
+  }) =>
+    apiClient.put<TreatmentPlanItem>(`/treatment-plans/${planPublicId}/items/${itemPublicId}`, data),
+
+  downloadPdf: (planPublicId: string, currency?: string) =>
+    apiClient.get(`/treatment-plans/${planPublicId}/pdf`, {
+      responseType: 'blob',
+      params: currency ? { currency } : undefined,
+    }),
 };

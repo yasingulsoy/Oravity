@@ -171,6 +171,10 @@ public class AppDbContext : DbContext
     public DbSet<LaboratoryWorkHistory>      LaboratoryWorkHistories      => Set<LaboratoryWorkHistory>();
     public DbSet<LaboratoryApprovalAuthority> LaboratoryApprovalAuthorities => Set<LaboratoryApprovalAuthority>();
 
+    // ─── Onam Formları ────────────────────────────────────────────────────
+    public DbSet<ConsentFormTemplate> ConsentFormTemplates => Set<ConsentFormTemplate>();
+    public DbSet<ConsentInstance>     ConsentInstances     => Set<ConsentInstance>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -2425,7 +2429,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.Address).HasColumnType("text");
             e.Property(x => x.ContactPerson).HasMaxLength(200);
             e.Property(x => x.ContactPhone).HasMaxLength(30);
-            e.Property(x => x.WorkingDays).HasColumnType("jsonb");
+            e.Property(x => x.WorkingDays).HasColumnType("text");
             e.Property(x => x.WorkingHours).HasMaxLength(100);
             e.Property(x => x.PaymentTerms).HasColumnType("text");
             e.Property(x => x.Notes).HasColumnType("text");
@@ -2623,6 +2627,82 @@ public class AppDbContext : DbContext
              .HasForeignKey(x => x.BranchId)
              .IsRequired(false)
              .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── ConsentFormTemplate ───────────────────────────────────────────────
+        m.Entity<ConsentFormTemplate>(e =>
+        {
+            e.ToTable("consent_form_templates");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasQueryFilter(x => !x.IsDeleted);
+
+            e.Property(x => x.Code).HasMaxLength(100).IsRequired();
+            e.Property(x => x.Name).HasMaxLength(300).IsRequired();
+            e.Property(x => x.Language).HasMaxLength(10).IsRequired().HasDefaultValue("TR");
+            e.Property(x => x.Version).HasMaxLength(20).IsRequired().HasDefaultValue("1.0");
+            e.Property(x => x.ContentHtml).IsRequired();
+            e.Property(x => x.CheckboxesJson).HasColumnType("jsonb").HasDefaultValue("[]");
+            e.Property(x => x.TreatmentCategoryIdsJson).HasColumnType("jsonb");
+            e.Property(x => x.AppliesToAllTreatments).HasDefaultValue(true);
+            e.Property(x => x.ShowDentalChart).HasDefaultValue(true);
+            e.Property(x => x.ShowTreatmentTable).HasDefaultValue(true);
+            e.Property(x => x.RequireDoctorSignature).HasDefaultValue(false);
+            e.Property(x => x.IsActive).HasDefaultValue(true);
+
+            e.HasIndex(x => new { x.CompanyId, x.Code })
+             .HasDatabaseName("ix_consent_template_company_code");
+            e.HasIndex(x => new { x.CompanyId, x.IsActive })
+             .HasDatabaseName("ix_consent_template_company_active");
+        });
+
+        // ── ConsentInstance ───────────────────────────────────────────────────
+        m.Entity<ConsentInstance>(e =>
+        {
+            e.ToTable("consent_instances");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasQueryFilter(x => !x.IsDeleted);
+
+            e.Property(x => x.ConsentCode).HasMaxLength(30).IsRequired();
+            e.Property(x => x.ItemPublicIdsJson).HasColumnType("jsonb").HasDefaultValue("[]");
+            e.Property(x => x.DeliveryMethod).HasMaxLength(10).IsRequired().HasDefaultValue("qr");
+            e.Property(x => x.Status).HasConversion<int>();
+            e.Property(x => x.QrToken).HasMaxLength(128);
+            e.Property(x => x.SmsToken).HasMaxLength(128);
+            e.Property(x => x.SignerIp).HasMaxLength(50);
+            e.Property(x => x.SignerDevice).HasMaxLength(500);
+            e.Property(x => x.SignerName).HasMaxLength(200);
+            e.Property(x => x.SignatureDataBase64);    // TEXT — büyük olabilir
+            e.Property(x => x.CheckboxAnswersJson).HasColumnType("jsonb");
+
+            e.HasIndex(x => x.ConsentCode).IsUnique()
+             .HasDatabaseName("ix_consent_instance_code");
+            e.HasIndex(x => x.QrToken)
+             .HasDatabaseName("ix_consent_instance_qr_token");
+            e.HasIndex(x => x.SmsToken)
+             .HasDatabaseName("ix_consent_instance_sms_token");
+            e.HasIndex(x => new { x.PatientId, x.Status })
+             .HasDatabaseName("ix_consent_instance_patient_status");
+            e.HasIndex(x => x.TreatmentPlanId)
+             .HasDatabaseName("ix_consent_instance_plan");
+
+            e.HasOne(x => x.Patient)
+             .WithMany()
+             .HasForeignKey(x => x.PatientId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.TreatmentPlan)
+             .WithMany()
+             .HasForeignKey(x => x.TreatmentPlanId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.FormTemplate)
+             .WithMany()
+             .HasForeignKey(x => x.FormTemplateId)
+             .OnDelete(DeleteBehavior.Restrict);
         });
     }
 

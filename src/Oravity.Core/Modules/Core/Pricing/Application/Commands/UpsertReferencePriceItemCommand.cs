@@ -46,8 +46,8 @@ public class UpsertReferencePriceItemCommandHandler
                 request.Price,
                 request.PriceKdv,
                 request.Currency,
-                request.ValidFrom,
-                request.ValidUntil);
+                request.ValidFrom.HasValue ? DateTime.SpecifyKind(request.ValidFrom.Value, DateTimeKind.Utc) : null,
+                request.ValidUntil.HasValue ? DateTime.SpecifyKind(request.ValidUntil.Value, DateTimeKind.Utc) : null);
             _db.ReferencePriceItems.Add(item);
         }
         else

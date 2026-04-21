@@ -50,8 +50,8 @@ public class CreateCampaignCommandHandler
             codeNorm,
             request.Name,
             request.Description,
-            request.ValidFrom,
-            request.ValidUntil,
+            DateTime.SpecifyKind(request.ValidFrom, DateTimeKind.Utc),
+            DateTime.SpecifyKind(request.ValidUntil, DateTimeKind.Utc),
             request.LinkedRulePublicId,
             _user.IsAuthenticated ? _user.UserId : null);
 

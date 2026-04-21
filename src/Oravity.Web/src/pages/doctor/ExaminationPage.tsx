@@ -1,14 +1,15 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import {
   ArrowLeft, User, ClipboardList,
-  CheckCheck, AlertTriangle, Cigarette, Wine,
+  Check, CheckCheck, AlertTriangle, Cigarette, Wine,
   Phone, Mail, MapPin, Calendar, Heart, Save,
   FileText, Search, Trash2, History, Lock, X,
-  Stethoscope, Plus, ChevronDown, ChevronRight, CheckCircle2, Megaphone,
+  Stethoscope, Plus, ChevronDown, ChevronRight, CheckCircle2, Megaphone, Info, FileDown,
+  Pencil, RotateCcw, QrCode, ClipboardCheck, Copy,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -28,18 +33,29 @@ import { patientsApi } from '@/api/patients';
 import { dentalApi } from '@/api/dental';
 import { treatmentsApi, treatmentPlansApi } from '@/api/treatments';
 import { campaignsApi } from '@/api/campaigns';
+import { consentFormsApi, consentInstancesApi } from '@/api/consent';
+import type { ConsentFormTemplateSummary, ConsentInstanceResponse } from '@/api/consent';
 import type { TreatmentCatalogItem } from '@/api/treatments';
 import type { TreatmentPlan } from '@/types/treatment';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import {
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { ToothStatus, STATUS_META } from '@/types/dental';
 import type { ToothRecord, ToothHistoryResponse } from '@/types/dental';
+import { getSymbol } from '@/types/dentalSymbols';
 import type { DoctorProtocol, ProtocolDetail, IcdCode, ProtocolDiagnosis, ProtocolHistoryItem } from '@/types/visit';
 import type { Patient, PatientAnamnesis, AnamnesisHistoryItem } from '@/types/patient';
 import { useAuthStore } from '@/store/authStore';
+import { PdfDownloadButton } from '@/components/PdfDownloadButton';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function fmtPrice(n: number) {
+  return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 2 }).format(n);
+}
 
 function calcAge(birthDate?: string | null): number | null {
   if (!birthDate) return null;
@@ -566,6 +582,7 @@ function ToothSvg({
   isUpper,
   compact = false,
   size = 1,
+  treatmentSymbolCode = null,
 }: {
   tooth: ToothRecord;
   selected: boolean;
@@ -573,9 +590,10 @@ function ToothSvg({
   isUpper: boolean;
   compact?: boolean;
   size?: number;
+  treatmentSymbolCode?: string | null;
 }) {
-  const meta  = STATUS_META[tooth.status as ToothStatus];
-  const surfs = new Set((tooth.surfaces ?? '').toUpperCase().split(''));
+  const meta  = STATUS_META[tooth.status as ToothStatus] ?? STATUS_META[ToothStatus.Healthy];
+  const surfs = new Set((tooth.surfaces ?? '').toUpperCase().split('').filter(Boolean));
 
   const SURFACES = isUpper
     ? { top: 'V', bottom: 'L', left: 'M', right: 'D', center: 'O' }
@@ -711,6 +729,8 @@ function ToothSvg({
           </>
         ) : (
           <>
+            {/* Diş arka planı — konteyner rengi ne olursa olsun dişler görünür kalır */}
+            <rect x="0" y="0" width="36" height="44" fill="#ffffff" />
             {/* Buccal/Lingual top */}
             <polygon
               points="0,0 36,0 28,12 8,12"
@@ -748,6 +768,11 @@ function ToothSvg({
             />
             {/* Status overlay */}
             {statusOverlay()}
+            {/* Treatment plan symbol overlay */}
+            {treatmentSymbolCode && (() => {
+              const sym = getSymbol(treatmentSymbolCode);
+              return sym ? sym.overlay() : null;
+            })()}
             {/* Selected ring */}
             {selected && (
               <rect x="0" y="0" width="36" height="44" rx="2" fill="none" stroke="#6366f1" strokeWidth="2" />
@@ -823,6 +848,7 @@ function ToothEditPanel({
           : `${selectedNums.length} diş güncellendi.`
       );
       if (isSingle) qc.invalidateQueries({ queryKey: ['tooth-history', patientPublicId, firstNum] });
+      qc.invalidateQueries({ queryKey: ['dental-chart', patientPublicId] });
       onSave(results);
     },
     onError: () => toast.error('Güncelleme başarısız.'),
@@ -857,7 +883,7 @@ function ToothEditPanel({
       <div className="space-y-1.5">
         <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Durum</Label>
         <div className="grid grid-cols-3 gap-1.5">
-          {(Object.values(ToothStatus).filter(v => typeof v === 'number') as ToothStatus[]).map((s) => {
+          {(Object.values(ToothStatus) as ToothStatus[]).map((s) => {
             const m = STATUS_META[s];
             return (
               <button
@@ -935,7 +961,7 @@ function ToothEditPanel({
           ) : (
             <div className="space-y-1 max-h-48 overflow-y-auto">
               {history.map((h) => {
-                const newMeta = STATUS_META[h.newStatus as ToothStatus];
+                const newMeta = STATUS_META[h.newStatus as ToothStatus] ?? STATUS_META[ToothStatus.Healthy];
                 return (
                   <div key={h.id} className="flex items-start gap-2 text-xs py-1.5 border-b last:border-0">
                     <span
@@ -997,18 +1023,19 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
 
   const rows = mode === 'primary' ? PRIMARY_ROWS : PERMANENT_ROWS;
 
-  const [teethMap, setTeethMap] = useState<Record<string, ToothRecord>>({});
   const [selected, setSelected] = useState<string[]>([]);
-  const [loading,  setLoading]  = useState(true);
 
-  useEffect(() => {
-    setLoading(true);
-    dentalApi.getChart(patientPublicId).then(r => {
-      const map: Record<string, ToothRecord> = {};
-      r.data.teeth.forEach(t => { map[t.toothNumber] = t; });
-      setTeethMap(map);
-    }).finally(() => setLoading(false));
-  }, [patientPublicId]);
+  const { data: chartData, isLoading: loading } = useQuery({
+    queryKey: ['dental-chart', patientPublicId],
+    queryFn: () => dentalApi.getChart(patientPublicId).then(r => r.data),
+    staleTime: 30_000,
+  });
+
+  const teethMap = useMemo<Record<string, ToothRecord>>(() => {
+    const map: Record<string, ToothRecord> = {};
+    chartData?.teeth.forEach((t: ToothRecord) => { map[t.toothNumber] = t; });
+    return map;
+  }, [chartData]);
 
   // Mod değişince seçimi sıfırla
   useEffect(() => { setSelected([]); }, [mode]);
@@ -1019,12 +1046,10 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
     );
 
   const handleSave = (updated: ToothRecord[]) => {
-    setTeethMap(prev => {
-      const next = { ...prev };
-      updated.forEach(t => { next[t.toothNumber] = t; });
-      return next;
-    });
     setSelected([]);
+    // Optimistik güncelleme gerek yok — ToothEditPanel zaten invalidate etti,
+    // useQuery otomatik refetch yapar ve güncel diş rengini gösterir.
+    void updated;
   };
 
   const defaultTooth = (num: string): ToothRecord => ({
@@ -1045,7 +1070,7 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
   const summary = Object.values(teethMap).reduce((acc, t) => {
     acc[t.status] = (acc[t.status] ?? 0) + 1;
     return acc;
-  }, {} as Record<number, number>);
+  }, {} as Record<string, number>);
 
   return (
     <div className="space-y-4">
@@ -1147,7 +1172,7 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
       })()}
 
       {/* Diş şeması */}
-      <div className="rounded-xl border bg-muted/10 p-3 space-y-2">
+      <div className="rounded-xl border bg-slate-100 dark:bg-slate-800 p-3 space-y-2">
         {/* Üst çene */}
         <p className="text-[10px] text-center text-muted-foreground uppercase tracking-wider font-medium">Üst Çene</p>
         <div className="flex justify-center gap-0 flex-nowrap mx-auto">
@@ -1193,7 +1218,7 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
 
       {/* Legend + Özet */}
       <div className="flex flex-wrap gap-1.5">
-        {(Object.values(ToothStatus).filter(v => typeof v === 'number') as ToothStatus[]).map((s) => {
+        {(Object.values(ToothStatus) as ToothStatus[]).map((s) => {
           const m = STATUS_META[s];
           const count = summary[s] ?? 0;
           return (
@@ -1216,6 +1241,7 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
 
 interface DraftItem {
   localId: string;
+  existingItemId?: string;   // publicId of existing DB item (edit mode)
   treatmentPublicId: string;
   treatmentCode: string;
   treatmentName: string;
@@ -1223,7 +1249,15 @@ interface DraftItem {
   unitPrice: number;
   discountRate: number;
   currency: string;
+  chartSymbolCode: string | null;
+  requiresSurfaceSelection: boolean;
+  surfaces: string;      // "MOD", "MO", "V", "" vb.
 }
+
+// ─── Plan Builder — desteklenen para birimleri ───────────────────────────────
+// Buraya yeni kod eklemek yeterli (örn. 'CHF', 'GBP'). Kur otomatik çekilir.
+const PLAN_CURRENCIES = ['TRY', 'USD', 'EUR', 'CHF'] as const;
+type PlanCurrency = typeof PLAN_CURRENCIES[number];
 
 // ─── Plan Builder Panel (inline) ─────────────────────────────────────────────
 
@@ -1233,18 +1267,20 @@ function PlanBuilderPanel({
   patientPublicId,
   doctorPublicId,
   onSaved,
+  editPlan,
 }: {
   open: boolean;
   onClose: () => void;
   patientPublicId: string;
   doctorPublicId: string;
   onSaved: () => void;
+  editPlan?: TreatmentPlan;
 }) {
-  // Katalog
+  // Katalog — pageSize 100 (backend max), staleTime kısa tutuldu (chartSymbolCode güncel gelsin)
   const { data: catalogData } = useQuery({
     queryKey: ['treatments-catalog'],
-    queryFn: () => treatmentsApi.list().then((r) => r.data),
-    staleTime: 5 * 60 * 1000,
+    queryFn: () => treatmentsApi.list({ pageSize: 100, activeOnly: true }).then((r) => r.data),
+    staleTime: 60_000,
     enabled: open,
   });
 
@@ -1268,40 +1304,136 @@ function PlanBuilderPanel({
   });
   const [selectedCampaignCode, setSelectedCampaignCode] = useState('');
 
-  // Diş şeması verisi (status göstermek için)
-  const [teethMap, setTeethMap] = useState<Record<string, ToothRecord>>({});
-  useEffect(() => {
-    if (!open) return;
-    dentalApi.getChart(patientPublicId).then(r => {
-      const m: Record<string, ToothRecord> = {};
-      r.data.teeth.forEach(t => { m[t.toothNumber] = t; });
-      setTeethMap(m);
-    });
-  }, [open, patientPublicId]);
+  // Diş şeması verisi (status göstermek için) — OralDiagnozTab ile aynı cache key
+  const { data: chartData } = useQuery({
+    queryKey: ['dental-chart', patientPublicId],
+    queryFn: () => dentalApi.getChart(patientPublicId).then(r => r.data),
+    staleTime: 30_000,
+    enabled: open && !!patientPublicId,
+  });
+  const teethMap = useMemo<Record<string, ToothRecord>>(() => {
+    const m: Record<string, ToothRecord> = {};
+    chartData?.teeth.forEach((t: ToothRecord) => { m[t.toothNumber] = t; });
+    return m;
+  }, [chartData]);
 
   // Builder state
   const [planName,       setPlanName]       = useState('Yeni Tedavi Planı');
+  const [planNotes,      setPlanNotes]      = useState('');
   const [selectedTeeth,  setSelectedTeeth]  = useState<string[]>([]);
   const [search,         setSearch]         = useState('');
+  const [listCurrency,   setListCurrency]   = useState<PlanCurrency>('TRY');
   const [draftItems,     setDraftItems]     = useState<DraftItem[]>([]);
   const [saving,         setSaving]         = useState(false);
   const [mode,           setMode]           = useState<'permanent' | 'primary'>('permanent');
   const [showDiagnosis,  setShowDiagnosis]  = useState(true);
 
-  // Kapanınca sıfırla
+  // Açılınca başlat / kapanınca sıfırla
   useEffect(() => {
-    if (!open) {
+    if (open && editPlan) {
+      setPlanName(editPlan.name);
+      setPlanNotes(editPlan.notes ?? '');
+      setSelectedTeeth([]);
+      setSearch('');
+      setSaving(false);
+      setSelectedCampaignCode('');
+      setDraftItems(editPlan.items.map(item => ({
+        localId: item.publicId,
+        existingItemId: item.publicId,
+        treatmentPublicId: item.treatmentPublicId ?? '',
+        treatmentCode: item.treatmentCode ?? '',
+        treatmentName: item.treatmentName ?? '',
+        toothNumber: item.toothNumber ?? '',
+        unitPrice: item.unitPrice,
+        discountRate: item.discountRate,
+        currency: 'TRY',
+        chartSymbolCode: null,
+        requiresSurfaceSelection: false,
+        surfaces: item.toothSurfaces ?? '',
+      })));
+    } else if (!open) {
       setPlanName('Yeni Tedavi Planı');
+      setPlanNotes('');
       setSelectedTeeth([]);
       setSearch('');
       setDraftItems([]);
       setSaving(false);
       setSelectedCampaignCode('');
     }
-  }, [open]);
+  }, [open, editPlan?.publicId]);
+
+  // Katalog yüklenince chartSymbolCode + requiresSurfaceSelection zenginleştir
+  useEffect(() => {
+    if (!editPlan || catalog.length === 0) return;
+    setDraftItems(prev => prev.map(item => {
+      if (!item.existingItemId) return item;
+      const cat = catalog.find(c => c.publicId === item.treatmentPublicId);
+      if (!cat) return item;
+      return { ...item, chartSymbolCode: cat.chartSymbolCode ?? null, requiresSurfaceSelection: cat.requiresSurfaceSelection };
+    }));
+  }, [catalog.length, editPlan?.publicId]);
+
+  // draftItems'ı effect'lerde stale closure olmadan okumak için ref
+  const draftItemsRef = useRef(draftItems);
+  useEffect(() => { draftItemsRef.current = draftItems; });
+
+  // Kampanya değişince mevcut kalemlerin fiyatlarını yeniden çek
+  useEffect(() => {
+    if (!open) return;
+    const items = draftItemsRef.current;
+    const ids = [...new Set(items.map(i => i.treatmentPublicId).filter(Boolean))];
+    if (!ids.length) return;
+    let stale = false;
+    Promise.all(ids.map(id =>
+      treatmentsApi.getPrice(id, {
+        institutionId: patientInstitutionId,
+        isOss: patientIsOss,
+        campaignCode: selectedCampaignCode || undefined,
+      }).then(r => ({ id, unitPrice: r.data.unitPrice }))
+    )).then(results => {
+      if (stale) return;
+      const priceMap = Object.fromEntries(results.map(r => [r.id, r.unitPrice]));
+      setDraftItems(curr => curr.map(item => {
+        const p = priceMap[item.treatmentPublicId];
+        if (!p || p <= 0) return item;
+        return { ...item, unitPrice: convertPrice(p, item.currency) };
+      }));
+    }).catch(() => {});
+    return () => { stale = true; };
+  }, [selectedCampaignCode, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rows = mode === 'primary' ? PRIMARY_ROWS : PERMANENT_ROWS;
   const allNums = [...rows.upperRight, ...rows.upperLeft, ...rows.lowerRight, ...rows.lowerLeft];
+
+  // Seçili yüzeylerden dolgu simgesi türet
+  function surfacesToSymbol(surfaces: string): string | null {
+    const s = new Set(surfaces.toUpperCase().replace(/[^MODVL]/g, '').split('').filter(Boolean));
+    if (s.size === 0) return null;
+    const O = s.has('O'), M = s.has('M'), D = s.has('D'), V = s.has('V'), L = s.has('L');
+    if (M && D && O) return 'filling-mod';
+    if (M && O)      return 'filling-mo';
+    if (D && O)      return 'filling-do';
+    if (O)           return 'filling-o';
+    if (M)           return 'filling-m';
+    if (D)           return 'filling-d';
+    if (V)           return 'filling-v';
+    if (L)           return 'filling-l';
+    return null;
+  }
+
+  // Diş numarası → gösterilecek simge (plan builder şeması için)
+  // Yüzey gerektiren tedavilerde seçili yüzeylerden türetilir; diğerlerinde sabit chartSymbolCode.
+  const toothSymbolMap = useMemo<Record<string, string | null>>(() => {
+    const m: Record<string, string | null> = {};
+    for (const item of draftItems) {
+      if (!item.toothNumber) continue;
+      const sym = item.requiresSurfaceSelection
+        ? surfacesToSymbol(item.surfaces)
+        : (item.chartSymbolCode ?? null);
+      if (sym) m[item.toothNumber] = sym;
+    }
+    return m;
+  }, [draftItems]);
 
   const defaultTooth = (num: string): ToothRecord => ({
     publicId: '', toothNumber: num, quadrantLabel: '', toothType: '',
@@ -1318,20 +1450,41 @@ function PlanBuilderPanel({
       )
     : catalog;
 
+  // Filtredeki tüm tedavilerin fiyatını ön-yükle
+  const priceQueries = useQueries({
+    queries: filtered.map(t => ({
+      queryKey: ['treatment-price', t.publicId, patientInstitutionId, patientIsOss, selectedCampaignCode],
+      queryFn: () => treatmentsApi.getPrice(t.publicId, {
+        institutionId: patientInstitutionId,
+        isOss: patientIsOss,
+        campaignCode: selectedCampaignCode || undefined,
+      }).then(r => r.data),
+      staleTime: 5 * 60 * 1000,
+      enabled: open && catalog.length > 0,
+    })),
+  });
+
+  const priceMap = Object.fromEntries(
+    filtered.map((t, i) => [t.publicId, priceQueries[i]?.data ?? null])
+  );
+
   // Tedaviye tıkla → seçili her diş için ayrı kalem ekle, fiyatı kural motorundan çek
   const addItem = async (t: TreatmentCatalogItem) => {
     const teeth = selectedTeeth.length > 0 ? selectedTeeth : [''];
 
     // Önce placeholder'ları hemen ekle (responsiveness için)
     const placeholders: DraftItem[] = teeth.map(tooth => ({
-      localId:           crypto.randomUUID(),
-      treatmentPublicId: t.publicId,
-      treatmentCode:     t.code,
-      treatmentName:     t.name,
-      toothNumber:       tooth,
-      unitPrice:         0,
-      discountRate:      0,
-      currency:          'TRY',
+      localId:                  crypto.randomUUID(),
+      treatmentPublicId:        t.publicId,
+      treatmentCode:            t.code,
+      treatmentName:            t.name,
+      toothNumber:              tooth,
+      unitPrice:                0,
+      discountRate:             0,
+      currency:                 listCurrency,
+      chartSymbolCode:          t.chartSymbolCode ?? null,
+      requiresSurfaceSelection: t.requiresSurfaceSelection,
+      surfaces:                 '',
     }));
     setDraftItems(prev => [...prev, ...placeholders]);
 
@@ -1346,7 +1499,7 @@ function PlanBuilderPanel({
         const ids = new Set(placeholders.map(p => p.localId));
         setDraftItems(prev => prev.map(item =>
           ids.has(item.localId)
-            ? { ...item, unitPrice: data.unitPrice, currency: data.currency }
+            ? { ...item, unitPrice: convertPrice(data.unitPrice, listCurrency), currency: listCurrency }
             : item
         ));
       }
@@ -1358,35 +1511,107 @@ function PlanBuilderPanel({
   const removeItem = (localId: string) =>
     setDraftItems(prev => prev.filter(i => i.localId !== localId));
 
-  const updateItem = (localId: string, patch: Partial<Pick<DraftItem, 'unitPrice' | 'discountRate' | 'toothNumber' | 'currency'>>) =>
+  const updateItem = (localId: string, patch: Partial<Pick<DraftItem, 'unitPrice' | 'discountRate' | 'toothNumber' | 'currency' | 'surfaces'>>) =>
     setDraftItems(prev => prev.map(i => i.localId === localId ? { ...i, ...patch } : i));
 
-  const finalPrice = (item: DraftItem) =>
-    Math.round(item.unitPrice * (1 - item.discountRate / 100) * 100) / 100;
+  // Döviz kurları (TRY bazlı: 1 TRY = X yabancı para)
+  const { data: fxRates } = useQuery<Record<string, number>>({
+    queryKey: ['fx-rates'],
+    queryFn: () =>
+      fetch(`/frankfurter/latest?from=TRY&to=${PLAN_CURRENCIES.filter(c => c !== 'TRY').join(',')}`)
+        .then(r => r.json())
+        .then(d => d.rates as Record<string, number>),
+    staleTime: 60 * 60 * 1000, // 1 saat
+    retry: false,
+  });
+
+  const convertPrice = (tryAmount: number, currency: string) => {
+    if (currency === 'TRY' || !fxRates) return tryAmount;
+    const rate = fxRates[currency];
+    return rate ? Math.round(tryAmount * rate * 100) / 100 : tryAmount;
+  };
+
+  // Bir para biriminden diğerine çevir (TRY üzerinden geçerek)
+  const convertBetween = (amount: number, from: string, to: string) => {
+    if (from === to || !fxRates) return amount;
+    const tryAmount = from === 'TRY' ? amount : Math.round(amount / (fxRates[from] ?? 1) * 100) / 100;
+    return to === 'TRY' ? tryAmount : Math.round(tryAmount * (fxRates[to] ?? 1) * 100) / 100;
+  };
+
+  const bulkConvertCurrency = (target: PlanCurrency) => {
+    if (!fxRates && target !== 'TRY') return;
+    setDraftItems(prev => prev.map(item => ({
+      ...item,
+      unitPrice: convertBetween(item.unitPrice, item.currency, target),
+      currency: target,
+    })));
+  };
+
+  const finalPrice = (item: DraftItem) => {
+    const tryFinal = Math.round(item.unitPrice * (1 - item.discountRate / 100) * 100) / 100;
+    return convertPrice(tryFinal, item.currency);
+  };
 
   const total = draftItems.reduce((s, i) => s + finalPrice(i), 0);
 
-  // Kaydet
+  // Kaydet / Güncelle
   const handleSave = async () => {
     if (!planName.trim()) { toast.error('Plan adı gereklidir.'); return; }
     if (draftItems.length === 0) { toast.error('En az bir kalem ekleyin.'); return; }
     setSaving(true);
     try {
-      const planRes = await treatmentPlansApi.create({
-        patientPublicId,
-        doctorPublicId,
-        name: planName.trim(),
-      });
-      const planId = planRes.data.publicId;
-      for (const item of draftItems) {
-        await treatmentPlansApi.addItem(planId, {
-          treatmentPublicId: item.treatmentPublicId,
-          unitPrice:         item.unitPrice,
-          discountRate:      item.discountRate,
-          toothNumber:       item.toothNumber || undefined,
+      if (editPlan) {
+        // ── Güncelleme modu ──────────────────────────────────────────
+        const planId = editPlan.publicId;
+        await treatmentPlansApi.update(planId, { name: planName.trim(), notes: planNotes.trim() || null });
+
+        // Silinen mevcut kalemleri sil
+        const keptIds = new Set(draftItems.filter(i => i.existingItemId).map(i => i.existingItemId!));
+        for (const orig of editPlan.items.filter(i => !keptIds.has(i.publicId))) {
+          await treatmentPlansApi.deleteItem(planId, orig.publicId);
+        }
+
+        // Değişen mevcut kalemleri güncelle
+        for (const item of draftItems.filter(i => i.existingItemId)) {
+          const orig = editPlan.items.find(i => i.publicId === item.existingItemId);
+          if (!orig) continue;
+          if (item.unitPrice !== orig.unitPrice || item.discountRate !== orig.discountRate || (item.toothNumber || '') !== (orig.toothNumber || '')) {
+            await treatmentPlansApi.updateItem(planId, item.existingItemId!, {
+              unitPrice: item.unitPrice,
+              discountRate: item.discountRate,
+              toothNumber: item.toothNumber || null,
+            });
+          }
+        }
+
+        // Yeni kalemleri ekle
+        for (const item of draftItems.filter(i => !i.existingItemId)) {
+          await treatmentPlansApi.addItem(planId, {
+            treatmentPublicId: item.treatmentPublicId,
+            unitPrice:         item.unitPrice,
+            discountRate:      item.discountRate,
+            toothNumber:       item.toothNumber || undefined,
+          });
+        }
+        toast.success('Tedavi planı güncellendi.');
+      } else {
+        // ── Yeni plan oluştur ────────────────────────────────────────
+        const planRes = await treatmentPlansApi.create({
+          patientPublicId,
+          doctorPublicId,
+          name: planName.trim(),
         });
+        const planId = planRes.data.publicId;
+        for (const item of draftItems) {
+          await treatmentPlansApi.addItem(planId, {
+            treatmentPublicId: item.treatmentPublicId,
+            unitPrice:         item.unitPrice,
+            discountRate:      item.discountRate,
+            toothNumber:       item.toothNumber || undefined,
+          });
+        }
+        toast.success('Tedavi planı kaydedildi.');
       }
-      toast.success('Tedavi planı kaydedildi.');
       onSaved();
       onClose();
     } catch {
@@ -1401,7 +1626,8 @@ function PlanBuilderPanel({
   return (
     <div className="border rounded-xl bg-background shadow-sm overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-2.5 border-b bg-muted/20">
+      <div className="border-b bg-muted/20">
+        <div className="flex items-center gap-3 px-4 py-2.5">
         <Stethoscope className="size-4 text-primary shrink-0" />
         <Input
           className="h-7 text-sm font-medium max-w-56"
@@ -1428,9 +1654,19 @@ function PlanBuilderPanel({
         <span className="text-xs text-muted-foreground ml-auto">
           {draftItems.length > 0 && <>{draftItems.length} kalem · {total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</>}
         </span>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
-          <X className="size-4" />
-        </button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="px-4 pb-2">
+          <Textarea
+            className="text-xs h-8 min-h-0 resize-none"
+            value={planNotes}
+            onChange={(e) => setPlanNotes(e.target.value)}
+            placeholder="Plan notu (opsiyonel)..."
+            rows={1}
+          />
+        </div>
       </div>
 
       {/* Body: küçük ekran → dikey yığın, xl+ → yan yana sabit yükseklik */}
@@ -1523,7 +1759,8 @@ function PlanBuilderPanel({
                   selected={selectedTeeth.includes(n)}
                   onClick={() => setSelectedTeeth(prev =>
                     prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n])}
-                  isUpper={true} compact={false} size={1.5} />
+                  isUpper={true} compact={false} size={1.5}
+                  treatmentSymbolCode={toothSymbolMap[n] ?? null} />
               ))}
               <div className="w-px bg-border mx-1 self-stretch" />
               {rows.upperLeft.map(n => (
@@ -1531,7 +1768,8 @@ function PlanBuilderPanel({
                   selected={selectedTeeth.includes(n)}
                   onClick={() => setSelectedTeeth(prev =>
                     prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n])}
-                  isUpper={true} compact={false} size={1.5} />
+                  isUpper={true} compact={false} size={1.5}
+                  treatmentSymbolCode={toothSymbolMap[n] ?? null} />
               ))}
             </div>
           </div>
@@ -1546,7 +1784,8 @@ function PlanBuilderPanel({
                   selected={selectedTeeth.includes(n)}
                   onClick={() => setSelectedTeeth(prev =>
                     prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n])}
-                  isUpper={false} compact={false} size={1.5} />
+                  isUpper={false} compact={false} size={1.5}
+                  treatmentSymbolCode={toothSymbolMap[n] ?? null} />
               ))}
               <div className="w-px bg-border mx-1 self-stretch" />
               {rows.lowerLeft.map(n => (
@@ -1554,7 +1793,8 @@ function PlanBuilderPanel({
                   selected={selectedTeeth.includes(n)}
                   onClick={() => setSelectedTeeth(prev =>
                     prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n])}
-                  isUpper={false} compact={false} size={1.5} />
+                  isUpper={false} compact={false} size={1.5}
+                  treatmentSymbolCode={toothSymbolMap[n] ?? null} />
               ))}
             </div>
             <div className="flex items-center">
@@ -1569,6 +1809,29 @@ function PlanBuilderPanel({
 
         {/* Sağ — Tedavi arama (sabit 300px) */}
         <div className="w-full xl:w-[300px] h-[280px] xl:h-full shrink-0 flex flex-col overflow-hidden p-3 gap-2">
+          {/* Para birimi seçici */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[10px] text-muted-foreground shrink-0">Liste dövizi:</span>
+            <div className="flex items-center gap-0.5 rounded-md border p-0.5 bg-muted/30">
+              {PLAN_CURRENCIES.map(cur => (
+                <button
+                  key={cur}
+                  onClick={() => setListCurrency(cur)}
+                  className={cn(
+                    'text-[10px] px-2 py-0.5 rounded transition-all font-mono',
+                    listCurrency === cur
+                      ? 'bg-background shadow-sm font-semibold text-foreground'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {cur}
+                </button>
+              ))}
+            </div>
+            {listCurrency !== 'TRY' && !fxRates && (
+              <span className="text-[10px] text-muted-foreground italic">kur yükleniyor…</span>
+            )}
+          </div>
           <div className="relative shrink-0">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
             <Input
@@ -1584,16 +1847,73 @@ function PlanBuilderPanel({
             {filtered.length === 0 && (
               <div className="text-center py-8 text-sm text-muted-foreground">Tedavi bulunamadı.</div>
             )}
-            {filtered.map(t => (
-              <button
-                key={t.publicId}
-                onClick={() => addItem(t)}
-                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/50 transition-colors"
-              >
-                <span className="flex-1 text-sm truncate">{t.name}</span>
-                <Plus className="size-3.5 text-primary shrink-0" />
-              </button>
-            ))}
+            <TooltipProvider delayDuration={300}>
+              {filtered.map(t => {
+                const priceInfo = priceMap[t.publicId];
+                const hasPrice = priceInfo && priceInfo.unitPrice > 0;
+                const displayPrice = hasPrice ? convertPrice(priceInfo.unitPrice, listCurrency) : 0;
+                const displayStr = hasPrice
+                  ? listCurrency === 'TRY'
+                    ? fmtPrice(priceInfo.unitPrice)
+                    : displayPrice.toLocaleString('en-US', { style: 'currency', currency: listCurrency, maximumFractionDigits: 2 })
+                  : '';
+                return (
+                  <div
+                    key={t.publicId}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => addItem(t)}
+                    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && addItem(t)}
+                    className="w-full flex items-center gap-1.5 px-3 py-2 text-left hover:bg-muted/50 transition-colors cursor-pointer"
+                  >
+                    <span className="flex-1 text-sm truncate">{t.name}</span>
+                    {hasPrice && (
+                      <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary tabular-nums">
+                        {displayStr}
+                      </span>
+                    )}
+                    {priceInfo && (
+                      <Tooltip>
+                        <TooltipTrigger render={<span />} onClick={e => e.stopPropagation()}>
+                          <span className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
+                            <Info className="size-3" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="left" className="text-xs w-44 p-0 overflow-hidden">
+                          <div className="px-2.5 py-1.5 font-semibold border-b text-[10px] uppercase tracking-wider text-muted-foreground">
+                            Fiyat Bilgisi
+                          </div>
+                          <div className="px-2.5 py-2 space-y-1">
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Birim Fiyat</span>
+                              <span className="font-semibold tabular-nums">{fmtPrice(priceInfo.unitPrice)}</span>
+                            </div>
+                            {listCurrency !== 'TRY' && hasPrice && fxRates && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">{listCurrency}</span>
+                                <span className="font-semibold tabular-nums">{displayStr}</span>
+                              </div>
+                            )}
+                            {priceInfo.appliedRuleName && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Kural</span>
+                                <span className="truncate max-w-[100px]">{priceInfo.appliedRuleName}</span>
+                              </div>
+                            )}
+                            <div className="text-[10px] text-muted-foreground pt-0.5">
+                              {priceInfo.strategy === 'Rule' && 'Fiyatlama kuralı uygulandı'}
+                              {priceInfo.strategy === 'ReferencePrice' && 'Referans liste fiyatı'}
+                              {priceInfo.strategy === 'NoPriceConfigured' && 'Fiyat tanımlanmamış'}
+                            </div>
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    <Plus className="size-3.5 text-primary shrink-0" />
+                  </div>
+                );
+              })}
+            </TooltipProvider>
           </div>
 
           <p className="text-xs text-center text-muted-foreground shrink-0">
@@ -1605,7 +1925,37 @@ function PlanBuilderPanel({
       </div>
 
       {/* Kalem listesi */}
-      <div className="border-t max-h-52 overflow-y-auto">
+      <div className="border-t">
+        {draftItems.length > 0 && (
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b bg-muted/10">
+            <span className="text-[10px] text-muted-foreground">Tümünü dönüştür:</span>
+            <div className="flex items-center gap-0.5 rounded-md border p-0.5 bg-muted/30">
+              {PLAN_CURRENCIES.map(cur => {
+                const allSame = draftItems.length > 0 && draftItems.every(i => i.currency === cur);
+                return (
+                  <button
+                    key={cur}
+                    onClick={() => bulkConvertCurrency(cur)}
+                    disabled={allSame || (!fxRates && cur !== 'TRY')}
+                    className={cn(
+                      'text-[10px] px-2 py-0.5 rounded transition-all font-mono',
+                      allSame
+                        ? 'bg-background shadow-sm font-semibold text-foreground'
+                        : 'text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed',
+                    )}
+                  >
+                    {cur}
+                  </button>
+                );
+              })}
+            </div>
+            {!fxRates && (
+              <span className="text-[10px] text-muted-foreground italic">kur yükleniyor…</span>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="max-h-52 overflow-y-auto">
         {draftItems.length === 0 ? (
           <p className="text-center py-4 text-sm text-muted-foreground">
             Soldan diş seçin, sağdan tedavi ekleyin.
@@ -1629,6 +1979,31 @@ function PlanBuilderPanel({
                   <td className="px-3 py-1.5">
                     <span className="font-medium">{item.treatmentName}</span>
                     <span className="ml-1.5 text-xs text-muted-foreground font-mono">{item.treatmentCode}</span>
+                    {item.requiresSurfaceSelection && (
+                      <div className="flex items-center gap-1 mt-1">
+                        {(['M','D','O','V','L'] as const).map(surf => {
+                          const active = item.surfaces.toUpperCase().includes(surf);
+                          return (
+                            <button
+                              key={surf}
+                              type="button"
+                              onClick={() => {
+                                const cur = new Set(item.surfaces.toUpperCase().split('').filter(Boolean));
+                                active ? cur.delete(surf) : cur.add(surf);
+                                updateItem(item.localId, { surfaces: [...cur].join('') });
+                              }}
+                              className={`text-[10px] font-mono font-bold w-5 h-5 rounded border transition-all ${
+                                active
+                                  ? 'bg-blue-500 border-blue-500 text-white'
+                                  : 'border-border text-muted-foreground hover:border-blue-400'
+                              }`}
+                            >
+                              {surf}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     <Input className="h-6 text-xs text-center px-1 w-14 mx-auto" placeholder="—"
@@ -1649,11 +2024,14 @@ function PlanBuilderPanel({
                     <select className="h-6 text-xs border rounded px-1 bg-background w-14"
                       value={item.currency}
                       onChange={e => updateItem(item.localId, { currency: e.target.value })}>
-                      {['TRY', 'USD', 'EUR'].map(c => <option key={c}>{c}</option>)}
+                      {PLAN_CURRENCIES.map(c => <option key={c}>{c}</option>)}
                     </select>
                   </td>
-                  <td className="px-2 py-1.5 text-right font-medium">
-                    {finalPrice(item).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                  <td className="px-2 py-1.5 text-right font-medium tabular-nums">
+                    {finalPrice(item).toLocaleString(
+                      item.currency === 'TRY' ? 'tr-TR' : 'en-US',
+                      { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                    )}
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     <button onClick={() => removeItem(item.localId)}
@@ -1671,12 +2049,21 @@ function PlanBuilderPanel({
       {/* Footer */}
       <div className="flex items-center justify-between px-4 py-3 border-t bg-muted/20">
         <span className="text-sm font-semibold">
-          Toplam: {total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
+          {(() => {
+            const currencies = [...new Set(draftItems.map(i => i.currency))];
+            const symbol = currencies.length === 1
+              ? (currencies[0] === 'TRY' ? '₺' : new Intl.NumberFormat('en-US', { style: 'currency', currency: currencies[0] }).formatToParts(0).find(p => p.type === 'currency')?.value ?? currencies[0])
+              : '₺';
+            const displayTotal = currencies.length === 1
+              ? total
+              : draftItems.reduce((s, i) => s + Math.round(i.unitPrice * (1 - i.discountRate / 100) * 100) / 100, 0);
+            return `Toplam: ${displayTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${symbol}`;
+          })()}
         </span>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>İptal</Button>
           <Button size="sm" onClick={handleSave} disabled={saving || draftItems.length === 0}>
-            {saving ? 'Kaydediliyor...' : 'Kaydet'}
+            {saving ? (editPlan ? 'Güncelleniyor...' : 'Kaydediliyor...') : (editPlan ? 'Güncelle' : 'Kaydet')}
           </Button>
         </div>
       </div>
@@ -1696,23 +2083,13 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
     enabled: !!patientPublicId,
   });
 
-  const [expandedPlan, setExpandedPlan] = useState<string | null>(null);
-  const [builderOpen,  setBuilderOpen]  = useState(false);
-
-  // Mevcut plana kalem ekle
-  const [addItemPlanId, setAddItemPlanId] = useState<string | null>(null);
-  const { data: catalogData } = useQuery({
-    queryKey: ['treatments-catalog'],
-    queryFn: () => treatmentsApi.list().then((r) => r.data),
-    staleTime: 5 * 60 * 1000,
-    enabled: !!addItemPlanId,
-  });
-  const catalog: TreatmentCatalogItem[] = catalogData?.items ?? [];
-  const [itemTreatmentId, setItemTreatmentId] = useState('');
-  const [itemToothNumber, setItemToothNumber] = useState('');
-  const [itemPrice, setItemPrice] = useState('');
-  const [itemDiscount, setItemDiscount] = useState('0');
-  const [itemNotes, setItemNotes] = useState('');
+  const [expandedPlan,    setExpandedPlan]    = useState<string | null>(null);
+  const [builderOpen,     setBuilderOpen]     = useState(false);
+  const [editPlanId,      setEditPlanId]      = useState<string | null>(null);
+  const editPlan = plans.find((p) => p.publicId === editPlanId) ?? undefined;
+  const [deletingPlan,    setDeletingPlan]    = useState<TreatmentPlan | null>(null);
+  // "planPublicId:itemPublicId" formatında seçili kalemler
+  const [selectedItemKeys, setSelectedItemKeys] = useState<Set<string>>(new Set());
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['treatment-plans', patientPublicId] });
 
@@ -1722,28 +2099,19 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
     onError: () => toast.error('Plan onaylanamadı.'),
   });
 
-  const addItemMutation = useMutation({
-    mutationFn: () => treatmentPlansApi.addItem(addItemPlanId!, {
-      treatmentPublicId: itemTreatmentId,
-      unitPrice: parseFloat(itemPrice) || 0,
-      discountRate: parseFloat(itemDiscount) || 0,
-      toothNumber: itemToothNumber.trim() || undefined,
-      notes: itemNotes.trim() || undefined,
-    }),
-    onSuccess: () => {
-      toast.success('Kalem eklendi.');
+  const deletePlanMutation = useMutation({
+    mutationFn: (planId: string) => treatmentPlansApi.deletePlan(planId),
+    onSuccess: (_data, planId) => {
+      toast.success(deletingPlan?.status === 1 ? 'Plan silindi.' : 'Plan iptal edildi.');
+      setDeletingPlan(null);
+      setSelectedItemKeys(prev => {
+        const next = new Set(prev);
+        [...next].filter(k => k.startsWith(planId + ':')).forEach(k => next.delete(k));
+        return next;
+      });
       invalidate();
-      setAddItemPlanId(null);
-      setItemTreatmentId(''); setItemToothNumber(''); setItemPrice(''); setItemDiscount('0'); setItemNotes('');
     },
-    onError: () => toast.error('Kalem eklenemedi.'),
-  });
-
-  const deleteItemMutation = useMutation({
-    mutationFn: ({ planId, itemId }: { planId: string; itemId: string }) =>
-      treatmentPlansApi.deleteItem(planId, itemId),
-    onSuccess: () => { toast.success('Kalem silindi.'); invalidate(); },
-    onError: () => toast.error('Kalem silinemedi.'),
+    onError: () => toast.error('Plan silinemedi.'),
   });
 
   const statusColor = (status: number) => {
@@ -1759,10 +2127,11 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
     </div>
   );
 
+  const panelOpen = builderOpen || !!editPlanId;
+
   return (
-    <div className={builderOpen ? '' : 'p-4 space-y-4'}>
-      {/* Başlık satırı */}
-      {!builderOpen && (
+    <div className={panelOpen ? '' : 'p-4 space-y-4'}>
+      {!panelOpen && (
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
             Tedavi Planları ({plans.length})
@@ -1774,7 +2143,6 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
         </div>
       )}
 
-      {/* Inline plan builder */}
       <PlanBuilderPanel
         open={builderOpen}
         onClose={() => setBuilderOpen(false)}
@@ -1783,93 +2151,160 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
         onSaved={() => { invalidate(); }}
       />
 
-      {plans.length === 0 && !builderOpen && (
+      <PlanBuilderPanel
+        open={!!editPlanId}
+        editPlan={editPlan}
+        onClose={() => setEditPlanId(null)}
+        patientPublicId={patientPublicId}
+        doctorPublicId={currentUser?.publicId ?? ''}
+        onSaved={() => { setEditPlanId(null); invalidate(); }}
+      />
+
+      {plans.length === 0 && !panelOpen && (
         <div className="text-center py-10 text-muted-foreground text-sm">
           Henüz tedavi planı yok.
         </div>
       )}
 
-      {!builderOpen && plans.map((plan) => {
-        const isExpanded = expandedPlan === plan.publicId;
-        const isDraft    = plan.status === 1; // Draft=1 (backend enum)
-        const total      = plan.items.reduce((s, i) => s + i.finalPrice, 0);
+      {!panelOpen && plans.map((plan) => {
+        const isExpanded  = expandedPlan === plan.publicId;
+        const isDraft     = plan.status === 1;
+        const isCompleted = plan.status === 3;
+        const isCancelled = plan.status === 4;
+        const canModify   = !isCompleted && !isCancelled;
+        const total       = plan.items.reduce((s, i) => s + i.finalPrice, 0);
 
         return (
           <div key={plan.publicId} className="border rounded-lg overflow-hidden">
+            {/* ── Kart başlığı ── */}
             <div
-              className="flex items-center gap-3 px-4 py-3 bg-muted/30 cursor-pointer hover:bg-muted/50"
+              className="flex items-center gap-2 px-4 py-3 bg-muted/30 cursor-pointer hover:bg-muted/50"
               onClick={() => setExpandedPlan(isExpanded ? null : plan.publicId)}
             >
               {isExpanded
                 ? <ChevronDown className="size-4 text-muted-foreground shrink-0" />
-                : <ChevronRight className="size-4 text-muted-foreground shrink-0" />}
+                : <ChevronRight className="size-4 text-muted-foreground shrink-0" />
+              }
+
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{plan.name}</p>
                 <p className="text-xs text-muted-foreground">
                   {plan.items.length} kalem · {total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
                 </p>
               </div>
-              <span className={cn('text-xs px-2 py-0.5 rounded border', statusColor(plan.status))}>
+
+              <span className={cn('text-xs px-2 py-0.5 rounded border shrink-0', statusColor(plan.status))}>
                 {plan.statusLabel}
+              </span>
+
+              <span className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                {canModify && (
+                  <button
+                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                    title="Düzenle"
+                    onClick={() => setEditPlanId(plan.publicId)}
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+                )}
+                {canModify && (
+                  <button
+                    className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-muted"
+                    title={isDraft ? 'Sil' : 'İptal et'}
+                    onClick={() => setDeletingPlan(plan)}
+                  >
+                    {isDraft ? <Trash2 className="size-3.5" /> : <RotateCcw className="size-3.5" />}
+                  </button>
+                )}
+                <PdfDownloadButton planPublicId={plan.publicId} />
               </span>
             </div>
 
+            {/* ── Genişletilmiş içerik ── */}
             {isExpanded && (
               <div className="divide-y">
+                {plan.notes && (
+                  <div className="px-4 py-2 text-xs italic text-muted-foreground bg-muted/10">
+                    {plan.notes}
+                  </div>
+                )}
+
                 {plan.items.length === 0 && (
                   <p className="text-sm text-muted-foreground text-center py-6">Plan boş.</p>
                 )}
-                {plan.items.map((item) => (
+
+                {/* Tümünü seç — sadece taslak planlar için */}
+                {isDraft && plan.items.some(i => i.status === 1) && (
+                  <label className="flex items-center gap-3 px-4 py-1.5 bg-muted/20 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="size-3.5 rounded accent-primary shrink-0"
+                      checked={plan.items.filter(i => i.status === 1).every(i => selectedItemKeys.has(`${plan.publicId}:${i.publicId}`))}
+                      onChange={(e) => {
+                        setSelectedItemKeys(prev => {
+                          const next = new Set(prev);
+                          plan.items.filter(i => i.status === 1).forEach(i => {
+                            const k = `${plan.publicId}:${i.publicId}`;
+                            e.target.checked ? next.add(k) : next.delete(k);
+                          });
+                          return next;
+                        });
+                      }}
+                    />
+                    <span className="text-xs text-muted-foreground">Tümünü seç</span>
+                  </label>
+                )}
+
+                {plan.items.map((item) => {
+                  const itemKey = `${plan.publicId}:${item.publicId}`;
+                  const selectable = isDraft && item.status === 1;
+                  return (
                   <div key={item.publicId} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                    {selectable ? (
+                      <input
+                        type="checkbox"
+                        className="size-3.5 rounded accent-primary shrink-0"
+                        checked={selectedItemKeys.has(itemKey)}
+                        onChange={(e) => {
+                          setSelectedItemKeys(prev => {
+                            const next = new Set(prev);
+                            e.target.checked ? next.add(itemKey) : next.delete(itemKey);
+                            return next;
+                          });
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <div className="size-3.5 shrink-0" />
+                    )}
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">
                         {item.treatmentName ?? 'Bilinmeyen tedavi'}
                         {item.treatmentCode && (
-                          <span className="ml-1.5 text-xs text-muted-foreground font-normal font-mono">
-                            [{item.treatmentCode}]
-                          </span>
+                          <span className="ml-1.5 text-xs text-muted-foreground font-normal font-mono">[{item.treatmentCode}]</span>
                         )}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {item.toothNumber ? `Diş ${item.toothNumber} · ` : ''}
                         {item.finalPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
-                        {item.discountRate > 0 && (
-                          <span className="ml-1 text-green-600">(%{item.discountRate} indirim)</span>
-                        )}
+                        {item.discountRate > 0 && <span className="ml-1 text-green-600">(%{item.discountRate} indirim)</span>}
                       </p>
                     </div>
                     <span className={cn('text-xs px-1.5 py-0.5 rounded border shrink-0', statusColor(item.status))}>
                       {item.statusLabel}
                     </span>
-                    {isDraft && item.status === 1 && (
-                      <button
-                        className="text-muted-foreground hover:text-destructive shrink-0"
-                        onClick={() => deleteItemMutation.mutate({ planId: plan.publicId, itemId: item.publicId })}
-                        title="Sil"
-                      >
-                        <X className="size-3.5" />
-                      </button>
-                    )}
                   </div>
-                ))}
+                  );
+                })}
 
                 <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/20">
-                  {isDraft && (
-                    <>
-                      <Button size="sm" variant="outline" className="h-7 text-xs"
-                        onClick={() => setAddItemPlanId(plan.publicId)}>
-                        <Plus className="size-3 mr-1" />
-                        Kalem Ekle
-                      </Button>
-                      {plan.items.length > 0 && (
-                        <Button size="sm" className="h-7 text-xs"
-                          onClick={() => approvePlanMutation.mutate(plan.publicId)}
-                          disabled={approvePlanMutation.isPending}>
-                          <CheckCircle2 className="size-3 mr-1" />
-                          Onayla
-                        </Button>
-                      )}
-                    </>
+                  {isDraft && plan.items.length > 0 && (
+                    <Button size="sm" className="h-7 text-xs"
+                      onClick={() => approvePlanMutation.mutate(plan.publicId)}
+                      disabled={approvePlanMutation.isPending}>
+                      <CheckCircle2 className="size-3 mr-1" />
+                      Onayla
+                    </Button>
                   )}
                   <span className="ml-auto text-xs text-muted-foreground">
                     Toplam: <strong>{total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</strong>
@@ -1881,54 +2316,438 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
         );
       })}
 
-      {/* Mevcut plana kalem ekle (hızlı modal) */}
-      <Dialog open={!!addItemPlanId} onOpenChange={(o) => !o && setAddItemPlanId(null)}>
+      {/* Seçili kalemler için onay çubuğu */}
+      {selectedItemKeys.size > 0 && (
+        <div className="sticky bottom-0 z-10 flex items-center gap-3 px-4 py-2.5 bg-primary text-primary-foreground shadow-lg">
+          <CheckCircle2 className="size-4 shrink-0" />
+          <span className="text-sm flex-1">{selectedItemKeys.size} kalem seçildi</span>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-7 text-xs"
+            onClick={() => {
+              // Group by planPublicId → [itemPublicId, ...]
+              const byPlan = new Map<string, string[]>();
+              for (const key of selectedItemKeys) {
+                const [planId, itemId] = key.split(':');
+                if (!byPlan.has(planId)) byPlan.set(planId, []);
+                byPlan.get(planId)!.push(itemId);
+              }
+              Promise.all([...byPlan.entries()].map(([planId, itemIds]) =>
+                treatmentPlansApi.approveItems(planId, itemIds)
+              ))
+                .then(() => {
+                  toast.success('Seçili tedaviler onaylandı.');
+                  setSelectedItemKeys(new Set());
+                  invalidate();
+                })
+                .catch(() => toast.error('Onaylama sırasında hata oluştu.'));
+            }}
+          >
+            Seçilenleri Onayla
+          </Button>
+          <button
+            className="p-1 rounded hover:bg-primary-foreground/20"
+            onClick={() => setSelectedItemKeys(new Set())}
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Plan silme / iptal onayı */}
+      <AlertDialog open={!!deletingPlan} onOpenChange={(o) => !o && setDeletingPlan(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{deletingPlan?.status === 1 ? 'Planı Sil' : 'Planı İptal Et'}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deletingPlan?.status === 1
+                ? `"${deletingPlan?.name}" planı kalıcı olarak silinecek.`
+                : `"${deletingPlan?.name}" planı iptal edilecek. Yeniden açılamaz.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletePlanMutation.isPending}>Vazgeç</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deletePlanMutation.isPending}
+              onClick={() => deletingPlan && deletePlanMutation.mutate(deletingPlan.publicId)}
+            >
+              {deletingPlan?.status === 1 ? 'Evet, Sil' : 'Evet, İptal Et'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+// ─── Tab: Onaylanan Tedaviler ─────────────────────────────────────────────────
+
+function OnaylananTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
+  const qc = useQueryClient();
+
+  const { data: plans = [], isLoading: plansLoading } = useQuery<TreatmentPlan[]>({
+    queryKey: ['treatment-plans', patientPublicId],
+    queryFn: () => treatmentPlansApi.getByPatient(patientPublicId).then((r) => r.data),
+    enabled: !!patientPublicId,
+  });
+
+  const { data: consentTemplates = [] } = useQuery<ConsentFormTemplateSummary[]>({
+    queryKey: ['consent-form-templates'],
+    queryFn: () => consentFormsApi.list(true).then((r) => r.data),
+  });
+
+  // Seçili kalemler (checkbox)
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  // Onam formu seç dialog
+  const [consentDialogOpen, setConsentDialogOpen] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  const [deliveryMethod, setDeliveryMethod] = useState<'qr' | 'sms' | 'both'>('qr');
+  // Oluşturulan consent ve QR dialog
+  const [createdConsent, setCreatedConsent] = useState<ConsentInstanceResponse | null>(null);
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+
+  // Plan bazında consent örnekleri — onaylanan planlar için
+  const approvedPlanIds = plans.filter(p => p.status === 2).map(p => p.publicId);
+  const consentQueries = useQueries({
+    queries: approvedPlanIds.map(planId => ({
+      queryKey: ['consent-instances', planId],
+      queryFn: () => consentInstancesApi.getByPlan(planId).then(r => r.data),
+      staleTime: 30_000,
+    })),
+  });
+  // Map: itemPublicId → consent instance (signed)
+  const signedConsentMap = useMemo<Record<string, ConsentInstanceResponse>>(() => {
+    const map: Record<string, ConsentInstanceResponse> = {};
+    consentQueries.forEach(q => {
+      if (!q.data) return;
+      q.data.forEach(ci => {
+        if (ci.status !== 'İmzalandı') return;
+        try {
+          const ids: string[] = JSON.parse(ci.itemPublicIdsJson);
+          ids.forEach(id => { map[id] = ci; });
+        } catch { /* ignore */ }
+      });
+    });
+    return map;
+  }, [consentQueries]);
+
+  const completeItemMutation = useMutation({
+    mutationFn: ({ planId, itemId }: { planId: string; itemId: string }) =>
+      treatmentPlansApi.completeItem(planId, itemId),
+    onSuccess: () => {
+      toast.success('Tedavi tamamlandı olarak işaretlendi.');
+      qc.invalidateQueries({ queryKey: ['treatment-plans', patientPublicId] });
+    },
+    onError: () => toast.error('İşlem gerçekleştirilemedi.'),
+  });
+
+  const createConsentMutation = useMutation({
+    mutationFn: (data: { treatmentPlanPublicId: string; formTemplatePublicId: string; itemPublicIds: string[]; deliveryMethod: string }) =>
+      consentInstancesApi.create(data).then(r => r.data),
+    onSuccess: (consent) => {
+      toast.success(`Onam formu oluşturuldu: ${consent.consentCode}`);
+      setConsentDialogOpen(false);
+      setCreatedConsent(consent);
+      setQrDialogOpen(true);
+      setSelectedKeys(new Set());
+      approvedPlanIds.forEach(planId =>
+        qc.invalidateQueries({ queryKey: ['consent-instances', planId] })
+      );
+    },
+    onError: () => toast.error('Onam formu oluşturulamadı.'),
+  });
+
+  if (plansLoading) return (
+    <div className="space-y-3 p-4">
+      {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
+    </div>
+  );
+
+  // Tüm planlardaki onaylanmış kalemler (plan durumundan bağımsız — tekil onay desteklenir)
+  const approvedItems: { planName: string; planPublicId: string; item: TreatmentPlan['items'][0] }[] = [];
+  for (const plan of plans) {
+    for (const item of plan.items) {
+      if (item.status === 2) approvedItems.push({ planName: plan.name, planPublicId: plan.publicId, item });
+    }
+  }
+
+  // Seçilen kalemlerin plan grouplaması
+  const handleCreateConsent = () => {
+    if (!selectedTemplateId) { toast.error('Lütfen bir onam formu seçin.'); return; }
+    const selectedItemIds = [...selectedKeys];
+    // Tüm seçililer aynı plandan mı? (basit akış: tek plan per onam)
+    const planIds = [...new Set(selectedItemIds.map(k => k.split(':')[0]))];
+    if (planIds.length > 1) {
+      toast.error('Farklı planlardan kalemler için ayrı ayrı onam oluşturun.');
+      return;
+    }
+    createConsentMutation.mutate({
+      treatmentPlanPublicId: planIds[0],
+      formTemplatePublicId:  selectedTemplateId,
+      itemPublicIds:         selectedItemIds.map(k => k.split(':')[1]),
+      deliveryMethod,
+    });
+  };
+
+  const consentUrl = createdConsent?.qrToken
+    ? `${window.location.origin}/consent/${createdConsent.qrToken}`
+    : createdConsent?.smsToken
+      ? `${window.location.origin}/consent/${createdConsent.smsToken}`
+      : '';
+
+  if (approvedItems.length === 0) {
+    return (
+      <div className="text-center py-10 text-muted-foreground text-sm">
+        Onaylanmış tedavi kalemi yok.
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+          Onaylanan Tedaviler ({approvedItems.length})
+        </h3>
+        {selectedKeys.size > 0 && (
+          <Button size="sm" className="h-7 text-xs gap-1" onClick={() => setConsentDialogOpen(true)}>
+            <ClipboardCheck className="size-3" />
+            Onam Formu Oluştur ({selectedKeys.size})
+          </Button>
+        )}
+      </div>
+
+      <div className="border rounded-lg divide-y overflow-hidden">
+        {approvedItems.map(({ planName, planPublicId, item }) => {
+          const key = `${planPublicId}:${item.publicId}`;
+          const signedConsent = signedConsentMap[item.publicId];
+          const hasConsent = !!signedConsent;
+
+          return (
+            <div key={item.publicId} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+              <input
+                type="checkbox"
+                className="size-3.5 rounded accent-primary shrink-0"
+                checked={selectedKeys.has(key)}
+                onChange={(e) => {
+                  setSelectedKeys(prev => {
+                    const next = new Set(prev);
+                    e.target.checked ? next.add(key) : next.delete(key);
+                    return next;
+                  });
+                }}
+              />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium truncate">
+                  {item.treatmentName ?? 'Bilinmeyen tedavi'}
+                  {item.treatmentCode && (
+                    <span className="ml-1.5 text-xs text-muted-foreground font-normal font-mono">[{item.treatmentCode}]</span>
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {item.toothNumber ? `Diş ${item.toothNumber} · ` : ''}
+                  <span className="italic">{planName}</span>
+                  {' · '}
+                  {item.finalPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
+                  {hasConsent && (
+                    <span className="ml-1.5 text-emerald-600 font-medium">· Onam Alındı ({signedConsent.consentCode})</span>
+                  )}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant={hasConsent ? 'default' : 'outline'}
+                className="h-7 text-xs shrink-0"
+                disabled={completeItemMutation.isPending}
+                onClick={() => completeItemMutation.mutate({ planId: planPublicId, itemId: item.publicId })}
+              >
+                <CheckCheck className="size-3 mr-1" />
+                Tamamlandı
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Onam formu seç dialog */}
+      <Dialog open={consentDialogOpen} onOpenChange={setConsentDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Kalem Ekle</DialogTitle>
+            <DialogTitle>Onam Formu Seç</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1.5">
-              <Label>Tedavi</Label>
-              <Select value={itemTreatmentId} onValueChange={v => { setItemTreatmentId(v); setItemPrice(''); }}>
-                <SelectTrigger><SelectValue placeholder="Tedavi seç..." /></SelectTrigger>
-                <SelectContent className="max-h-64">
-                  {catalog.map((t) => (
-                    <SelectItem key={t.publicId} value={t.publicId}>
-                      <span className="font-mono text-xs text-muted-foreground mr-2">{t.code}</span>
-                      {t.name}
-                    </SelectItem>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Hangi onam formunu kullanmak istersiniz?</Label>
+              {consentTemplates.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Henüz onam formu şablonu tanımlanmamış.</p>
+              ) : (
+                <div className="space-y-2">
+                  {consentTemplates.map(t => (
+                    <label key={t.publicId} className="flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="template"
+                        value={t.publicId}
+                        checked={selectedTemplateId === t.publicId}
+                        onChange={() => setSelectedTemplateId(t.publicId)}
+                        className="mt-0.5"
+                      />
+                      <span className="text-sm">{t.name} <span className="text-xs text-muted-foreground">({t.language} · v{t.version})</span></span>
+                    </label>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="item-tooth">Diş No</Label>
-                <Input id="item-tooth" placeholder="Ör: 16" value={itemToothNumber} onChange={(e) => setItemToothNumber(e.target.value)} />
+            <div className="space-y-2">
+              <Label>Onam Yöntemi</Label>
+              <div className="space-y-1">
+                {(['qr', 'sms', 'both'] as const).map(m => (
+                  <label key={m} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="delivery"
+                      value={m}
+                      checked={deliveryMethod === m}
+                      onChange={() => setDeliveryMethod(m)}
+                    />
+                    <span className="text-sm">
+                      {m === 'qr' ? 'QR Kod (Tablet ile imzalama)' : m === 'sms' ? 'SMS Link (Telefona gönder)' : 'Her ikisi'}
+                    </span>
+                  </label>
+                ))}
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="item-price">Fiyat (₺)</Label>
-                <Input id="item-price" type="number" placeholder="0" value={itemPrice} onChange={(e) => setItemPrice(e.target.value)} />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="item-discount">İndirim (%)</Label>
-              <Input id="item-discount" type="number" min="0" max="100" value={itemDiscount} onChange={(e) => setItemDiscount(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="item-notes">Notlar</Label>
-              <Textarea id="item-notes" rows={2} value={itemNotes} onChange={(e) => setItemNotes(e.target.value)} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddItemPlanId(null)}>İptal</Button>
-            <Button onClick={() => addItemMutation.mutate()} disabled={addItemMutation.isPending || !itemTreatmentId || !itemPrice}>
-              Ekle
+            <Button variant="outline" onClick={() => setConsentDialogOpen(false)}>İptal</Button>
+            <Button
+              disabled={!selectedTemplateId || createConsentMutation.isPending}
+              onClick={handleCreateConsent}
+            >
+              {createConsentMutation.isPending ? 'Oluşturuluyor...' : 'Onam Oluştur'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* QR kodu göster dialog */}
+      <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Onam Formu QR Kodu</DialogTitle>
+          </DialogHeader>
+          {createdConsent && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground text-center">
+                Hastaya tableti/telefonu verin ve aşağıdaki linki açmasını isteyin.
+              </p>
+              {createdConsent.qrToken && (
+                <div className="flex justify-center">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(consentUrl)}`}
+                    alt="QR Code"
+                    className="rounded border"
+                    width={180}
+                    height={180}
+                  />
+                </div>
+              )}
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Onam Formu: <strong>{createdConsent.consentCode}</strong></p>
+                <p className="text-xs text-muted-foreground">Geçerlilik: 24 saat</p>
+              </div>
+              <div className="flex items-center gap-2 bg-muted rounded p-2 text-xs font-mono break-all">
+                <span className="flex-1">{consentUrl}</span>
+                <button
+                  className="shrink-0 p-1 hover:text-primary"
+                  onClick={() => { navigator.clipboard.writeText(consentUrl); toast.success('Link kopyalandı.'); }}
+                >
+                  <Copy className="size-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQrDialogOpen(false)}>Kapat</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ─── Tab: Yapılan Tedaviler ───────────────────────────────────────────────────
+
+function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
+  const { data: plans = [], isLoading } = useQuery<TreatmentPlan[]>({
+    queryKey: ['treatment-plans', patientPublicId],
+    queryFn: () => treatmentPlansApi.getByPatient(patientPublicId).then((r) => r.data),
+    enabled: !!patientPublicId,
+  });
+
+  if (isLoading) return (
+    <div className="space-y-3 p-4">
+      {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
+    </div>
+  );
+
+  // Tamamlanmış kalemler — tüm planlardan, completedAt'e göre sıralı
+  const completedItems: { planName: string; item: TreatmentPlan['items'][0] }[] = [];
+  for (const plan of plans) {
+    for (const item of plan.items) {
+      if (item.status === 3) completedItems.push({ planName: plan.name, item });
+    }
+  }
+  completedItems.sort((a, b) => {
+    const dateA = a.item.completedAt ?? a.item.createdAt;
+    const dateB = b.item.completedAt ?? b.item.createdAt;
+    return dateB.localeCompare(dateA);
+  });
+
+  if (completedItems.length === 0) {
+    return (
+      <div className="text-center py-10 text-muted-foreground text-sm">
+        Henüz tamamlanan tedavi yok.
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 space-y-3">
+      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+        Yapılan Tedaviler ({completedItems.length})
+      </h3>
+      <div className="border rounded-lg divide-y overflow-hidden">
+        {completedItems.map(({ planName, item }) => (
+          <div key={item.publicId} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+            <Check className="size-4 text-emerald-500 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium truncate">
+                {item.treatmentName ?? 'Bilinmeyen tedavi'}
+                {item.treatmentCode && (
+                  <span className="ml-1.5 text-xs text-muted-foreground font-normal font-mono">[{item.treatmentCode}]</span>
+                )}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {item.toothNumber ? `Diş ${item.toothNumber} · ` : ''}
+                <span className="italic">{planName}</span>
+                {' · '}
+                {item.finalPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
+                {item.completedAt && (
+                  <span className="ml-1">
+                    · {format(new Date(item.completedAt), 'dd MMM yyyy', { locale: tr })}
+                  </span>
+                )}
+              </p>
+            </div>
+            <span className="text-xs px-1.5 py-0.5 rounded border bg-gray-100 text-gray-600 border-gray-200 shrink-0">
+              Tamamlandı
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2399,11 +3218,13 @@ export function ExaminationPage() {
   });
 
   const TAB_ITEMS = [
-    { value: 'hasta-bilgileri', label: 'Hasta Bilgileri', icon: User },
-    { value: 'anamnez',         label: 'Anamnez',         icon: ClipboardList },
-    { value: 'oral-diagnoz',    label: 'Oral Diagnoz',    icon: Heart },
-    { value: 'tedavi-plani',    label: 'Tedavi Planı',    icon: Stethoscope },
-    { value: 'protokol',        label: 'Protokol',        icon: FileText },
+    { value: 'hasta-bilgileri',     label: 'Hasta Bilgileri', icon: User },
+    { value: 'anamnez',             label: 'Anamnez',         icon: ClipboardList },
+    { value: 'oral-diagnoz',        label: 'Oral Diagnoz',    icon: Heart },
+    { value: 'tedavi-plani',        label: 'Tedavi Planı',    icon: Stethoscope },
+    { value: 'onaylanan-tedaviler', label: 'Onaylanan',       icon: CheckCircle2 },
+    { value: 'yapilan-tedaviler',   label: 'Yapılan',         icon: CheckCheck },
+    { value: 'protokol',            label: 'Protokol',        icon: FileText },
   ];
 
   return (
@@ -2520,6 +3341,26 @@ export function ExaminationPage() {
             ) : (
               <div className="space-y-3 p-4">
                 {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="onaylanan-tedaviler" className="mt-0">
+            {protocol?.patientPublicId ? (
+              <OnaylananTedavilerTab patientPublicId={protocol.patientPublicId} />
+            ) : (
+              <div className="space-y-3 p-4">
+                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="yapilan-tedaviler" className="mt-0">
+            {protocol?.patientPublicId ? (
+              <YapilanTedavilerTab patientPublicId={protocol.patientPublicId} />
+            ) : (
+              <div className="space-y-3 p-4">
+                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
               </div>
             )}
           </TabsContent>

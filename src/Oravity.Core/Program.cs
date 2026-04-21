@@ -126,6 +126,10 @@ try
     builder.Services.AddScoped<OutboxProcessorJob>();
     builder.Services.AddScoped<OutboxEventDispatcher>();
 
+    // PDF
+    builder.Services.AddHttpClient();
+    builder.Services.AddScoped<Oravity.Core.Services.TreatmentPlanPdfService>();
+
     // Döviz kuru job
     builder.Services.AddScoped<TcmbExchangeRateJob>();
     builder.Services.AddScoped<FinancialTransactionService>();

@@ -6,6 +6,7 @@ using Oravity.Core.Filters;
 using Oravity.Core.Modules.Treatment.Application;
 using Oravity.Core.Modules.Treatment.Application.Commands;
 using Oravity.Core.Modules.Treatment.Application.Queries;
+using Oravity.Core.Services;
 using Oravity.Infrastructure.Database;
 using Oravity.SharedKernel.Exceptions;
 using Oravity.SharedKernel.Interfaces;
@@ -21,15 +22,17 @@ namespace Oravity.Core.Controllers;
 [Produces("application/json")]
 public class TreatmentPlansController : ControllerBase
 {
-    private readonly IMediator      _mediator;
-    private readonly AppDbContext   _db;
-    private readonly ITenantContext _tenant;
+    private readonly IMediator               _mediator;
+    private readonly AppDbContext            _db;
+    private readonly ITenantContext          _tenant;
+    private readonly TreatmentPlanPdfService _pdfService;
 
-    public TreatmentPlansController(IMediator mediator, AppDbContext db, ITenantContext tenant)
+    public TreatmentPlansController(IMediator mediator, AppDbContext db, ITenantContext tenant, TreatmentPlanPdfService pdfService)
     {
-        _mediator = mediator;
-        _db       = db;
-        _tenant   = tenant;
+        _mediator   = mediator;
+        _db         = db;
+        _tenant     = tenant;
+        _pdfService = pdfService;
     }
 
     // ── Sorgular ─────────────────────────────────────────────────────────
@@ -57,6 +60,18 @@ public class TreatmentPlansController : ControllerBase
     {
         var result = await _mediator.Send(new GetTreatmentPlanByIdQuery(id));
         return Ok(result);
+    }
+
+    /// <summary>Tedavi planını PDF olarak indirir. currency parametresi ile döviz seçilebilir (TRY, USD, EUR, CHF, GBP).</summary>
+    [HttpGet("api/treatment-plans/{id:guid}/pdf")]
+    [RequirePermission("treatment_plan:view")]
+    [Produces("application/pdf")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DownloadPdf(Guid id, [FromQuery] string? currency = null)
+    {
+        var bytes = await _pdfService.GenerateAsync(id, currency);
+        return File(bytes, "application/pdf", $"tedavi-plani-{id:N}.pdf");
     }
 
     // ── Plan Komutları ────────────────────────────────────────────────────
@@ -134,6 +149,17 @@ public class TreatmentPlansController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Seçili kalemleri onaylar. Plan durumunu değiştirmez.</summary>
+    [HttpPut("api/treatment-plans/{id:guid}/items/approve")]
+    [RequirePermission("treatment_plan:edit")]
+    [ProducesResponseType(typeof(TreatmentPlanResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ApproveItems(Guid id, [FromBody] ApproveItemsRequest request)
+    {
+        var result = await _mediator.Send(new ApproveItemsCommand(id, request.ItemPublicIds));
+        return Ok(result);
+    }
+
     // ── Kalem Komutları ───────────────────────────────────────────────────
 
     /// <summary>Plana yeni tedavi kalemi ekler.</summary>
@@ -183,6 +209,39 @@ public class TreatmentPlansController : ControllerBase
         await _mediator.Send(new DeletePlannedTreatmentCommand(itemId));
         return NoContent();
     }
+
+    /// <summary>Tedavi planının adını / notlarını günceller.</summary>
+    [HttpPut("api/treatment-plans/{id:guid}")]
+    [RequirePermission("treatment_plan:edit")]
+    [ProducesResponseType(typeof(TreatmentPlanResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateTreatmentPlanRequest request)
+    {
+        var result = await _mediator.Send(new UpdateTreatmentPlanCommand(id, request.Name, request.Notes));
+        return Ok(result);
+    }
+
+    /// <summary>Tedavi planını siler (Taslak → soft-delete, diğerleri → iptal).</summary>
+    [HttpDelete("api/treatment-plans/{id:guid}")]
+    [RequirePermission("treatment_plan:delete")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        await _mediator.Send(new DeleteTreatmentPlanCommand(id));
+        return NoContent();
+    }
+
+    /// <summary>Kalem fiyatını / iskontosunu günceller.</summary>
+    [HttpPut("api/treatment-plans/{id:guid}/items/{itemId:guid}")]
+    [RequirePermission("treatment_plan:edit")]
+    [ProducesResponseType(typeof(TreatmentPlanItemResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateItem(Guid id, Guid itemId, [FromBody] UpdateTreatmentPlanItemRequest request)
+    {
+        var result = await _mediator.Send(new UpdateTreatmentPlanItemCommand(itemId, request.UnitPrice, request.DiscountRate, request.ToothNumber));
+        return Ok(result);
+    }
 }
 
 // ─── Request DTO'lar ───────────────────────────────────────────────────────
@@ -202,3 +261,16 @@ public record AddTreatmentPlanItemRequest(
     string? ToothNumber,
     string? Notes
 );
+
+public record UpdateTreatmentPlanRequest(
+    string  Name,
+    string? Notes
+);
+
+public record UpdateTreatmentPlanItemRequest(
+    decimal UnitPrice,
+    decimal DiscountRate,
+    string? ToothNumber
+);
+
+public record ApproveItemsRequest(List<Guid> ItemPublicIds);

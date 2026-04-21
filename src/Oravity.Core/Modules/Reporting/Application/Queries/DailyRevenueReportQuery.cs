@@ -84,19 +84,32 @@ public class DailyRevenueReportQueryHandler : IRequestHandler<DailyRevenueReport
             .ToList();
 
         // Hekim bazında gelir — komisyon tablosu üzerinden
-        var commissionData = await _db.DoctorCommissions
-            .Include(c => c.Doctor)
+        // Not: GroupBy key'i sadece scalar DoctorId; FullName ayrı sorgudan çekilir
+        // (EF Core navigation property'yi GroupBy key'inde translate edemez → InvalidOperationException)
+        var commissionGroups = await _db.DoctorCommissions
             .Where(c => c.Branch.CompanyId == _tenant.CompanyId
                      && c.CreatedAt >= startUtc
                      && c.CreatedAt < endUtc)
-            .GroupBy(c => new { c.DoctorId, c.Doctor.FullName })
-            .Select(g => new RevenueByDoctor(
-                g.Key.DoctorId,
-                g.Key.FullName,
-                g.Sum(c => c.GrossAmount),
-                g.Count()))
-            .OrderByDescending(d => d.Total)
+            .GroupBy(c => c.DoctorId)
+            .Select(g => new { DoctorId = g.Key, Total = g.Sum(c => c.GrossAmount), Count = g.Count() })
             .ToListAsync(ct);
+
+        var doctorIds = commissionGroups.Select(x => x.DoctorId).ToList();
+        var doctorNames = doctorIds.Count > 0
+            ? await _db.Users
+                .Where(u => doctorIds.Contains(u.Id))
+                .Select(u => new { u.Id, u.FullName })
+                .ToDictionaryAsync(u => u.Id, u => u.FullName, ct)
+            : new Dictionary<long, string>();
+
+        var commissionData = commissionGroups
+            .Select(g => new RevenueByDoctor(
+                g.DoctorId,
+                doctorNames.GetValueOrDefault(g.DoctorId, "Bilinmiyor"),
+                g.Total,
+                g.Count))
+            .OrderByDescending(d => d.Total)
+            .ToList();
 
         var grandTotal = rawPayments.Sum(p => p.Amount);
 

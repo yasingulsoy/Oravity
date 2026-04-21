@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building2, GitBranch, Users, Shield, KeyRound, Plus, Pencil, Check, X, Percent,
   Loader2, UserPlus, Eye, EyeOff, ChevronDown, ChevronRight, AlertTriangle,
-  Trash2, ArrowLeft, MapPin, Calendar, User as UserIcon, Info,
+  Trash2, ArrowLeft, MapPin, Calendar, User as UserIcon, Info, ClipboardCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { CommissionTemplatesTab } from './tabs/CommissionTemplatesTab';
+import { ConsentFormsTab } from './tabs/ConsentFormsTab';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ŞİRKET SEKMESI
@@ -1252,6 +1253,10 @@ export function SettingsPage() {
             <Percent className="h-3.5 w-3.5 mr-1.5" />
             Hakediş
           </TabsTrigger>
+          <TabsTrigger value="consent-forms">
+            <ClipboardCheck className="h-3.5 w-3.5 mr-1.5" />
+            Onam Formları
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="company" className="mt-4">
@@ -1271,6 +1276,9 @@ export function SettingsPage() {
         </TabsContent>
         <TabsContent value="commission" className="mt-4">
           <CommissionTemplatesTab />
+        </TabsContent>
+        <TabsContent value="consent-forms" className="mt-4">
+          <ConsentFormsTab />
         </TabsContent>
       </Tabs>
     </div>

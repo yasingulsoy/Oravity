@@ -127,6 +127,7 @@ public class DatabaseSeeder
                 "pricing.view",
                 "laboratory.view", "laboratory.work_create",
                 "laboratory.work_receive", "laboratory.work_fit", "laboratory.work_complete",
+                "consent_form.view",
             ],
             ["ASSISTANT"] =
             [
@@ -204,6 +205,7 @@ public class DatabaseSeeder
                 "laboratory.work_create", "laboratory.work_send", "laboratory.work_receive",
                 "laboratory.work_fit", "laboratory.work_complete",
                 "laboratory.work_approve", "laboratory.work_cancel",
+                "consent_form.view", "consent_form.manage",
             ],
         };
 
@@ -404,6 +406,10 @@ public class DatabaseSeeder
             ("institution_invoice", "payment",       false),   // ödeme kaydı
             ("institution_invoice", "follow_up",     false),   // takip / hatırlatma
             ("institution_invoice", "cancel",        true),
+
+            // Consent Form / Onam Formu
+            ("consent_form",     "view",             false),   // şablon listesi
+            ("consent_form",     "manage",           false),   // şablon CRUD
         };
 
         var existingCodes = await _db.Permissions

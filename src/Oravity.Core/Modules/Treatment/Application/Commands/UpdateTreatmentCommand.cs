@@ -19,7 +19,8 @@ public record UpdateTreatmentCommand(
     int[]?   AllowedScopes,
     string?  Tags,
     bool     IsActive,
-    decimal? CostPrice = null
+    decimal? CostPrice = null,
+    string?  ChartSymbolCode = null
 ) : IRequest<TreatmentResponse>;
 
 public class UpdateTreatmentCommandHandler
@@ -38,26 +39,43 @@ public class UpdateTreatmentCommandHandler
         UpdateTreatmentCommand request,
         CancellationToken cancellationToken)
     {
-        var companyId = await TenantCompanyResolver.ResolveCompanyIdAsync(_tenant, _db, cancellationToken)
-            ?? throw new ForbiddenException("Tedavi güncellemek için şirket bağlamı gereklidir.");
+        var isPlatformAdmin = _tenant.IsPlatformAdmin;
 
-        var treatment = await _db.Treatments
-            .Include(t => t.Category)
-            .FirstOrDefaultAsync(t => t.PublicId == request.PublicId
-                                   && t.CompanyId == companyId, cancellationToken)
-            ?? throw new NotFoundException("Tedavi bulunamadı.");
+        // Platform admin global şablonları düzenleyebilir (CompanyId = null).
+        // Diğer kullanıcılar yalnızca kendi şirketlerine ait tedavileri güncelleyebilir.
+        SharedKernel.Entities.Treatment treatment;
 
-        var codeUpper = request.Code.Trim().ToUpperInvariant();
-        var codeTaken = await _db.Treatments.AnyAsync(
-            t => t.CompanyId == companyId
-              && t.Code == codeUpper
-              && t.Id != treatment.Id, cancellationToken);
-        if (codeTaken)
-            throw new ConflictException($"'{codeUpper}' kodu başka bir tedavide kullanılıyor.");
+        if (isPlatformAdmin)
+        {
+            treatment = await _db.Treatments
+                .Include(t => t.Category)
+                .FirstOrDefaultAsync(t => t.PublicId == request.PublicId, cancellationToken)
+                ?? throw new NotFoundException("Tedavi bulunamadı.");
+        }
+        else
+        {
+            var companyId = await TenantCompanyResolver.ResolveCompanyIdAsync(_tenant, _db, cancellationToken)
+                ?? throw new ForbiddenException("Tedavi güncellemek için şirket bağlamı gereklidir.");
+
+            treatment = await _db.Treatments
+                .Include(t => t.Category)
+                .FirstOrDefaultAsync(t => t.PublicId == request.PublicId
+                                       && t.CompanyId == companyId, cancellationToken)
+                ?? throw new NotFoundException("Tedavi bulunamadı.");
+
+            var codeUpper = request.Code.Trim().ToUpperInvariant();
+            var codeTaken = await _db.Treatments.AnyAsync(
+                t => t.CompanyId == companyId
+                  && t.Code == codeUpper
+                  && t.Id != treatment.Id, cancellationToken);
+            if (codeTaken)
+                throw new ConflictException($"'{codeUpper}' kodu başka bir tedavide kullanılıyor.");
+        }
 
         long? categoryId = null;
         if (request.CategoryPublicId.HasValue)
         {
+            var companyId = isPlatformAdmin ? null : await TenantCompanyResolver.ResolveCompanyIdAsync(_tenant, _db, cancellationToken);
             var cat = await _db.TreatmentCategories
                 .FirstOrDefaultAsync(c => c.PublicId == request.CategoryPublicId.Value
                                        && (c.CompanyId == null || c.CompanyId == companyId), cancellationToken)
@@ -74,7 +92,8 @@ public class UpdateTreatmentCommandHandler
             request.RequiresLaboratory,
             request.AllowedScopes,
             request.Tags,
-            costPrice: request.CostPrice);
+            costPrice: request.CostPrice,
+            chartSymbolCode: request.ChartSymbolCode);
 
         treatment.SetActive(request.IsActive);
 

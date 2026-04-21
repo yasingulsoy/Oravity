@@ -95,6 +95,15 @@ public class TreatmentPlan : AuditableEntity
         MarkUpdated();
     }
 
+    public void Update(string name, string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Plan adı boş olamaz.", nameof(name));
+        Name  = name.Trim();
+        Notes = notes;
+        MarkUpdated();
+    }
+
     public void UpdateNotes(string? notes)
     {
         Notes = notes;

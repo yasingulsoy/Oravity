@@ -154,6 +154,16 @@ public class TreatmentPlanItem : BaseEntity
         MarkUpdated();
     }
 
+    /// <summary>Kalemi tekil olarak Onaylandı yapar (seçili onaylama için).</summary>
+    public void Approve()
+    {
+        if (Status != TreatmentItemStatus.Planned)
+            throw new InvalidOperationException("Yalnızca 'Planlandı' durumundaki kalemler onaylanabilir.");
+
+        Status = TreatmentItemStatus.Approved;
+        MarkUpdated();
+    }
+
     public void UpdatePrice(decimal unitPrice, decimal discountRate)
     {
         if (Status != TreatmentItemStatus.Planned)

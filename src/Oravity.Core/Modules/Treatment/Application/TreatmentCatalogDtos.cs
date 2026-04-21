@@ -26,7 +26,8 @@ public record TreatmentResponse(
     int[]                       AllowedScopes,
     bool                        IsActive,
     bool                        IsGlobal,
-    DateTime                    CreatedAt
+    DateTime                    CreatedAt,
+    string?                     ChartSymbolCode
 );
 
 public record PagedTreatmentResponse(
@@ -58,6 +59,7 @@ public static class TreatmentCatalogMappings
             t.AllowedScopes,
             t.IsActive,
             t.CompanyId is null,
-            t.CreatedAt
+            t.CreatedAt,
+            t.ChartSymbolCode
         );
 }

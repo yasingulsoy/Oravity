@@ -43,8 +43,8 @@ public class UpdateCampaignCommandHandler
         campaign.Update(
             request.Name,
             request.Description,
-            request.ValidFrom,
-            request.ValidUntil,
+            DateTime.SpecifyKind(request.ValidFrom, DateTimeKind.Utc),
+            DateTime.SpecifyKind(request.ValidUntil, DateTimeKind.Utc),
             request.LinkedRulePublicId);
 
         campaign.SetActive(request.IsActive);

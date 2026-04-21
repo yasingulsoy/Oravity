@@ -17,15 +17,29 @@ export const ITEM_STATUS_LABEL: Record<number, string> = {
 
 export interface TreatmentPlanItem {
   publicId: string;
+  planId: number;
+  treatmentId: number;
   treatmentPublicId: string | null;
   treatmentCode: string | null;
   treatmentName: string | null;
   toothNumber: string | null;
+  toothSurfaces: string | null;
+  bodyRegionCode: string | null;
   status: TreatmentItemStatus;
   statusLabel: string;
+  /** Kural motoru tarafından hesaplanan birim fiyat (indirim öncesi). */
   unitPrice: number;
+  /** 0–100 arası indirim oranı. */
   discountRate: number;
+  /** İndirim uygulandıktan sonraki birim fiyat. */
   finalPrice: number;
+  /** KDV oranı (örn. 10 → %10). */
+  kdvRate: number;
+  /** KDV tutarı (finalPrice * kdvRate / 100). */
+  kdvAmount: number;
+  /** KDV dahil toplam (finalPrice + kdvAmount). */
+  totalAmount: number;
+  doctorId: number | null;
   notes: string | null;
   completedAt: string | null;
   createdAt: string;
@@ -33,6 +47,9 @@ export interface TreatmentPlanItem {
 
 export interface TreatmentPlan {
   publicId: string;
+  patientId: number;
+  branchId: number;
+  doctorId: number;
   name: string;
   status: TreatmentPlanStatus;
   statusLabel: string;

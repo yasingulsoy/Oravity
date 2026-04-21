@@ -252,6 +252,19 @@ export function AppointmentCalendarPage() {
       });
   }, [allDoctors, visibleDoctorIds]);
 
+  // Görünür hekimlerin en geç bitiş saatine göre takvim bitişini uzat
+  const effectiveDayEndHour = useMemo(() => {
+    let maxEnd = settings.dayEndHour;
+    for (const doctor of visibleDoctors) {
+      if (doctor.workEnd) {
+        const [h, m] = doctor.workEnd.split(':').map(Number);
+        const endHour = m > 0 ? h + 1 : h;
+        if (endHour > maxEnd) maxEnd = endHour;
+      }
+    }
+    return maxEnd;
+  }, [visibleDoctors, settings.dayEndHour]);
+
   const { data: appointmentsData, isLoading: appointmentsLoading } = useQuery({
     queryKey: ['appointments', 'for-doctors', dateStr, visibleDoctorIds],
     queryFn: () => appointmentsApi.getForDoctors(dateStr, visibleDoctorIds),
@@ -282,7 +295,7 @@ export function AppointmentCalendarPage() {
       endTime,
       date: currentDate,
       dayStartHour: settings.dayStartHour,
-      dayEndHour: settings.dayEndHour,
+      dayEndHour: effectiveDayEndHour,
     });
     setCreateOpen(true);
   }
@@ -417,7 +430,7 @@ export function AppointmentCalendarPage() {
               statuses={statuses}
               slotIntervalMinutes={settings.slotIntervalMinutes}
               dayStartHour={settings.dayStartHour}
-              dayEndHour={settings.dayEndHour}
+              dayEndHour={effectiveDayEndHour}
               viewDate={currentDate}
               onRangeSelect={handleRangeSelect}
               onAppointmentClick={handleAppointmentClick}
