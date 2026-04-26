@@ -230,7 +230,7 @@ public class PaymentsController : ControllerBase
     // ── Raporlar ──────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Günlük kasa raporu — ödeme yöntemi bazında toplam.
+    /// Günlük kasa raporu özeti (eski, basit endpoint — geriye uyumluluk).
     /// İzin: report:view_daily
     /// </summary>
     [HttpGet("api/reports/daily")]
@@ -243,6 +243,65 @@ public class PaymentsController : ControllerBase
         [FromQuery] long? branchId = null)
     {
         var result = await _mediator.Send(new GetDailyReportQuery(date, branchId));
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Günlük kasa raporu detayı — ödemeler, yöntem/döviz matrisi, kasa durumu.
+    /// İzin: report:view_daily
+    /// </summary>
+    [HttpGet("api/cash-reports/detail")]
+    [RequirePermission("report:view_daily")]
+    [ProducesResponseType(typeof(DailyCashReportDetailResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetCashReportDetail(
+        [FromQuery] DateOnly date,
+        [FromQuery] long? branchId = null)
+    {
+        var result = await _mediator.Send(new GetDailyCashReportQuery(date, branchId));
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Günlük kasayı kapatır. Rapor yoksa otomatik oluşturulur.
+    /// İzin: report:close
+    /// </summary>
+    [HttpPost("api/cash-reports/close")]
+    [RequirePermission("report:close")]
+    [ProducesResponseType(typeof(DailyCashReportResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> CloseCashReport([FromBody] CloseCashReportRequest request)
+    {
+        var result = await _mediator.Send(new CloseDailyCashReportCommand(request.Date, request.Notes));
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Kapatılmış kasa raporunu onaylar.
+    /// İzin: report:approve
+    /// </summary>
+    [HttpPost("api/cash-reports/{id:guid}/approve")]
+    [RequirePermission("report:approve")]
+    [ProducesResponseType(typeof(DailyCashReportResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ApproveCashReport(Guid id, [FromBody] ApproveCashReportRequest? request)
+    {
+        var result = await _mediator.Send(new ApproveDailyCashReportCommand(id, request?.Notes));
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Kasa raporunu yeniden açar.
+    /// İzin: report:reopen
+    /// </summary>
+    [HttpPost("api/cash-reports/{id:guid}/reopen")]
+    [RequirePermission("report:reopen")]
+    [ProducesResponseType(typeof(DailyCashReportResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ReopenCashReport(Guid id)
+    {
+        var result = await _mediator.Send(new ReopenDailyCashReportCommand(id));
         return Ok(result);
     }
 }
@@ -286,3 +345,6 @@ public record RejectAllocationRequest(string Reason);
 public record RefundPaymentRequest(string? Reason);
 
 public record DistributeCommissionRequest(long TreatmentPlanItemId, decimal CommissionRate);
+
+public record CloseCashReportRequest(DateOnly Date, string? Notes = null);
+public record ApproveCashReportRequest(string? Notes);

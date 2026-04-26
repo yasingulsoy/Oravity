@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Oravity.Infrastructure.Database;
@@ -11,9 +12,11 @@ using Oravity.Infrastructure.Database;
 namespace Oravity.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260424095918_AddInstitutionPaymentModelAndContribution")]
+    partial class AddInstitutionPaymentModelAndContribution
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1340,80 +1343,6 @@ namespace Oravity.Infrastructure.Migrations
                         .HasDatabaseName("ix_countries_iso_code");
 
                     b.ToTable("countries", (string)null);
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.DailyCashReport", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("ApprovalNotes")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("ApprovedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long?>("ApprovedByUserId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("BranchId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime?>("ClosedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long?>("ClosedByUserId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("ClosingNotes")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long?>("CreatedByUserId")
-                        .HasColumnType("bigint");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("PublicId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<int>("ReopenCount")
-                        .HasColumnType("integer");
-
-                    b.Property<DateOnly>("ReportDate")
-                        .HasColumnType("date");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("TenantId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long?>("UpdatedByUserId")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PublicId")
-                        .IsUnique()
-                        .HasDatabaseName("ix_daily_cash_reports_public_id");
-
-                    b.HasIndex("BranchId", "ReportDate")
-                        .IsUnique()
-                        .HasDatabaseName("ix_daily_cash_reports_branch_date");
-
-                    b.ToTable("daily_cash_reports", (string)null);
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.DataExportRequest", b =>
@@ -6440,9 +6369,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Property<long>("DoctorId")
                         .HasColumnType("bigint");
 
-                    b.Property<long?>("InstitutionId")
-                        .HasColumnType("bigint");
-
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
@@ -6483,9 +6409,6 @@ namespace Oravity.Infrastructure.Migrations
 
                     b.HasIndex("DoctorId")
                         .HasDatabaseName("ix_treatment_plans_doctor");
-
-                    b.HasIndex("InstitutionId")
-                        .HasDatabaseName("ix_treatment_plans_institution");
 
                     b.HasIndex("PatientId")
                         .HasDatabaseName("ix_treatment_plans_patient");
@@ -6547,9 +6470,6 @@ namespace Oravity.Infrastructure.Migrations
                         .HasColumnType("numeric");
 
                     b.Property<decimal>("KdvRate")
-                        .HasColumnType("numeric");
-
-                    b.Property<decimal?>("ListPrice")
                         .HasColumnType("numeric");
 
                     b.Property<string>("Notes")
@@ -7524,17 +7444,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("Patient");
 
                     b.Navigation("TreatmentPlan");
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.DailyCashReport", b =>
-                {
-                    b.HasOne("Oravity.SharedKernel.Entities.Branch", "Branch")
-                        .WithMany()
-                        .HasForeignKey("BranchId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Branch");
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.DataExportRequest", b =>
@@ -8636,11 +8545,6 @@ namespace Oravity.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("Oravity.SharedKernel.Entities.Institution", "Institution")
-                        .WithMany()
-                        .HasForeignKey("InstitutionId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("Oravity.SharedKernel.Entities.Patient", "Patient")
                         .WithMany()
                         .HasForeignKey("PatientId")
@@ -8655,8 +8559,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("Branch");
 
                     b.Navigation("Doctor");
-
-                    b.Navigation("Institution");
 
                     b.Navigation("Patient");
 

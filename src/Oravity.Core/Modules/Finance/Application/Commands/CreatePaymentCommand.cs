@@ -48,6 +48,11 @@ public class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentCommand,
                 .FirstOrDefaultAsync(cancellationToken)
             ?? throw new InvalidOperationException("Hastanın şube bilgisi belirlenemedi.");
 
+        // ── Geçmiş tarih kontrolü ─────────────────────────────────────────
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (request.PaymentDate < today && !_user.HasPermission("payment.backdate"))
+            throw new ForbiddenException("Geçmiş tarihli ödeme girmek için yetkiniz yok.");
+
         var payment = Payment.Create(
             patientId:    request.PatientId,
             branchId:     branchId,

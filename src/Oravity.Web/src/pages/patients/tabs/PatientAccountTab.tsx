@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const PAYMENT_METHODS = [
   { value: '1', label: 'Nakit' },
@@ -827,6 +828,8 @@ function CollectPaymentDialog({
   onSuccess: () => void;
   onSuccessManual: (payment: PatientAccountPayment) => void;
 }) {
+  const { hasPermission } = usePermissions();
+  const canBackdate = hasPermission('payment.backdate');
   const today = format(new Date(), 'yyyy-MM-dd');
   const [amount,       setAmount]       = useState(remainingDebt > 0 ? String(remainingDebt.toFixed(2)) : '');
   const [currency,     setCurrency]     = useState('TRY');
@@ -908,7 +911,7 @@ function CollectPaymentDialog({
 
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CreditCard className="size-5" />
@@ -988,7 +991,11 @@ function CollectPaymentDialog({
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Yöntem</label>
               <Select value={method} onValueChange={setMethod}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue>
+                    {PAYMENT_METHODS.find(m => m.value === method)?.label ?? 'Seçin'}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
                   {PAYMENT_METHODS.map(m => (
                     <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
@@ -998,7 +1005,13 @@ function CollectPaymentDialog({
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Tarih</label>
-              <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
+              <Input
+                type="date"
+                value={date}
+                max={today}
+                min={canBackdate ? undefined : today}
+                onChange={e => setDate(e.target.value)}
+              />
             </div>
           </div>
 

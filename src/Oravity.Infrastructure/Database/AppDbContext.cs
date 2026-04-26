@@ -80,6 +80,7 @@ public class AppDbContext : DbContext
     public DbSet<BranchTarget> BranchTargets => Set<BranchTarget>();
     public DbSet<InstitutionInvoice> InstitutionInvoices => Set<InstitutionInvoice>();
     public DbSet<InstitutionPayment> InstitutionPayments => Set<InstitutionPayment>();
+    public DbSet<DailyCashReport> DailyCashReports => Set<DailyCashReport>();
 
     // ─── Notifications ─────────────────────────────────────────────────────
     public DbSet<Notification> Notifications => Set<Notification>();
@@ -634,6 +635,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.ContactPhone).HasMaxLength(30);
             e.Property(x => x.TaxNumber).HasMaxLength(20);
             e.Property(x => x.TaxOffice).HasMaxLength(200);
+            e.Property(x => x.PaymentModel).HasDefaultValue(InstitutionPaymentModel.Discount);
             e.Property(x => x.DiscountRate).HasColumnType("numeric(5,2)");
             e.Property(x => x.PaymentDays).HasDefaultValue(30);
             e.Property(x => x.PaymentTerms).HasColumnType("text");
@@ -841,6 +843,14 @@ public class AppDbContext : DbContext
              .HasForeignKey(x => x.ProtocolId)
              .IsRequired(false)
              .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasOne(x => x.Institution)
+             .WithMany()
+             .HasForeignKey(x => x.InstitutionId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasIndex(x => x.InstitutionId).HasDatabaseName("ix_treatment_plans_institution");
         });
 
         // ── TreatmentPlanItem ──────────────────────────────────────────────
@@ -860,6 +870,8 @@ public class AppDbContext : DbContext
             e.Property(x => x.UnitPrice).HasColumnType("numeric(12,2)").IsRequired();
             e.Property(x => x.DiscountRate).HasColumnType("numeric(5,2)").HasDefaultValue(0m);
             e.Property(x => x.FinalPrice).HasColumnType("numeric(12,2)").IsRequired();
+            e.Property(x => x.InstitutionContributionAmount).HasColumnType("numeric(12,2)");
+            e.Property(x => x.PatientAmount).HasColumnType("numeric(12,2)").IsRequired().HasDefaultValue(0m);
             e.Property(x => x.Notes).HasColumnType("text");
 
             e.HasIndex(x => x.PlanId).HasDatabaseName("ix_treatment_plan_items_plan");
@@ -1173,6 +1185,29 @@ public class AppDbContext : DbContext
             e.Property(x => x.TenantId).IsRequired();
 
             e.HasIndex(x => x.InvoiceId).HasDatabaseName("ix_institution_payments_invoice");
+        });
+
+        // ── DailyCashReport ────────────────────────────────────────────────
+        m.Entity<DailyCashReport>(e =>
+        {
+            e.ToTable("daily_cash_reports");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_daily_cash_reports_public_id");
+
+            e.HasIndex(x => new { x.BranchId, x.ReportDate })
+             .IsUnique()
+             .HasDatabaseName("ix_daily_cash_reports_branch_date");
+
+            e.Property(x => x.Status).IsRequired();
+            e.Property(x => x.ClosingNotes).HasColumnType("text");
+            e.Property(x => x.ApprovalNotes).HasColumnType("text");
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
         });
 
         // ── Notification ───────────────────────────────────────────────────
@@ -2675,7 +2710,8 @@ public class AppDbContext : DbContext
             e.Property(x => x.SignerIp).HasMaxLength(50);
             e.Property(x => x.SignerDevice).HasMaxLength(500);
             e.Property(x => x.SignerName).HasMaxLength(200);
-            e.Property(x => x.SignatureDataBase64);    // TEXT — büyük olabilir
+            e.Property(x => x.SignatureDataBase64);         // TEXT — büyük olabilir
+            e.Property(x => x.DoctorSignatureDataBase64).HasColumnName("doctor_signature_data_base64");   // TEXT — büyük olabilir
             e.Property(x => x.CheckboxAnswersJson).HasColumnType("jsonb");
 
             e.HasIndex(x => x.ConsentCode).IsUnique()
@@ -2697,7 +2733,8 @@ public class AppDbContext : DbContext
             e.HasOne(x => x.TreatmentPlan)
              .WithMany()
              .HasForeignKey(x => x.TreatmentPlanId)
-             .OnDelete(DeleteBehavior.Restrict);
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.SetNull);
 
             e.HasOne(x => x.FormTemplate)
              .WithMany()
@@ -2858,6 +2895,12 @@ public class AppDbContext : DbContext
             e.Property(x => x.PriceExchangeRate).HasColumnType("numeric(18,6)").HasDefaultValue(1m);
             e.Property(x => x.PriceBaseAmount).HasColumnType("numeric(18,4)").HasDefaultValue(0m);
             e.Property(x => x.RateLockType).HasDefaultValue(1);
+
+            e.HasOne(x => x.ApprovedBy)
+             .WithMany()
+             .HasForeignKey(x => x.ApprovedByUserId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
         });
     }
 
