@@ -56,6 +56,29 @@ public class PaymentsController : ControllerBase
     // ── Ödeme ─────────────────────────────────────────────────────────────
 
     /// <summary>
+    /// Ödeme al + tamamlanan kalemlere otomatik FIFO dağıtım (tek işlem).
+    /// Klinik kasasının standart "ödeme al" akışı.
+    /// </summary>
+    [HttpPost("api/patients/{patientId:long}/collect-payment")]
+    [RequirePermission("payment:create")]
+    [ProducesResponseType(typeof(CollectPaymentResult), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> CollectPayment(
+        long patientId, [FromBody] CollectPaymentRequest request)
+    {
+        var result = await _mediator.Send(new CollectPaymentCommand(
+            patientId,
+            request.Amount,
+            request.Method,
+            request.PaymentDate,
+            request.Currency     ?? "TRY",
+            request.ExchangeRate,
+            request.Notes));
+
+        return StatusCode(StatusCodes.Status201Created, result);
+    }
+
+    /// <summary>
     /// Yeni ödeme kaydı oluşturur.
     /// Başarıda outbox'a PaymentReceived event'i eklenir.
     /// </summary>
@@ -73,6 +96,7 @@ public class PaymentsController : ControllerBase
             request.Method,
             request.PaymentDate,
             request.Currency ?? "TRY",
+            request.ExchangeRate,
             request.Notes));
 
         return StatusCode(StatusCodes.Status201Created, result);
@@ -225,13 +249,23 @@ public class PaymentsController : ControllerBase
 
 // ─── Request DTO'lar ───────────────────────────────────────────────────────
 
+public record CollectPaymentRequest(
+    decimal Amount,
+    PaymentMethod Method,
+    DateOnly PaymentDate,
+    string? Currency     = null,
+    decimal ExchangeRate = 1m,
+    string? Notes        = null
+);
+
 public record CreatePaymentRequest(
     long PatientId,
     decimal Amount,
     PaymentMethod Method,
     DateOnly PaymentDate,
     string? Currency,
-    string? Notes
+    decimal ExchangeRate = 1m,
+    string? Notes = null
 );
 
 public record AllocationItemRequest(long TreatmentPlanItemId, decimal Amount);

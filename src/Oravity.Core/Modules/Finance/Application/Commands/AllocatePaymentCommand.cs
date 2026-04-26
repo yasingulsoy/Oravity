@@ -44,16 +44,46 @@ public class AllocatePaymentCommandHandler
         if (payment.IsRefunded)
             throw new InvalidOperationException("İade edilmiş ödeme dağıtılamaz.");
 
-        // Kalan (dağıtılmamış) tutarı kontrol et
+        // Kalan (dağıtılmamış) tutarı kontrol et — her zaman TRY bazında (BaseAmount)
         var alreadyAllocated = await _db.PaymentAllocations
             .Where(a => a.PaymentId == payment.Id && !a.IsRefunded)
             .SumAsync(a => (decimal?)a.AllocatedAmount, cancellationToken) ?? 0m;
-        var remaining = payment.Amount - alreadyAllocated;
+        var remaining = payment.BaseAmount - alreadyAllocated;
 
-        var totalRequest = request.Allocations.Sum(a => a.Amount);
-        if (totalRequest > remaining)
-            throw new InvalidOperationException(
-                $"Dağıtılacak toplam ({totalRequest:N2}) kalan dağıtılabilir tutarı ({remaining:N2}) aşıyor.");
+        // Her kalemin PatientAmount'ını çek (per-item cap ve FX aşım kontrolü için)
+        var reqItemIds = request.Allocations.Select(a => a.TreatmentPlanItemId).ToList();
+        var itemInfos = await _db.TreatmentPlanItems.AsNoTracking()
+            .Where(i => reqItemIds.Contains(i.Id))
+            .Select(i => new { i.Id, i.PatientAmount, i.PriceCurrency })
+            .ToListAsync(cancellationToken);
+        var itemInfoDict = itemInfos.ToDictionary(x => x.Id);
+
+        // Per-item: hiçbir kalem kendi hasta borcundan fazla dağıtılamaz
+        foreach (var alloc in request.Allocations)
+        {
+            if (!itemInfoDict.TryGetValue(alloc.TreatmentPlanItemId, out var info))
+                throw new NotFoundException($"Tedavi kalemi bulunamadı: {alloc.TreatmentPlanItemId}");
+            if (alloc.Amount > info.PatientAmount + 0.01m)
+                throw new InvalidOperationException(
+                    $"Dağıtılacak tutar ({alloc.Amount:N2} ₺) kalemin hasta borcunu ({info.PatientAmount:N2} ₺) aşıyor.");
+        }
+
+        // Toplam bütçe kontrolü:
+        // Döviz ödemede (ör. EUR) tüm kalemler aynı dövizle fiyatlandırılmışsa
+        // → kur farkı klinik üstlenir, TRY bütçe aşımına izin ver.
+        bool isFxPayment = payment.Currency != "TRY";
+        bool allSameCurrency = isFxPayment &&
+            request.Allocations.All(a =>
+                itemInfoDict.TryGetValue(a.TreatmentPlanItemId, out var inf) &&
+                inf.PriceCurrency == payment.Currency);
+
+        if (!allSameCurrency)
+        {
+            var totalRequest = request.Allocations.Sum(a => a.Amount);
+            if (totalRequest > remaining + 0.01m)
+                throw new InvalidOperationException(
+                    $"Dağıtılacak toplam ({totalRequest:N2} ₺) kalan dağıtılabilir tutarı ({remaining:N2} ₺) aşıyor.");
+        }
 
         var userId = _user.IsAuthenticated ? _user.UserId : 0;
 

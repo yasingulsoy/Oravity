@@ -1,5 +1,6 @@
 using System.Text.Json;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using Oravity.Core.Modules.Finance.Application;
 using Oravity.Infrastructure.Database;
 using Oravity.SharedKernel.Entities;
@@ -14,6 +15,7 @@ public record CreatePaymentCommand(
     PaymentMethod Method,
     DateOnly PaymentDate,
     string Currency = "TRY",
+    decimal ExchangeRate = 1m,
     string? Notes = null
 ) : IRequest<PaymentResponse>;
 
@@ -35,17 +37,26 @@ public class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentCommand,
         CreatePaymentCommand request,
         CancellationToken cancellationToken)
     {
+        if (!_tenant.BranchId.HasValue && !_tenant.IsCompanyAdmin && !_tenant.IsPlatformAdmin)
+            throw new ForbiddenException("Ödeme kaydı için şube bağlamı gereklidir.");
+
         var branchId = _tenant.BranchId
-            ?? throw new ForbiddenException("Ödeme kaydı için şube bağlamı gereklidir.");
+            ?? await _db.TreatmentPlans.AsNoTracking()
+                .Where(p => p.PatientId == request.PatientId && !p.IsDeleted)
+                .OrderByDescending(p => p.CreatedAt)
+                .Select(p => (long?)p.BranchId)
+                .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new InvalidOperationException("Hastanın şube bilgisi belirlenemedi.");
 
         var payment = Payment.Create(
-            patientId:   request.PatientId,
-            branchId:    branchId,
-            amount:      request.Amount,
-            method:      request.Method,
-            paymentDate: request.PaymentDate,
-            currency:    request.Currency,
-            notes:       request.Notes);
+            patientId:    request.PatientId,
+            branchId:     branchId,
+            amount:       request.Amount,
+            method:       request.Method,
+            paymentDate:  request.PaymentDate,
+            currency:     request.Currency,
+            exchangeRate: request.Currency == "TRY" ? 1m : request.ExchangeRate,
+            notes:        request.Notes);
 
         if (_user.IsAuthenticated)
             payment.SetCreatedBy(_user.UserId, _user.TenantId);

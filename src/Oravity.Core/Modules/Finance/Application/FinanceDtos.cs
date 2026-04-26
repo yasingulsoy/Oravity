@@ -6,10 +6,13 @@ namespace Oravity.Core.Modules.Finance.Application;
 
 public record PaymentResponse(
     Guid PublicId,
+    long Id,
     long PatientId,
     long BranchId,
     decimal Amount,
     string Currency,
+    decimal ExchangeRate,
+    decimal BaseAmount,
     PaymentMethod Method,
     string MethodLabel,
     DateOnly PaymentDate,
@@ -79,8 +82,9 @@ public record PaymentMethodTotal(
 public static class FinanceMappings
 {
     public static PaymentResponse ToResponse(Payment p) => new(
-        p.PublicId, p.PatientId, p.BranchId,
-        p.Amount, p.Currency, p.Method, MethodLabel(p.Method),
+        p.PublicId, p.Id, p.PatientId, p.BranchId,
+        p.Amount, p.Currency, p.ExchangeRate, p.BaseAmount,
+        p.Method, MethodLabel(p.Method),
         p.PaymentDate, p.Notes, p.IsRefunded, p.CreatedAt);
 
     public static PaymentAllocationResponse ToResponse(PaymentAllocation a) => new(

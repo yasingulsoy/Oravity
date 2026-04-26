@@ -9,7 +9,7 @@ import {
   Phone, Mail, MapPin, Calendar, Heart, Save,
   FileText, Search, Trash2, History, Lock, X,
   Stethoscope, Plus, ChevronDown, ChevronRight, CheckCircle2, Megaphone, Info, FileDown,
-  Pencil, RotateCcw, QrCode, ClipboardCheck, Copy,
+  Pencil, RotateCcw, QrCode, ClipboardCheck, Copy, XCircle, ArrowUpDown, ArrowUp, ArrowDown, Building2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -33,7 +33,9 @@ import { patientsApi } from '@/api/patients';
 import { dentalApi } from '@/api/dental';
 import { treatmentsApi, treatmentPlansApi } from '@/api/treatments';
 import { campaignsApi } from '@/api/campaigns';
+import { notificationsApi } from '@/api/notifications';
 import { consentFormsApi, consentInstancesApi } from '@/api/consent';
+import { patientAccountApi } from '@/api/patientAccount';
 import type { ConsentFormTemplateSummary, ConsentInstanceResponse } from '@/api/consent';
 import type { TreatmentCatalogItem } from '@/api/treatments';
 import type { TreatmentPlan } from '@/types/treatment';
@@ -49,6 +51,7 @@ import { getSymbol } from '@/types/dentalSymbols';
 import type { DoctorProtocol, ProtocolDetail, IcdCode, ProtocolDiagnosis, ProtocolHistoryItem } from '@/types/visit';
 import type { Patient, PatientAnamnesis, AnamnesisHistoryItem } from '@/types/patient';
 import { useAuthStore } from '@/store/authStore';
+import { usePermissions } from '@/hooks/usePermissions';
 import { PdfDownloadButton } from '@/components/PdfDownloadButton';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -1237,6 +1240,41 @@ function OralDiagnozTab({ patientPublicId }: { patientPublicId: string }) {
   );
 }
 
+// ─── Para birimi bazlı toplam bileşeni ───────────────────────────────────────
+
+function PlanItemsTotals({ items }: { items: import('@/types/treatment').TreatmentPlanItem[] }) {
+  if (items.length === 0) return null;
+
+  const byCur = new Map<string, number>();
+  for (const item of items)
+    byCur.set(item.priceCurrency, (byCur.get(item.priceCurrency) ?? 0) + item.totalAmount);
+
+  const trySum = items.reduce(
+    (s, i) => s + (i.priceCurrency === 'TRY' ? i.totalAmount : i.priceBaseAmount), 0,
+  );
+  const hasMulti = byCur.size > 1 || (byCur.size === 1 && !byCur.has('TRY'));
+
+  const breakdown = [...byCur.entries()]
+    .map(([cur, amt]) =>
+      amt.toLocaleString(cur === 'TRY' ? 'tr-TR' : 'en-US', {
+        style: 'currency', currency: cur, maximumFractionDigits: 2,
+      }),
+    )
+    .join(' + ');
+
+  return (
+    <div className="flex items-center justify-end gap-3 text-sm border-t pt-2">
+      {hasMulti && (
+        <span className="text-muted-foreground text-xs">{breakdown}</span>
+      )}
+      <span className="font-semibold">
+        Toplam:{' '}
+        {trySum.toLocaleString('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 2 })}
+      </span>
+    </div>
+  );
+}
+
 // ─── Plan Builder: taslak kalem tipi ─────────────────────────────────────────
 
 interface DraftItem {
@@ -1247,6 +1285,7 @@ interface DraftItem {
   treatmentName: string;
   toothNumber: string;   // "" = diş yok
   unitPrice: number;
+  listPrice: number | null;  // referans liste fiyatı (kampanya öncesi)
   discountRate: number;
   currency: string;
   chartSymbolCode: string | null;
@@ -1257,6 +1296,9 @@ interface DraftItem {
 // ─── Plan Builder — desteklenen para birimleri ───────────────────────────────
 // Buraya yeni kod eklemek yeterli (örn. 'CHF', 'GBP'). Kur otomatik çekilir.
 const PLAN_CURRENCIES = ['TRY', 'USD', 'EUR', 'CHF'] as const;
+
+const CUR_SYM: Record<string, string> = { TRY: '₺', EUR: '€', USD: '$', GBP: '£', CHF: 'Fr' };
+const curSym = (c: string) => CUR_SYM[c] ?? c;
 type PlanCurrency = typeof PLAN_CURRENCIES[number];
 
 // ─── Plan Builder Panel (inline) ─────────────────────────────────────────────
@@ -1346,7 +1388,7 @@ function PlanBuilderPanel({
         toothNumber: item.toothNumber ?? '',
         unitPrice: item.unitPrice,
         discountRate: item.discountRate,
-        currency: 'TRY',
+        currency: item.priceCurrency ?? 'TRY',
         chartSymbolCode: null,
         requiresSurfaceSelection: false,
         surfaces: item.toothSurfaces ?? '',
@@ -1389,14 +1431,14 @@ function PlanBuilderPanel({
         institutionId: patientInstitutionId,
         isOss: patientIsOss,
         campaignCode: selectedCampaignCode || undefined,
-      }).then(r => ({ id, unitPrice: r.data.unitPrice }))
+      }).then(r => ({ id, unitPrice: r.data.unitPrice, currency: r.data.currency ?? 'TRY' }))
     )).then(results => {
       if (stale) return;
-      const priceMap = Object.fromEntries(results.map(r => [r.id, r.unitPrice]));
+      const priceMap = Object.fromEntries(results.map(r => [r.id, { unitPrice: r.unitPrice, currency: r.currency }]));
       setDraftItems(curr => curr.map(item => {
         const p = priceMap[item.treatmentPublicId];
-        if (!p || p <= 0) return item;
-        return { ...item, unitPrice: convertPrice(p, item.currency) };
+        if (!p || p.unitPrice <= 0) return item;
+        return { ...item, unitPrice: p.unitPrice, currency: p.currency };
       }));
     }).catch(() => {});
     return () => { stale = true; };
@@ -1480,6 +1522,7 @@ function PlanBuilderPanel({
       treatmentName:            t.name,
       toothNumber:              tooth,
       unitPrice:                0,
+      listPrice:                null,
       discountRate:             0,
       currency:                 listCurrency,
       chartSymbolCode:          t.chartSymbolCode ?? null,
@@ -1497,9 +1540,13 @@ function PlanBuilderPanel({
       });
       if (data.unitPrice > 0) {
         const ids = new Set(placeholders.map(p => p.localId));
+        // data.currency → tedavinin kanonik para birimi (EUR/USD/TRY) — bu korunur
+        const canonical = data.currency ?? 'TRY';
+        // referencePrice > unitPrice ise liste fiyatı farklı, yoksa null (fark yok)
+        const lp = data.referencePrice > data.unitPrice ? data.referencePrice : null;
         setDraftItems(prev => prev.map(item =>
           ids.has(item.localId)
-            ? { ...item, unitPrice: convertPrice(data.unitPrice, listCurrency), currency: listCurrency }
+            ? { ...item, unitPrice: data.unitPrice, listPrice: lp, currency: canonical }
             : item
         ));
       }
@@ -1525,12 +1572,6 @@ function PlanBuilderPanel({
     retry: false,
   });
 
-  const convertPrice = (tryAmount: number, currency: string) => {
-    if (currency === 'TRY' || !fxRates) return tryAmount;
-    const rate = fxRates[currency];
-    return rate ? Math.round(tryAmount * rate * 100) / 100 : tryAmount;
-  };
-
   // Bir para biriminden diğerine çevir (TRY üzerinden geçerek)
   const convertBetween = (amount: number, from: string, to: string) => {
     if (from === to || !fxRates) return amount;
@@ -1547,12 +1588,42 @@ function PlanBuilderPanel({
     })));
   };
 
-  const finalPrice = (item: DraftItem) => {
-    const tryFinal = Math.round(item.unitPrice * (1 - item.discountRate / 100) * 100) / 100;
-    return convertPrice(tryFinal, item.currency);
+  const [resettingNative, setResettingNative] = useState(false);
+  const resetToNativeCurrency = async () => {
+    setResettingNative(true);
+    try {
+      const ids = [...new Set(draftItems.map(i => i.treatmentPublicId).filter(Boolean))];
+      const results = await Promise.all(ids.map(id =>
+        treatmentsApi.getPrice(id, {
+          institutionId: patientInstitutionId,
+          isOss: patientIsOss,
+          campaignCode: selectedCampaignCode || undefined,
+        }).then(r => ({ id, unitPrice: r.data.unitPrice, currency: r.data.currency ?? 'TRY' }))
+      ));
+      const priceMap = Object.fromEntries(results.map(r => [r.id, { unitPrice: r.unitPrice, currency: r.currency }]));
+      setDraftItems(prev => prev.map(item => {
+        const p = priceMap[item.treatmentPublicId];
+        if (!p || p.unitPrice <= 0) return item;
+        return { ...item, unitPrice: p.unitPrice, currency: p.currency };
+      }));
+    } catch {
+      // sessizce geç
+    } finally {
+      setResettingNative(false);
+    }
   };
 
+  const finalPrice = (item: DraftItem) =>
+    Math.round(item.unitPrice * (1 - item.discountRate / 100) * 100) / 100;
+
   const total = draftItems.reduce((s, i) => s + finalPrice(i), 0);
+
+  // fxRates "1 TRY = X yabancı" → 1 yabancı = 1/X TRY
+  const toExchangeRate = (currency: string): number => {
+    if (currency === 'TRY' || !fxRates) return 1;
+    const rate = fxRates[currency];
+    return rate ? Math.round((1 / rate) * 10000) / 10000 : 1;
+  };
 
   // Kaydet / Güncelle
   const handleSave = async () => {
@@ -1591,6 +1662,9 @@ function PlanBuilderPanel({
             unitPrice:         item.unitPrice,
             discountRate:      item.discountRate,
             toothNumber:       item.toothNumber || undefined,
+            priceCurrency:     item.currency,
+            priceExchangeRate: toExchangeRate(item.currency),
+            listPrice:         item.listPrice ?? undefined,
           });
         }
         toast.success('Tedavi planı güncellendi.');
@@ -1608,6 +1682,9 @@ function PlanBuilderPanel({
             unitPrice:         item.unitPrice,
             discountRate:      item.discountRate,
             toothNumber:       item.toothNumber || undefined,
+            priceCurrency:     item.currency,
+            priceExchangeRate: toExchangeRate(item.currency),
+            listPrice:         item.listPrice ?? undefined,
           });
         }
         toast.success('Tedavi planı kaydedildi.');
@@ -1652,7 +1729,14 @@ function PlanBuilderPanel({
           </Select>
         )}
         <span className="text-xs text-muted-foreground ml-auto">
-          {draftItems.length > 0 && <>{draftItems.length} kalem · {total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</>}
+          {draftItems.length > 0 && (() => {
+            const allTry = draftItems.every(i => i.currency === 'TRY');
+            const tryTotal = draftItems.reduce((s, i) => s + convertBetween(finalPrice(i), i.currency, 'TRY'), 0);
+            const canShow = allTry || !!fxRates;
+            return (
+              <>{draftItems.length} kalem{canShow ? ` · ${tryTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺` : ''}</>
+            );
+          })()}
         </span>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
             <X className="size-4" />
@@ -1851,11 +1935,12 @@ function PlanBuilderPanel({
               {filtered.map(t => {
                 const priceInfo = priceMap[t.publicId];
                 const hasPrice = priceInfo && priceInfo.unitPrice > 0;
-                const displayPrice = hasPrice ? convertPrice(priceInfo.unitPrice, listCurrency) : 0;
+                const canonical = priceInfo?.currency ?? 'TRY';
                 const displayStr = hasPrice
-                  ? listCurrency === 'TRY'
-                    ? fmtPrice(priceInfo.unitPrice)
-                    : displayPrice.toLocaleString('en-US', { style: 'currency', currency: listCurrency, maximumFractionDigits: 2 })
+                  ? priceInfo.unitPrice.toLocaleString(
+                      canonical === 'TRY' ? 'tr-TR' : 'en-US',
+                      { style: 'currency', currency: canonical, maximumFractionDigits: 2 }
+                    )
                   : '';
                 return (
                   <div
@@ -1886,14 +1971,13 @@ function PlanBuilderPanel({
                           <div className="px-2.5 py-2 space-y-1">
                             <div className="flex justify-between">
                               <span className="text-muted-foreground">Birim Fiyat</span>
-                              <span className="font-semibold tabular-nums">{fmtPrice(priceInfo.unitPrice)}</span>
+                              <span className="font-semibold tabular-nums">
+                                {priceInfo.unitPrice.toLocaleString(
+                                  canonical === 'TRY' ? 'tr-TR' : 'en-US',
+                                  { style: 'currency', currency: canonical, maximumFractionDigits: 2 }
+                                )}
+                              </span>
                             </div>
-                            {listCurrency !== 'TRY' && hasPrice && fxRates && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">{listCurrency}</span>
-                                <span className="font-semibold tabular-nums">{displayStr}</span>
-                              </div>
-                            )}
                             {priceInfo.appliedRuleName && (
                               <div className="flex justify-between">
                                 <span className="text-muted-foreground">Kural</span>
@@ -1949,6 +2033,14 @@ function PlanBuilderPanel({
                 );
               })}
             </div>
+            <button
+              onClick={resetToNativeCurrency}
+              disabled={resettingNative}
+              title="Her tedaviyi kendi orijinal para birimine döndür"
+              className="text-[10px] px-2 py-0.5 rounded border font-mono text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {resettingNative ? '…' : '↺ Orijinal'}
+            </button>
             {!fxRates && (
               <span className="text-[10px] text-muted-foreground italic">kur yükleniyor…</span>
             )}
@@ -1966,7 +2058,7 @@ function PlanBuilderPanel({
               <tr className="text-xs text-muted-foreground">
                 <th className="text-left px-3 py-2 font-medium">Tedavi Adı / İşlem</th>
                 <th className="text-center px-2 py-2 font-medium w-16">Diş No</th>
-                <th className="text-right px-2 py-2 font-medium w-28">Birim Fiyat</th>
+                <th className="text-right px-2 py-2 font-medium w-28">Liste Fiyatı</th>
                 <th className="text-center px-2 py-2 font-medium w-16">İndirim%</th>
                 <th className="text-center px-2 py-2 font-medium w-16">Para</th>
                 <th className="text-right px-2 py-2 font-medium w-28">Tedavi Fiyatı</th>
@@ -2010,10 +2102,16 @@ function PlanBuilderPanel({
                       value={item.toothNumber}
                       onChange={e => updateItem(item.localId, { toothNumber: e.target.value })} />
                   </td>
-                  <td className="px-2 py-1.5 text-right">
-                    <Input type="number" className="h-6 text-xs text-right px-1 w-24 ml-auto" placeholder="0"
-                      value={item.unitPrice || ''}
-                      onChange={e => updateItem(item.localId, { unitPrice: parseFloat(e.target.value) || 0 })} />
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    {item.listPrice != null && item.listPrice > item.unitPrice ? (
+                      <span className="text-muted-foreground line-through text-xs">
+                        {item.listPrice.toLocaleString(item.currency === 'TRY' ? 'tr-TR' : 'en-US', { minimumFractionDigits: 2 })}
+                      </span>
+                    ) : (
+                      <span className="text-sm">
+                        {(item.listPrice ?? item.unitPrice).toLocaleString(item.currency === 'TRY' ? 'tr-TR' : 'en-US', { minimumFractionDigits: 2 })}
+                      </span>
+                    )}
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     <Input type="number" className="h-6 text-xs text-center px-1 w-14 mx-auto" min="0" max="100" placeholder="0"
@@ -2023,11 +2121,15 @@ function PlanBuilderPanel({
                   <td className="px-2 py-1.5 text-center">
                     <select className="h-6 text-xs border rounded px-1 bg-background w-14"
                       value={item.currency}
-                      onChange={e => updateItem(item.localId, { currency: e.target.value })}>
+                      onChange={e => {
+                        const to = e.target.value;
+                        const converted = convertBetween(item.unitPrice, item.currency, to);
+                        updateItem(item.localId, { currency: to, unitPrice: converted });
+                      }}>
                       {PLAN_CURRENCIES.map(c => <option key={c}>{c}</option>)}
                     </select>
                   </td>
-                  <td className="px-2 py-1.5 text-right font-medium tabular-nums">
+                  <td className="px-2 py-1.5 text-right tabular-nums font-medium">
                     {finalPrice(item).toLocaleString(
                       item.currency === 'TRY' ? 'tr-TR' : 'en-US',
                       { minimumFractionDigits: 2, maximumFractionDigits: 2 }
@@ -2048,18 +2150,40 @@ function PlanBuilderPanel({
 
       {/* Footer */}
       <div className="flex items-center justify-between px-4 py-3 border-t bg-muted/20">
-        <span className="text-sm font-semibold">
+        <div className="flex flex-col gap-0.5">
           {(() => {
-            const currencies = [...new Set(draftItems.map(i => i.currency))];
-            const symbol = currencies.length === 1
-              ? (currencies[0] === 'TRY' ? '₺' : new Intl.NumberFormat('en-US', { style: 'currency', currency: currencies[0] }).formatToParts(0).find(p => p.type === 'currency')?.value ?? currencies[0])
-              : '₺';
-            const displayTotal = currencies.length === 1
-              ? total
-              : draftItems.reduce((s, i) => s + Math.round(i.unitPrice * (1 - i.discountRate / 100) * 100) / 100, 0);
-            return `Toplam: ${displayTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${symbol}`;
+            // Para birimi bazında toplamlar
+            const byCurrency = new Map<string, number>();
+            for (const item of draftItems) {
+              const fp = finalPrice(item);
+              byCurrency.set(item.currency, (byCurrency.get(item.currency) ?? 0) + fp);
+            }
+            // TRY genel toplam (tüm birimleri TRY'ye çevir)
+            const tryTotal = [...byCurrency.entries()].reduce((sum, [cur, amt]) => {
+              return sum + convertBetween(amt, cur, 'TRY');
+            }, 0);
+            const fmt = (amt: number, cur: string) =>
+              amt.toLocaleString(cur === 'TRY' ? 'tr-TR' : 'en-US', {
+                style: 'currency', currency: cur, maximumFractionDigits: 2,
+              });
+            const hasFx = fxRates != null;
+            const multiCurrency = byCurrency.size > 1 || (byCurrency.size === 1 && !byCurrency.has('TRY'));
+            return (
+              <>
+                <span className="text-sm font-semibold">
+                  Toplam: {hasFx || byCurrency.size === 0 || (byCurrency.size === 1 && byCurrency.has('TRY'))
+                    ? fmt(tryTotal, 'TRY')
+                    : [...byCurrency.entries()].map(([c, a]) => fmt(a, c)).join(' + ')}
+                </span>
+                {multiCurrency && hasFx && (
+                  <span className="text-[11px] text-muted-foreground">
+                    {[...byCurrency.entries()].map(([c, a]) => fmt(a, c)).join(' + ')}
+                  </span>
+                )}
+              </>
+            );
           })()}
-        </span>
+        </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>İptal</Button>
           <Button size="sm" onClick={handleSave} disabled={saving || draftItems.length === 0}>
@@ -2102,7 +2226,7 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
   const deletePlanMutation = useMutation({
     mutationFn: (planId: string) => treatmentPlansApi.deletePlan(planId),
     onSuccess: (_data, planId) => {
-      toast.success(deletingPlan?.status === 1 ? 'Plan silindi.' : 'Plan iptal edildi.');
+      toast.success(deletingPlan?.status === 'Draft' ? 'Plan silindi.' : 'Plan iptal edildi.');
       setDeletingPlan(null);
       setSelectedItemKeys(prev => {
         const next = new Set(prev);
@@ -2114,11 +2238,11 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
     onError: () => toast.error('Plan silinemedi.'),
   });
 
-  const statusColor = (status: number) => {
-    if (status === 1) return 'bg-green-100 text-green-800 border-green-200';
-    if (status === 2) return 'bg-blue-100 text-blue-800 border-blue-200';
-    if (status === 3) return 'bg-gray-100 text-gray-600 border-gray-200';
-    return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+  const statusColor = (status: string) => {
+    if (status === 'Draft'   || status === 'Planned')   return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+    if (status === 'Approved')                          return 'bg-blue-100 text-blue-800 border-blue-200';
+    if (status === 'Completed')                         return 'bg-green-100 text-green-800 border-green-200';
+    return 'bg-gray-100 text-gray-600 border-gray-200';
   };
 
   if (isLoading) return (
@@ -2168,11 +2292,18 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
 
       {!panelOpen && plans.map((plan) => {
         const isExpanded  = expandedPlan === plan.publicId;
-        const isDraft     = plan.status === 1;
-        const isCompleted = plan.status === 3;
-        const isCancelled = plan.status === 4;
+        const isDraft     = plan.status === 'Draft';
+        const isCompleted = plan.status === 'Completed';
+        const isCancelled = plan.status === 'Cancelled';
         const canModify   = !isCompleted && !isCancelled;
-        const total       = plan.items.reduce((s, i) => s + i.finalPrice, 0);
+        const total       = plan.items.reduce((s, i) => s + (i.priceCurrency === 'TRY' ? i.totalAmount : i.priceBaseAmount), 0);
+        const hasListDisc = plan.items.some(i => i.listPrice != null && i.listPrice > i.totalAmount);
+        const catalogTotal = hasListDisc
+          ? plan.items.reduce((s, i) => s + (i.listPrice != null && i.listPrice > i.totalAmount
+              ? (i.priceCurrency === 'TRY' ? i.listPrice : i.listPrice * i.priceExchangeRate)
+              : (i.priceCurrency === 'TRY' ? i.totalAmount : i.priceBaseAmount)), 0)
+          : 0;
+        const savedAmount = catalogTotal - total;
 
         return (
           <div key={plan.publicId} className="border rounded-lg overflow-hidden">
@@ -2233,82 +2364,129 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
                   <p className="text-sm text-muted-foreground text-center py-6">Plan boş.</p>
                 )}
 
-                {/* Tümünü seç — sadece taslak planlar için */}
-                {isDraft && plan.items.some(i => i.status === 1) && (
-                  <label className="flex items-center gap-3 px-4 py-1.5 bg-muted/20 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      className="size-3.5 rounded accent-primary shrink-0"
-                      checked={plan.items.filter(i => i.status === 1).every(i => selectedItemKeys.has(`${plan.publicId}:${i.publicId}`))}
-                      onChange={(e) => {
-                        setSelectedItemKeys(prev => {
-                          const next = new Set(prev);
-                          plan.items.filter(i => i.status === 1).forEach(i => {
-                            const k = `${plan.publicId}:${i.publicId}`;
-                            e.target.checked ? next.add(k) : next.delete(k);
-                          });
-                          return next;
-                        });
-                      }}
-                    />
-                    <span className="text-xs text-muted-foreground">Tümünü seç</span>
-                  </label>
+                {plan.items.length > 0 && (
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-muted/20 text-muted-foreground">
+                        <th className="w-8 px-3 py-1.5 text-center">
+                          {isDraft && plan.items.some(i => i.status === 'Planned') && (
+                            <input
+                              type="checkbox"
+                              className="size-3.5 rounded accent-primary"
+                              checked={plan.items.filter(i => i.status === 'Planned').every(i => selectedItemKeys.has(`${plan.publicId}:${i.publicId}`))}
+                              onChange={(e) => {
+                                setSelectedItemKeys(prev => {
+                                  const next = new Set(prev);
+                                  plan.items.filter(i => i.status === 'Planned').forEach(i => {
+                                    const k = `${plan.publicId}:${i.publicId}`;
+                                    e.target.checked ? next.add(k) : next.delete(k);
+                                  });
+                                  return next;
+                                });
+                              }}
+                            />
+                          )}
+                        </th>
+                        <th className="px-2 py-1.5 text-left font-medium whitespace-nowrap">Tarih</th>
+                        <th className="px-2 py-1.5 text-left font-medium">Hekim</th>
+                        <th className="px-2 py-1.5 text-left font-medium">İşlem</th>
+                        <th className="px-2 py-1.5 text-left font-medium">Diş</th>
+                        <th className="px-2 py-1.5 text-left font-medium">Durum</th>
+                        <th className="px-2 py-1.5 text-right font-medium">Fiyat</th>
+                        <th className="w-[80px] px-2 py-1.5" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {plan.items.map((item) => {
+                        const itemKey = `${plan.publicId}:${item.publicId}`;
+                        const selectable = isDraft && item.status === 'Planned';
+                        return (
+                          <tr key={item.publicId} className="hover:bg-muted/10">
+                            <td className="w-8 px-3 py-2 text-center">
+                              {selectable ? (
+                                <input
+                                  type="checkbox"
+                                  className="size-3.5 rounded accent-primary"
+                                  checked={selectedItemKeys.has(itemKey)}
+                                  onChange={(e) => {
+                                    setSelectedItemKeys(prev => {
+                                      const next = new Set(prev);
+                                      e.target.checked ? next.add(itemKey) : next.delete(itemKey);
+                                      return next;
+                                    });
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              ) : null}
+                            </td>
+                            <td className="px-2 py-2 text-muted-foreground whitespace-nowrap">
+                              {format(new Date(item.createdAt), 'dd MMM yy HH:mm', { locale: tr })}
+                            </td>
+                            <td className="px-2 py-2 text-muted-foreground">
+                              {item.doctorName ?? plan.doctorName ?? '—'}
+                            </td>
+                            <td className="px-2 py-2 max-w-[200px]">
+                              <span className="font-medium truncate block">{item.treatmentName ?? 'Bilinmeyen tedavi'}</span>
+                              {item.treatmentCode && (
+                                <span className="text-muted-foreground font-mono">[{item.treatmentCode}]</span>
+                              )}
+                            </td>
+                            <td className="px-2 py-2 text-muted-foreground whitespace-nowrap">
+                              {item.toothNumber ?? item.bodyRegionCode ?? '—'}
+                            </td>
+                            <td className="px-2 py-2 whitespace-nowrap">
+                              <span className={cn('px-1.5 py-0.5 rounded border', statusColor(item.status))}>
+                                {item.statusLabel}
+                              </span>
+                            </td>
+                            <td className="px-2 py-2 text-right tabular-nums whitespace-nowrap">
+                              {item.listPrice != null && item.listPrice > item.totalAmount && (
+                                <div className="text-[10px] text-muted-foreground line-through">
+                                  {item.listPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {curSym(item.priceCurrency)}
+                                </div>
+                              )}
+                              <div>
+                                {item.totalAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {curSym(item.priceCurrency)}
+                                {item.discountRate > 0 && (
+                                  <span className="ml-1 text-green-600">-%{item.discountRate}</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="w-[80px] px-2 py-2" />
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 )}
 
-                {plan.items.map((item) => {
-                  const itemKey = `${plan.publicId}:${item.publicId}`;
-                  const selectable = isDraft && item.status === 1;
-                  return (
-                  <div key={item.publicId} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                    {selectable ? (
-                      <input
-                        type="checkbox"
-                        className="size-3.5 rounded accent-primary shrink-0"
-                        checked={selectedItemKeys.has(itemKey)}
-                        onChange={(e) => {
-                          setSelectedItemKeys(prev => {
-                            const next = new Set(prev);
-                            e.target.checked ? next.add(itemKey) : next.delete(itemKey);
-                            return next;
-                          });
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : (
-                      <div className="size-3.5 shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">
-                        {item.treatmentName ?? 'Bilinmeyen tedavi'}
-                        {item.treatmentCode && (
-                          <span className="ml-1.5 text-xs text-muted-foreground font-normal font-mono">[{item.treatmentCode}]</span>
-                        )}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {item.toothNumber ? `Diş ${item.toothNumber} · ` : ''}
-                        {item.finalPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
-                        {item.discountRate > 0 && <span className="ml-1 text-green-600">(%{item.discountRate} indirim)</span>}
-                      </p>
-                    </div>
-                    <span className={cn('text-xs px-1.5 py-0.5 rounded border shrink-0', statusColor(item.status))}>
-                      {item.statusLabel}
-                    </span>
-                  </div>
-                  );
-                })}
-
-                <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/20">
-                  {isDraft && plan.items.length > 0 && (
+                <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/20 flex-wrap">
+                  {isDraft && plan.items.length > 0 && selectedItemKeys.size === 0 && (
                     <Button size="sm" className="h-7 text-xs"
                       onClick={() => approvePlanMutation.mutate(plan.publicId)}
                       disabled={approvePlanMutation.isPending}>
                       <CheckCircle2 className="size-3 mr-1" />
-                      Onayla
+                      Tümünü Onayla
                     </Button>
                   )}
-                  <span className="ml-auto text-xs text-muted-foreground">
-                    Toplam: <strong>{total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</strong>
-                  </span>
+                  <div className="ml-auto flex items-center gap-4 text-xs">
+                    {hasListDisc && (
+                      <>
+                        <span className="text-muted-foreground">
+                          Liste:{' '}
+                          <span className="line-through tabular-nums">
+                            {catalogTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
+                          </span>
+                        </span>
+                        <span className="text-emerald-600 dark:text-emerald-400 font-medium tabular-nums">
+                          Tasarruf: {savedAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
+                        </span>
+                      </>
+                    )}
+                    <span className="text-muted-foreground">
+                      Toplam: <strong>{total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</strong>
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
@@ -2359,9 +2537,9 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
       <AlertDialog open={!!deletingPlan} onOpenChange={(o) => !o && setDeletingPlan(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{deletingPlan?.status === 1 ? 'Planı Sil' : 'Planı İptal Et'}</AlertDialogTitle>
+            <AlertDialogTitle>{deletingPlan?.status === 'Draft' ? 'Planı Sil' : 'Planı İptal Et'}</AlertDialogTitle>
             <AlertDialogDescription>
-              {deletingPlan?.status === 1
+              {deletingPlan?.status === 'Draft'
                 ? `"${deletingPlan?.name}" planı kalıcı olarak silinecek.`
                 : `"${deletingPlan?.name}" planı iptal edilecek. Yeniden açılamaz.`}
             </AlertDialogDescription>
@@ -2373,7 +2551,7 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
               disabled={deletePlanMutation.isPending}
               onClick={() => deletingPlan && deletePlanMutation.mutate(deletingPlan.publicId)}
             >
-              {deletingPlan?.status === 1 ? 'Evet, Sil' : 'Evet, İptal Et'}
+              {deletingPlan?.status === 'Draft' ? 'Evet, Sil' : 'Evet, İptal Et'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -2386,6 +2564,8 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
 
 function OnaylananTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
   const qc = useQueryClient();
+  const { hasPermission } = usePermissions();
+  const canCompleteWithoutConsent = hasPermission('treatment_plan.complete_without_consent');
 
   const { data: plans = [], isLoading: plansLoading } = useQuery<TreatmentPlan[]>({
     queryKey: ['treatment-plans', patientPublicId],
@@ -2398,6 +2578,15 @@ function OnaylananTedavilerTab({ patientPublicId }: { patientPublicId: string })
     queryFn: () => consentFormsApi.list(true).then((r) => r.data),
   });
 
+  // Sıralama
+  type SortKey = 'tarih' | 'sube' | 'hekim' | 'islem' | 'dis' | 'fiyat';
+  const [sortKey, setSortKey] = useState<SortKey>('tarih');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+
   // Seçili kalemler (checkbox)
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   // Onam formu seç dialog
@@ -2408,39 +2597,69 @@ function OnaylananTedavilerTab({ patientPublicId }: { patientPublicId: string })
   const [createdConsent, setCreatedConsent] = useState<ConsentInstanceResponse | null>(null);
   const [qrDialogOpen, setQrDialogOpen] = useState(false);
 
-  // Plan bazında consent örnekleri — onaylanan planlar için
-  const approvedPlanIds = plans.filter(p => p.status === 2).map(p => p.publicId);
+  // Onaylı item'ı olan tüm planların consent örneklerini çek
+  const consentPlanIds = useMemo(
+    () => plans.filter(p => p.items.some(i => i.status === 'Approved')).map(p => p.publicId),
+    [plans],
+  );
   const consentQueries = useQueries({
-    queries: approvedPlanIds.map(planId => ({
+    queries: consentPlanIds.map(planId => ({
       queryKey: ['consent-instances', planId],
       queryFn: () => consentInstancesApi.getByPlan(planId).then(r => r.data),
       staleTime: 30_000,
     })),
   });
-  // Map: itemPublicId → consent instance (signed)
-  const signedConsentMap = useMemo<Record<string, ConsentInstanceResponse>>(() => {
-    const map: Record<string, ConsentInstanceResponse> = {};
+
+  // Map: itemPublicId → imzalanmış consent
+  // Map: itemPublicId → aktif (bekleyen/geçerli) consent
+  const { signedConsentMap, activeConsentMap } = useMemo<{
+    signedConsentMap: Record<string, ConsentInstanceResponse>;
+    activeConsentMap: Record<string, ConsentInstanceResponse>;
+  }>(() => {
+    const signed: Record<string, ConsentInstanceResponse> = {};
+    const active: Record<string, ConsentInstanceResponse> = {};
     consentQueries.forEach(q => {
       if (!q.data) return;
       q.data.forEach(ci => {
-        if (ci.status !== 'İmzalandı') return;
         try {
           const ids: string[] = JSON.parse(ci.itemPublicIdsJson);
-          ids.forEach(id => { map[id] = ci; });
+          if (ci.status === 'İmzalandı') {
+            ids.forEach(id => { signed[id] = ci; });
+          } else if (ci.status === 'İmza Bekliyor') {
+            // aktif / henüz imzalanmamış — en son olanı tut
+            ids.forEach(id => {
+              if (!active[id] || ci.createdAt > active[id].createdAt) active[id] = ci;
+            });
+          }
         } catch { /* ignore */ }
       });
     });
-    return map;
+    return { signedConsentMap: signed, activeConsentMap: active };
   }, [consentQueries]);
+
+  // İmzalanmış consent detay dialog
+  const [viewingConsent, setViewingConsent] = useState<ConsentInstanceResponse | null>(null);
+  // Aktif QR dialog (var olan consent için)
+  const [activeQrConsent, setActiveQrConsent] = useState<ConsentInstanceResponse | null>(null);
 
   const completeItemMutation = useMutation({
     mutationFn: ({ planId, itemId }: { planId: string; itemId: string }) =>
       treatmentPlansApi.completeItem(planId, itemId),
     onSuccess: () => {
-      toast.success('Tedavi tamamlandı olarak işaretlendi.');
+      toast.success('Tedavi yapıldı olarak işaretlendi.');
       qc.invalidateQueries({ queryKey: ['treatment-plans', patientPublicId] });
     },
     onError: () => toast.error('İşlem gerçekleştirilemedi.'),
+  });
+
+  const revertToPlannedMutation = useMutation({
+    mutationFn: ({ planId, itemId }: { planId: string; itemId: string }) =>
+      treatmentPlansApi.revertToPlanned(planId, itemId),
+    onSuccess: () => {
+      toast.success('Tedavi plana geri gönderildi.');
+      qc.invalidateQueries({ queryKey: ['treatment-plans', patientPublicId] });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Plana geri gönderme başarısız.'),
   });
 
   const createConsentMutation = useMutation({
@@ -2452,11 +2671,36 @@ function OnaylananTedavilerTab({ patientPublicId }: { patientPublicId: string })
       setCreatedConsent(consent);
       setQrDialogOpen(true);
       setSelectedKeys(new Set());
-      approvedPlanIds.forEach(planId =>
+      consentPlanIds.forEach(planId =>
         qc.invalidateQueries({ queryKey: ['consent-instances', planId] })
       );
     },
     onError: () => toast.error('Onam formu oluşturulamadı.'),
+  });
+
+  const cancelConsentMutation = useMutation({
+    mutationFn: (consentPublicId: string) => consentInstancesApi.cancel(consentPublicId),
+    onSuccess: () => {
+      toast.success('Onam formu iptal edildi.');
+      consentPlanIds.forEach(planId =>
+        qc.invalidateQueries({ queryKey: ['consent-instances', planId] })
+      );
+    },
+    onError: () => toast.error('İptal işlemi başarısız.'),
+  });
+
+  const bulkCompleteMutation = useMutation({
+    mutationFn: async (items: { planId: string; itemId: string }[]) => {
+      for (const { planId, itemId } of items) {
+        await treatmentPlansApi.completeItem(planId, itemId);
+      }
+    },
+    onSuccess: (_, items) => {
+      toast.success(`${items.length} tedavi yapıldı olarak işaretlendi.`);
+      qc.invalidateQueries({ queryKey: ['treatment-plans', patientPublicId] });
+      setSelectedKeys(new Set());
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Toplu tamamlama başarısız.'),
   });
 
   if (plansLoading) return (
@@ -2466,17 +2710,42 @@ function OnaylananTedavilerTab({ patientPublicId }: { patientPublicId: string })
   );
 
   // Tüm planlardaki onaylanmış kalemler (plan durumundan bağımsız — tekil onay desteklenir)
-  const approvedItems: { planName: string; planPublicId: string; item: TreatmentPlan['items'][0] }[] = [];
+  type ApprovedRow = { planName: string; planPublicId: string; planDoctorName: string | null; planBranchName: string | null; item: TreatmentPlan['items'][0] };
+  const approvedItemsRaw: ApprovedRow[] = [];
   for (const plan of plans) {
     for (const item of plan.items) {
-      if (item.status === 2) approvedItems.push({ planName: plan.name, planPublicId: plan.publicId, item });
+      if (item.status === 'Approved') approvedItemsRaw.push({ planName: plan.name, planPublicId: plan.publicId, planDoctorName: plan.doctorName ?? null, planBranchName: plan.branchName ?? null, item });
     }
   }
+
+  const approvedItems = [...approvedItemsRaw].sort((a, b) => {
+    let va = '', vb = '';
+    if (sortKey === 'tarih')  { va = a.item.approvedAt ?? a.item.createdAt; vb = b.item.approvedAt ?? b.item.createdAt; }
+    if (sortKey === 'sube')   { va = a.planBranchName ?? ''; vb = b.planBranchName ?? ''; }
+    if (sortKey === 'hekim')  { va = a.item.doctorName ?? a.planDoctorName ?? ''; vb = b.item.doctorName ?? b.planDoctorName ?? ''; }
+    if (sortKey === 'islem')  { va = a.item.treatmentName ?? ''; vb = b.item.treatmentName ?? ''; }
+    if (sortKey === 'dis')    { va = a.item.toothNumber ?? a.item.bodyRegionCode ?? ''; vb = b.item.toothNumber ?? b.item.bodyRegionCode ?? ''; }
+    if (sortKey === 'fiyat')  { return sortDir === 'asc' ? a.item.totalAmount - b.item.totalAmount : b.item.totalAmount - a.item.totalAmount; }
+    return sortDir === 'asc' ? va.localeCompare(vb, 'tr') : vb.localeCompare(va, 'tr');
+  });
 
   // Seçilen kalemlerin plan grouplaması
   const handleCreateConsent = () => {
     if (!selectedTemplateId) { toast.error('Lütfen bir onam formu seçin.'); return; }
     const selectedItemIds = [...selectedKeys];
+
+    // İmzalı onamı olan kalemler seçildiyse engelle
+    const alreadySigned = selectedItemIds
+      .map(k => k.split(':')[1])
+      .filter(itemId => !!signedConsentMap[itemId]);
+    if (alreadySigned.length > 0) {
+      const names = alreadySigned
+        .map(id => approvedItems.find(a => a.item.publicId === id)?.item.treatmentName ?? id)
+        .join(', ');
+      toast.error(`Seçili tedaviler için zaten imzalı onam var: ${names}`);
+      return;
+    }
+
     // Tüm seçililer aynı plandan mı? (basit akış: tek plan per onam)
     const planIds = [...new Set(selectedItemIds.map(k => k.split(':')[0]))];
     if (planIds.length > 1) {
@@ -2497,6 +2766,29 @@ function OnaylananTedavilerTab({ patientPublicId }: { patientPublicId: string })
       ? `${window.location.origin}/consent/${createdConsent.smsToken}`
       : '';
 
+  // Toplu tamamlama — seçili kalemlerin hangileri tamamlanabilir
+  const selectedItemIds = [...selectedKeys].map(k => ({ planId: k.split(':')[0], itemId: k.split(':')[1] }));
+  const completableSelected = selectedItemIds.filter(
+    ({ itemId }) => !!signedConsentMap[itemId] || canCompleteWithoutConsent
+  );
+  const blockedSelected = selectedItemIds.filter(
+    ({ itemId }) => !signedConsentMap[itemId] && !canCompleteWithoutConsent
+  );
+
+  const handleBulkComplete = () => {
+    if (completableSelected.length === 0) {
+      toast.error('Seçili tedavilerin onam formu alınmamış, tamamlanamaz.');
+      return;
+    }
+    if (blockedSelected.length > 0) {
+      const blockedNames = blockedSelected
+        .map(({ itemId }) => approvedItems.find(a => a.item.publicId === itemId)?.item.treatmentName ?? itemId)
+        .join(', ');
+      toast.warning(`${blockedSelected.length} tedavi onam olmadığı için atlandı: ${blockedNames}`);
+    }
+    bulkCompleteMutation.mutate(completableSelected);
+  };
+
   if (approvedItems.length === 0) {
     return (
       <div className="text-center py-10 text-muted-foreground text-sm">
@@ -2512,64 +2804,239 @@ function OnaylananTedavilerTab({ patientPublicId }: { patientPublicId: string })
           Onaylanan Tedaviler ({approvedItems.length})
         </h3>
         {selectedKeys.size > 0 && (
-          <Button size="sm" className="h-7 text-xs gap-1" onClick={() => setConsentDialogOpen(true)}>
-            <ClipboardCheck className="size-3" />
-            Onam Formu Oluştur ({selectedKeys.size})
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* Toplu tamamla — onamlı olanlar */}
+            {completableSelected.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                disabled={bulkCompleteMutation.isPending}
+                onClick={handleBulkComplete}
+              >
+                <CheckCheck className="size-3" />
+                Yapıldı ({completableSelected.length}
+                {blockedSelected.length > 0 && `/${selectedKeys.size}`})
+              </Button>
+            )}
+            {/* Onam formu oluştur */}
+            <Button size="sm" className="h-7 text-xs gap-1" onClick={() => setConsentDialogOpen(true)}>
+              <ClipboardCheck className="size-3" />
+              Onam Formu Oluştur ({selectedKeys.size})
+            </Button>
+          </div>
         )}
       </div>
 
-      <div className="border rounded-lg divide-y overflow-hidden">
-        {approvedItems.map(({ planName, planPublicId, item }) => {
-          const key = `${planPublicId}:${item.publicId}`;
-          const signedConsent = signedConsentMap[item.publicId];
-          const hasConsent = !!signedConsent;
+      <div className="border rounded-lg overflow-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b bg-muted/40 text-muted-foreground select-none">
+              <th className="w-8 px-3 py-2 text-center">
+                <input
+                  type="checkbox"
+                  className="size-3.5 rounded accent-primary"
+                  checked={approvedItems.length > 0 && approvedItems.every(({ planPublicId, item }) => selectedKeys.has(`${planPublicId}:${item.publicId}`))}
+                  onChange={(e) => {
+                    setSelectedKeys(e.target.checked
+                      ? new Set(approvedItems.map(({ planPublicId, item }) => `${planPublicId}:${item.publicId}`))
+                      : new Set()
+                    );
+                  }}
+                />
+              </th>
+              {([
+                ['tarih', 'Tarih'],
+                ['sube',  'Şube'],
+                ['hekim', 'Hekim'],
+                ['islem', 'İşlem'],
+                ['dis',   'Diş'],
+                ['fiyat', 'Fiyat'],
+              ] as [SortKey, string][]).map(([key, label]) => (
+                <th
+                  key={key}
+                  className="px-3 py-2 text-left font-medium cursor-pointer hover:text-foreground transition-colors whitespace-nowrap"
+                  onClick={() => toggleSort(key)}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    {label}
+                    {sortKey === key
+                      ? sortDir === 'asc'
+                        ? <ArrowUp className="size-3" />
+                        : <ArrowDown className="size-3" />
+                      : <ArrowUpDown className="size-3 opacity-30" />}
+                  </span>
+                </th>
+              ))}
+              <th className="px-3 py-2 w-[120px]" />
+              <th className="px-3 py-2 text-center font-medium w-8">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-default">
+                      <span className="font-medium">◎</span>
+                    </TooltipTrigger>
+                    <TooltipContent>Onaylayan</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {approvedItems.map(({ planPublicId, planDoctorName, planBranchName, item }) => {
+              const key = `${planPublicId}:${item.publicId}`;
+              const signedConsent   = signedConsentMap[item.publicId];
+              const hasConsent      = !!signedConsent;
+              const completeBlocked = !hasConsent && !canCompleteWithoutConsent;
+              const activeConsent   = activeConsentMap[item.publicId];
+              const treatingDoctor  = item.doctorName ?? planDoctorName;
+              const isForeign       = item.priceCurrency !== 'TRY';
+              const locationLabel   = item.toothNumber
+                ? `${item.toothNumber}${item.toothSurfaces ? ` (${item.toothSurfaces})` : ''}`
+                : item.bodyRegionCode ?? '—';
+              const approverInitials = item.approvedByName
+                ? item.approvedByName.trim().split(/\s+/).map(p => p[0].toUpperCase()).join('').slice(0, 2)
+                : null;
+              const netPrice = (isForeign ? item.priceBaseAmount : item.totalAmount)
+                .toLocaleString('tr-TR', { minimumFractionDigits: 2 });
+              const listPrice = item.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 });
 
-          return (
-            <div key={item.publicId} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-              <input
-                type="checkbox"
-                className="size-3.5 rounded accent-primary shrink-0"
-                checked={selectedKeys.has(key)}
-                onChange={(e) => {
-                  setSelectedKeys(prev => {
-                    const next = new Set(prev);
-                    e.target.checked ? next.add(key) : next.delete(key);
-                    return next;
-                  });
-                }}
-              />
-              <div className="flex-1 min-w-0">
-                <p className="font-medium truncate">
-                  {item.treatmentName ?? 'Bilinmeyen tedavi'}
-                  {item.treatmentCode && (
-                    <span className="ml-1.5 text-xs text-muted-foreground font-normal font-mono">[{item.treatmentCode}]</span>
-                  )}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {item.toothNumber ? `Diş ${item.toothNumber} · ` : ''}
-                  <span className="italic">{planName}</span>
-                  {' · '}
-                  {item.finalPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
-                  {hasConsent && (
-                    <span className="ml-1.5 text-emerald-600 font-medium">· Onam Alındı ({signedConsent.consentCode})</span>
-                  )}
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant={hasConsent ? 'default' : 'outline'}
-                className="h-7 text-xs shrink-0"
-                disabled={completeItemMutation.isPending}
-                onClick={() => completeItemMutation.mutate({ planId: planPublicId, itemId: item.publicId })}
-              >
-                <CheckCheck className="size-3 mr-1" />
-                Tamamlandı
-              </Button>
-            </div>
-          );
-        })}
+              return (
+                <tr key={item.publicId} className="hover:bg-muted/20 transition-colors">
+                  {/* Checkbox */}
+                  <td className="px-3 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      className="size-3.5 rounded accent-primary"
+                      checked={selectedKeys.has(key)}
+                      onChange={(e) => {
+                        setSelectedKeys(prev => {
+                          const next = new Set(prev);
+                          e.target.checked ? next.add(key) : next.delete(key);
+                          return next;
+                        });
+                      }}
+                    />
+                  </td>
+
+                  {/* Tarih */}
+                  <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                    {item.approvedAt ? format(new Date(item.approvedAt), 'dd MMM yy HH:mm', { locale: tr }) : '—'}
+                  </td>
+
+                  {/* Şube */}
+                  <td className="px-3 py-2 text-muted-foreground">{planBranchName ?? '—'}</td>
+
+                  {/* Hekim */}
+                  <td className="px-3 py-2 text-muted-foreground">{treatingDoctor ?? '—'}</td>
+
+                  {/* İşlem */}
+                  <td className="px-3 py-2 font-medium text-foreground max-w-[180px]">
+                    <span className="truncate block">{item.treatmentName ?? 'Bilinmeyen'}</span>
+                  </td>
+
+                  {/* Diş */}
+                  <td className="px-3 py-2 text-muted-foreground">{locationLabel}</td>
+
+                  {/* Fiyat — liste + indirim + net */}
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    <span className="font-medium text-foreground">{netPrice} ₺</span>
+                    {item.discountRate > 0 && (
+                      <div className="text-[10px] text-muted-foreground">
+                        {listPrice} {curSym(item.priceCurrency)} · -%{item.discountRate}
+                      </div>
+                    )}
+                    {isForeign && item.discountRate === 0 && (
+                      <div className="text-[10px] text-muted-foreground">
+                        {listPrice} {curSym(item.priceCurrency)}
+                      </div>
+                    )}
+                  </td>
+
+                  {/* Aksiyonlar */}
+                  <td className="px-2 py-2 w-[120px]">
+                    <div className="flex items-center justify-between">
+                      {/* Sol: koşullu onam ikonları */}
+                      <div className="flex items-center gap-0.5">
+                        {hasConsent && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger render={<button className="w-7 h-7 flex items-center justify-center rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-600 transition-colors" onClick={() => setViewingConsent(signedConsent)} />}>
+                                <ClipboardCheck className="size-3.5" />
+                              </TooltipTrigger>
+                              <TooltipContent>Onam alındı — {signedConsent.consentCode}</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                        {activeConsent && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger render={<button className="w-7 h-7 flex items-center justify-center rounded-full bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors" onClick={() => setActiveQrConsent(activeConsent)} />}>
+                                <QrCode className="size-3.5" />
+                              </TooltipTrigger>
+                              <TooltipContent>Geçerli onam — {activeConsent.consentCode}</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                        {(hasConsent || activeConsent) && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger render={<button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors" disabled={cancelConsentMutation.isPending} onClick={() => cancelConsentMutation.mutate((signedConsent ?? activeConsent)!.publicId)} />}>
+                                <XCircle className="size-3.5" />
+                              </TooltipTrigger>
+                              <TooltipContent side="top">Onamı iptal et</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
+
+                      {/* Sağ: her zaman görünen ikonlar */}
+                      <div className="flex items-center gap-0.5">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger render={<button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-muted text-muted-foreground transition-colors disabled:opacity-30" disabled={revertToPlannedMutation.isPending || hasConsent} onClick={() => revertToPlannedMutation.mutate({ planId: planPublicId, itemId: item.publicId })} />}>
+                              <RotateCcw className="size-3.5" />
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                              {hasConsent ? 'İmzalı onam var — önce onamı iptal edin' : 'Plana geri gönder'}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger render={<button className="w-7 h-7 flex items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-30 disabled:pointer-events-none" disabled={completeItemMutation.isPending || completeBlocked} onClick={() => completeItemMutation.mutate({ planId: planPublicId, itemId: item.publicId })} />}>
+                              <CheckCheck className="size-3.5" />
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                              {completeBlocked ? 'Onam alınmadan yapıldıya alınamaz' : 'Yapıldı'}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Onaylayan — initials + tooltip */}
+                  <td className="px-3 py-2 text-center">
+                    {approverInitials ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger className="inline-flex items-center justify-center size-6 rounded-full bg-muted text-foreground font-semibold text-[10px] cursor-default">
+                            {approverInitials}
+                          </TooltipTrigger>
+                          <TooltipContent>{item.approvedByName}</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : <span className="text-muted-foreground">—</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
+
+      {/* Toplam */}
+      <PlanItemsTotals items={approvedItems.map(r => r.item)} />
 
       {/* Onam formu seç dialog */}
       <Dialog open={consentDialogOpen} onOpenChange={setConsentDialogOpen}>
@@ -2632,6 +3099,123 @@ function OnaylananTedavilerTab({ patientPublicId }: { patientPublicId: string })
         </DialogContent>
       </Dialog>
 
+      {/* İmzalanmış onam detay dialog */}
+      <Dialog open={!!viewingConsent} onOpenChange={(o) => !o && setViewingConsent(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="inline-flex items-center justify-center size-6 rounded-full bg-emerald-100 text-emerald-600">
+                <ClipboardCheck className="size-3.5" />
+              </span>
+              İmzalanan Onam Formu
+            </DialogTitle>
+          </DialogHeader>
+          {viewingConsent && (
+            <div className="space-y-3 py-1">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <span className="text-muted-foreground">Form No</span>
+                <span className="font-mono font-medium">{viewingConsent.consentCode}</span>
+                <span className="text-muted-foreground">Şablon</span>
+                <span>{viewingConsent.formTemplateName}</span>
+                <span className="text-muted-foreground">İmzalayan</span>
+                <span>{viewingConsent.signerName ?? '—'}</span>
+                <span className="text-muted-foreground">İmzalandı</span>
+                <span>{viewingConsent.signedAt ? format(new Date(viewingConsent.signedAt), 'dd MMM yyyy HH:mm', { locale: tr }) : '—'}</span>
+              </div>
+              {(viewingConsent.qrToken || viewingConsent.smsToken) && (
+                <a
+                  href={`${window.location.origin}/consent/${viewingConsent.qrToken ?? viewingConsent.smsToken}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs text-primary hover:underline"
+                >
+                  <FileText className="size-3.5" />
+                  İmzalanan formu görüntüle
+                </a>
+              )}
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              className="gap-1.5"
+              onClick={async () => {
+                if (!viewingConsent) return;
+                try {
+                  const res = await consentInstancesApi.downloadPdf(viewingConsent.publicId);
+                  const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `onam-${viewingConsent.consentCode}.pdf`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                } catch {
+                  toast.error('PDF indirilemedi.');
+                }
+              }}
+            >
+              <FileDown className="size-3.5" />
+              PDF İndir
+            </Button>
+            <Button variant="outline" onClick={() => setViewingConsent(null)}>Kapat</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Aktif (bekleyen) onam QR dialog */}
+      {(() => {
+        const activeUrl = activeQrConsent
+          ? `${window.location.origin}/consent/${activeQrConsent.qrToken ?? activeQrConsent.smsToken}`
+          : '';
+        return (
+          <Dialog open={!!activeQrConsent} onOpenChange={(o) => !o && setActiveQrConsent(null)}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Geçerli Onam Linki</DialogTitle>
+              </DialogHeader>
+              {activeQrConsent && (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground text-center">
+                    Bu onam formu henüz imzalanmadı. Hastaya tekrar gösterebilirsiniz.
+                  </p>
+                  {activeQrConsent.qrToken && (
+                    <div className="flex justify-center">
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(activeUrl)}`}
+                        alt="QR Code"
+                        className="rounded border"
+                        width={180}
+                        height={180}
+                      />
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">Form: <strong>{activeQrConsent.consentCode}</strong></p>
+                    {activeQrConsent.qrTokenExpiresAt && (
+                      <p className="text-xs text-muted-foreground">
+                        Son geçerlilik: {format(new Date(activeQrConsent.qrTokenExpiresAt), 'dd MMM yyyy HH:mm', { locale: tr })}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 bg-muted rounded p-2 text-xs font-mono break-all">
+                    <span className="flex-1">{activeUrl}</span>
+                    <button
+                      className="shrink-0 p-1 hover:text-primary"
+                      onClick={() => { navigator.clipboard.writeText(activeUrl); toast.success('Link kopyalandı.'); }}
+                    >
+                      <Copy className="size-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setActiveQrConsent(null)}>Kapat</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
+
       {/* QR kodu göster dialog */}
       <Dialog open={qrDialogOpen} onOpenChange={setQrDialogOpen}>
         <DialogContent className="max-w-sm">
@@ -2678,13 +3262,193 @@ function OnaylananTedavilerTab({ patientPublicId }: { patientPublicId: string })
   );
 }
 
+// ─── Inline Kurum Katkısı input ──────────────────────────────────────────────
+
+function ContribInput({
+  initialValue,
+  refValue,
+  onSave,
+  isPending,
+}: {
+  initialValue: number | null;
+  /** PriceBaseAmount (TRY) — sadece uyarı için referans, engel değil */
+  refValue: number;
+  onSave: (amount: number | null) => void;
+  isPending?: boolean;
+}) {
+  const [val, setVal] = useState(initialValue != null ? String(initialValue) : '');
+
+  useEffect(() => {
+    setVal(initialValue != null ? String(initialValue) : '');
+  }, [initialValue]);
+
+  const parsed = val.trim() === '' ? null : parseFloat(val.replace(',', '.'));
+  const isInvalid = parsed !== null && (isNaN(parsed) || parsed < 0);
+  const isOverRef = parsed !== null && !isNaN(parsed) && parsed > refValue;
+
+  const commit = () => {
+    const trimmed = val.trim();
+    if (trimmed === '') { onSave(null); return; }
+    const n = parseFloat(trimmed.replace(',', '.'));
+    if (isNaN(n) || n < 0) { setVal(initialValue != null ? String(initialValue) : ''); return; }
+    // Ref değerini aşıyorsa kaydet ama uyarı göster (kur farkı olabilir)
+    onSave(n);
+  };
+
+  const borderClass = isInvalid
+    ? 'border-destructive text-destructive'
+    : isOverRef
+      ? 'border-amber-400 text-amber-700'
+      : parsed !== null && parsed > 0
+        ? 'border-blue-300 text-blue-700'
+        : 'text-muted-foreground';
+
+  const input = (
+    <input
+      type="number"
+      min={0}
+      step="0.01"
+      className={`w-[72px] text-right text-xs border rounded px-1.5 py-0.5 bg-background tabular-nums
+        focus:outline-none focus:ring-1 focus:ring-blue-400
+        ${isPending ? 'opacity-50' : ''}
+        ${borderClass}
+      `}
+      value={val}
+      placeholder="—"
+      disabled={isPending}
+      onChange={e => setVal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') { commit(); (e.target as HTMLInputElement).blur(); }
+        if (e.key === 'Escape') { setVal(initialValue != null ? String(initialValue) : ''); (e.target as HTMLInputElement).blur(); }
+      }}
+    />
+  );
+
+  if (!isOverRef) return input;
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger render={<span className="inline-flex" />}>
+          {input}
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-amber-700 bg-amber-50 border-amber-200 max-w-[200px] text-xs">
+          Plan fiyatını ({refValue.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺) aşıyor — kur farkı varsa normal.
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 // ─── Tab: Yapılan Tedaviler ───────────────────────────────────────────────────
 
 function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
+  const qc = useQueryClient();
+  const { hasPermission } = usePermissions();
+  const canRevert = hasPermission('treatment_plan.revert_completed');
+
   const { data: plans = [], isLoading } = useQuery<TreatmentPlan[]>({
     queryKey: ['treatment-plans', patientPublicId],
     queryFn: () => treatmentPlansApi.getByPatient(patientPublicId).then((r) => r.data),
     enabled: !!patientPublicId,
+  });
+
+  // Ödeme durumu — hasta cari hesabından item bazlı
+  const patientNumericId = plans[0]?.patientId;
+  const { data: accountData } = useQuery({
+    queryKey: ['patient-account', patientNumericId],
+    queryFn: () => patientAccountApi.getAccount(patientNumericId!).then((r) => r.data),
+    enabled: !!patientNumericId,
+    staleTime: 30_000,
+  });
+  // itemPublicId → { allocatedAmount, remainingAmount }
+  const paymentByItem = useMemo<Record<string, { allocated: number; remaining: number }>>(() => {
+    if (!accountData) return {};
+    return Object.fromEntries(
+      accountData.items
+        .filter(i => i.status === 'Completed')
+        .map(i => [i.itemPublicId, { allocated: i.allocatedAmount, remaining: i.remainingAmount }])
+    );
+  }, [accountData]);
+
+  // Onam verileri — onaylanan tab ile aynı mantık
+  const planPublicIds = plans.map(p => p.publicId);
+  const consentQueries = useQueries({
+    queries: planPublicIds.map(pid => ({
+      queryKey: ['consent-instances', pid],
+      queryFn: () => consentInstancesApi.getByPlan(pid).then(r => r.data),
+      enabled: !!pid,
+    })),
+  });
+
+  const { signedConsentMap, activeConsentMap } = useMemo<{
+    signedConsentMap: Record<string, ConsentInstanceResponse>;
+    activeConsentMap: Record<string, ConsentInstanceResponse>;
+  }>(() => {
+    const signed: Record<string, ConsentInstanceResponse> = {};
+    const active: Record<string, ConsentInstanceResponse> = {};
+    consentQueries.forEach(q => {
+      if (!q.data) return;
+      for (const ci of q.data) {
+        let ids: string[] = [];
+        try { ids = JSON.parse(ci.itemPublicIdsJson); } catch { ids = []; }
+        for (const id of ids) {
+          if (ci.status === 'İmzalandı') signed[id] = ci;
+          else if (ci.status === 'İmza Bekliyor') active[id] = ci;
+        }
+      }
+    });
+    return { signedConsentMap: signed, activeConsentMap: active };
+  }, [consentQueries]);
+
+  // Görüntülenen onam
+  const [viewingConsent, setViewingConsent] = useState<ConsentInstanceResponse | null>(null);
+
+  // Sıralama
+  type YSortKey = 'tarih' | 'sube' | 'hekim' | 'islem' | 'dis' | 'fiyat';
+  const [sortKey, setSortKey] = useState<YSortKey>('tarih');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const toggleSort = (key: YSortKey) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+
+  // Kurum katkısı inline save
+  const contribMutation = useMutation({
+    mutationFn: ({ planId, itemId, amount }: { planId: string; itemId: string; amount: number | null }) =>
+      treatmentPlansApi.setContribution(planId, itemId, amount),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['treatment-plans', patientPublicId] });
+    },
+    onError: () => toast.error('Kurum katkısı kaydedilemedi.'),
+  });
+
+  // Revert dialog
+  const [revertTarget, setRevertTarget] = useState<{ planPublicId: string; item: TreatmentPlan['items'][0] } | null>(null);
+  const [revertReason, setRevertReason]  = useState('');
+
+  const revertMutation = useMutation({
+    mutationFn: ({ planId, itemId, reason }: { planId: string; itemId: string; reason: string }) =>
+      treatmentPlansApi.revertItem(planId, itemId, reason),
+    onSuccess: () => {
+      toast.success('Tedavi "Onaylandı" durumuna geri alındı.');
+      qc.invalidateQueries({ queryKey: ['treatment-plans', patientPublicId] });
+      setRevertTarget(null);
+      setRevertReason('');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Geri alma başarısız.'),
+  });
+
+  const cancelConsentMutationYapilan = useMutation({
+    mutationFn: (consentPublicId: string) => consentInstancesApi.cancel(consentPublicId),
+    onSuccess: () => {
+      toast.success('Onam formu iptal edildi.');
+      planPublicIds.forEach(pid =>
+        qc.invalidateQueries({ queryKey: ['consent-instances', pid] })
+      );
+    },
+    onError: () => toast.error('İptal işlemi başarısız.'),
   });
 
   if (isLoading) return (
@@ -2693,18 +3457,28 @@ function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
     </div>
   );
 
-  // Tamamlanmış kalemler — tüm planlardan, completedAt'e göre sıralı
-  const completedItems: { planName: string; item: TreatmentPlan['items'][0] }[] = [];
+  // Tamamlanmış kalemler — sort uygulanmış
+  type CompletedRow = { planPublicId: string; planDoctorName: string | null; planBranchName: string | null; institutionPaymentModel: 1 | 2 | null; institutionName: string | null; item: TreatmentPlan['items'][0] };
+  const completedRaw: CompletedRow[] = [];
   for (const plan of plans) {
     for (const item of plan.items) {
-      if (item.status === 3) completedItems.push({ planName: plan.name, item });
+      if (item.status === 'Completed') completedRaw.push({ planPublicId: plan.publicId, planDoctorName: plan.doctorName ?? null, planBranchName: plan.branchName ?? null, institutionPaymentModel: plan.institutionPaymentModel, institutionName: plan.institutionName, item });
     }
   }
-  completedItems.sort((a, b) => {
-    const dateA = a.item.completedAt ?? a.item.createdAt;
-    const dateB = b.item.completedAt ?? b.item.createdAt;
-    return dateB.localeCompare(dateA);
+  const completedItems = [...completedRaw].sort((a, b) => {
+    let va = '', vb = '';
+    if (sortKey === 'tarih')  { va = a.item.completedAt ?? a.item.createdAt; vb = b.item.completedAt ?? b.item.createdAt; }
+    if (sortKey === 'sube')   { va = a.planBranchName ?? ''; vb = b.planBranchName ?? ''; }
+    if (sortKey === 'hekim')  { va = a.item.doctorName ?? a.planDoctorName ?? ''; vb = b.item.doctorName ?? b.planDoctorName ?? ''; }
+    if (sortKey === 'islem')  { va = a.item.treatmentName ?? ''; vb = b.item.treatmentName ?? ''; }
+    if (sortKey === 'dis')    { va = a.item.toothNumber ?? a.item.bodyRegionCode ?? ''; vb = b.item.toothNumber ?? b.item.bodyRegionCode ?? ''; }
+    // priceBaseAmount her zaman TRY bazında — para birimi farkı gözetilerek doğru sıralama
+    if (sortKey === 'fiyat')  { return sortDir === 'asc' ? a.item.priceBaseAmount - b.item.priceBaseAmount : b.item.priceBaseAmount - a.item.priceBaseAmount; }
+    return sortDir === 'asc' ? va.localeCompare(vb, 'tr') : vb.localeCompare(va, 'tr');
   });
+  // Kurum Payı / Hasta Payı sütunları: provizyon tipinde VEYA eski planda (null) contribution varsa göster
+  // Kurum/Hasta Payı kolonları sadece provizyon (=2) tipinde gösterilir
+  const hasProvisionRows = completedItems.some(r => r.institutionPaymentModel === 2);
 
   if (completedItems.length === 0) {
     return (
@@ -2719,35 +3493,370 @@ function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
       <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
         Yapılan Tedaviler ({completedItems.length})
       </h3>
-      <div className="border rounded-lg divide-y overflow-hidden">
-        {completedItems.map(({ planName, item }) => (
-          <div key={item.publicId} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-            <Check className="size-4 text-emerald-500 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="font-medium truncate">
-                {item.treatmentName ?? 'Bilinmeyen tedavi'}
-                {item.treatmentCode && (
-                  <span className="ml-1.5 text-xs text-muted-foreground font-normal font-mono">[{item.treatmentCode}]</span>
-                )}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {item.toothNumber ? `Diş ${item.toothNumber} · ` : ''}
-                <span className="italic">{planName}</span>
-                {' · '}
-                {item.finalPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
-                {item.completedAt && (
-                  <span className="ml-1">
-                    · {format(new Date(item.completedAt), 'dd MMM yyyy', { locale: tr })}
+
+      <div className="border rounded-lg overflow-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b bg-muted/40 text-muted-foreground select-none">
+              {([
+                ['tarih', 'Tarih'],
+                ['sube',  'Şube'],
+                ['hekim', 'Hekim'],
+                ['islem', 'İşlem'],
+                ['dis',   'Diş'],
+                ['fiyat', 'Fiyat'],
+              ] as [YSortKey, string][]).map(([key, label]) => (
+                <th
+                  key={key}
+                  className={cn('px-3 py-2 font-medium cursor-pointer hover:text-foreground transition-colors whitespace-nowrap', key === 'fiyat' ? 'text-right' : 'text-left')}
+                  onClick={() => toggleSort(key)}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    {label}
+                    {sortKey === key
+                      ? sortDir === 'asc' ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />
+                      : <ArrowUpDown className="size-3 opacity-30" />}
                   </span>
-                )}
-              </p>
-            </div>
-            <span className="text-xs px-1.5 py-0.5 rounded border bg-gray-100 text-gray-600 border-gray-200 shrink-0">
-              Tamamlandı
-            </span>
-          </div>
-        ))}
+                </th>
+              ))}
+              {hasProvisionRows && <th className="px-3 py-2 text-right font-medium whitespace-nowrap text-muted-foreground w-[80px]">Kurum Payı</th>}
+              {hasProvisionRows && <th className="px-3 py-2 text-right font-medium whitespace-nowrap text-muted-foreground w-[80px]">Hasta Payı</th>}
+              <th className="px-3 py-2 text-right font-medium whitespace-nowrap text-muted-foreground w-[90px]">Ödeme</th>
+              <th className="px-2 py-2 w-[90px]" />
+              <th className="px-3 py-2 text-center font-medium w-8">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger className="cursor-default"><span>◎</span></TooltipTrigger>
+                    <TooltipContent>Onaylayan</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {completedItems.map(({ planPublicId, planDoctorName, planBranchName, institutionPaymentModel, institutionName, item }) => {
+              const signedConsent  = signedConsentMap[item.publicId];
+              const activeConsent  = activeConsentMap[item.publicId];
+              const hasConsent     = !!signedConsent;
+              const treatingDoctor = item.doctorName ?? planDoctorName;
+              const isForeign      = item.priceCurrency !== 'TRY';
+              const locationLabel  = item.toothNumber
+                ? `${item.toothNumber}${item.toothSurfaces ? ` (${item.toothSurfaces})` : ''}`
+                : item.bodyRegionCode ?? '—';
+              const approverInitials = item.approvedByName
+                ? item.approvedByName.trim().split(/\s+/).map(p => p[0].toUpperCase()).join('').slice(0, 2)
+                : null;
+              const netPrice  = (isForeign ? item.priceBaseAmount : item.totalAmount).toLocaleString('tr-TR', { minimumFractionDigits: 2 });
+              const listPrice = item.unitPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2 });
+
+              return (
+                <tr key={item.publicId} className="hover:bg-muted/20 transition-colors">
+                  {/* Tarih */}
+                  <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                    {item.completedAt ? format(new Date(item.completedAt), 'dd MMM yy HH:mm', { locale: tr }) : '—'}
+                  </td>
+
+                  {/* Şube */}
+                  <td className="px-3 py-2 text-muted-foreground">{planBranchName ?? '—'}</td>
+
+                  {/* Hekim */}
+                  <td className="px-3 py-2 text-muted-foreground">{treatingDoctor ?? '—'}</td>
+
+                  {/* İşlem */}
+                  <td className="px-3 py-2 font-medium text-foreground max-w-[180px]">
+                    <span className="truncate block">{item.treatmentName ?? 'Bilinmeyen'}</span>
+                  </td>
+
+                  {/* Diş */}
+                  <td className="px-3 py-2 text-muted-foreground">{locationLabel}</td>
+
+                  {/* Fiyat */}
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    <span className="font-medium text-foreground">{netPrice} ₺</span>
+                    {isForeign && (
+                      <div className="text-[10px] text-muted-foreground">
+                        {listPrice} {curSym(item.priceCurrency)}
+                        {item.discountRate > 0 && ` · -%${item.discountRate}`}
+                      </div>
+                    )}
+                    {isForeign && item.rateLockedValue && (
+                      <div className="text-[10px] text-blue-500 tabular-nums">
+                        {item.rateLockedValue.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺/{curSym(item.priceCurrency)}
+                        {item.rateLockType === 2 && ' · yapıldı anı'}
+                      </div>
+                    )}
+                    {!isForeign && item.discountRate > 0 && (
+                      <div className="text-[10px] text-muted-foreground">{listPrice} ₺ · -%{item.discountRate}</div>
+                    )}
+                  </td>
+
+                  {/* Kurum Payı — provizyon veya bilinmeyen (eski plan) satırlarda input, açıkça indirim ise — */}
+                  {hasProvisionRows && (
+                    <td className="px-2 py-1.5 text-right">
+                      {institutionPaymentModel !== 1 ? (
+                        <ContribInput
+                          key={`${item.publicId}:${item.institutionContributionAmount}`}
+                          initialValue={item.institutionContributionAmount}
+                          refValue={isForeign ? item.priceBaseAmount : item.totalAmount}
+                          isPending={contribMutation.isPending}
+                          onSave={(amount) => contribMutation.mutate({ planId: planPublicId, itemId: item.publicId, amount })}
+                        />
+                      ) : (
+                        <span className="text-muted-foreground text-[10px]">—</span>
+                      )}
+                    </td>
+                  )}
+
+                  {/* Hasta Payı — sadece provizyon tipinde göster */}
+                  {hasProvisionRows && (
+                    <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                      {institutionPaymentModel !== 1 && item.institutionContributionAmount != null && item.institutionContributionAmount > 0
+                        ? <span className="font-semibold text-foreground tabular-nums">{item.patientAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</span>
+                        : <span className="text-muted-foreground text-[10px]">—</span>
+                      }
+                    </td>
+                  )}
+
+                  {/* Ödeme durumu */}
+                  {(() => {
+                    const pay = paymentByItem[item.publicId];
+                    if (!pay) return <td className="px-3 py-2 text-right"><span className="text-muted-foreground text-[10px]">—</span></td>;
+                    if (pay.remaining <= 0) {
+                      return (
+                        <td className="px-3 py-2 text-right">
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <span className="inline-flex items-center gap-1 text-emerald-600 text-[11px] font-medium">
+                                  <Check className="size-3" />Ödendi
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {pay.allocated.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL tahsil edildi
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </td>
+                      );
+                    }
+                    return (
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <span className="text-amber-600 text-[11px] font-medium tabular-nums">
+                                {pay.remaining.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺ kalan
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {pay.allocated > 0
+                                ? `${pay.allocated.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL ödendi`
+                                : 'Henüz ödeme yapılmadı'}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </td>
+                    );
+                  })()}
+
+                  {/* Aksiyonlar */}
+                  <td className="px-2 py-2 w-[90px]">
+                    <div className="flex items-center justify-between">
+                      {/* Sol: onam ikonları */}
+                      <div className="flex items-center gap-0.5">
+                        {hasConsent && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger render={<button className="w-7 h-7 flex items-center justify-center rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-600 transition-colors" onClick={() => setViewingConsent(signedConsent)} />}>
+                                <ClipboardCheck className="size-3.5" />
+                              </TooltipTrigger>
+                              <TooltipContent>Onam alındı — {signedConsent.consentCode}</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                        {activeConsent && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger render={<button className="w-7 h-7 flex items-center justify-center rounded-full bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors" onClick={() => { const url = `${window.location.origin}/consent/${activeConsent.qrToken ?? activeConsent.smsToken}`; navigator.clipboard.writeText(url); toast.success("Link kopyalandı."); }} />}>
+                                <QrCode className="size-3.5" />
+                              </TooltipTrigger>
+                              <TooltipContent>Geçerli onam — {activeConsent.consentCode}</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                        {(hasConsent || activeConsent) && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger render={<button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors" disabled={cancelConsentMutationYapilan.isPending} onClick={() => cancelConsentMutationYapilan.mutate((signedConsent ?? activeConsent)!.publicId)} />}>
+                                <XCircle className="size-3.5" />
+                              </TooltipTrigger>
+                              <TooltipContent side="top">Onamı iptal et</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
+
+                      {/* Sağ: kurum + geri al */}
+                      <div className="flex items-center gap-0.5">
+                        {institutionName && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger className="w-7 h-7 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-default">
+                                <Building2 className="size-3.5" />
+                              </TooltipTrigger>
+                              <TooltipContent side="top">{institutionName}</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                        {canRevert && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger render={<button className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-amber-50 text-amber-500 transition-colors" onClick={() => { setRevertTarget({ planPublicId, item }); setRevertReason(''); }} />}>
+                                <RotateCcw className="size-3.5" />
+                              </TooltipTrigger>
+                              <TooltipContent side="top">Onaylanana geri al</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Onaylayan */}
+                  <td className="px-3 py-2 text-center">
+                    {approverInitials ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger className="inline-flex items-center justify-center size-6 rounded-full bg-muted text-foreground font-semibold text-[10px] cursor-default">
+                            {approverInitials}
+                          </TooltipTrigger>
+                          <TooltipContent>{item.approvedByName}</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : <span className="text-muted-foreground">—</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
+
+      {/* Toplam */}
+      <PlanItemsTotals items={completedItems.map(r => r.item)} />
+
+      {/* Onam detay dialog */}
+      {viewingConsent && (
+        <Dialog open={!!viewingConsent} onOpenChange={() => setViewingConsent(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Onam Formu — {viewingConsent.consentCode}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-2 text-sm">
+              <p><span className="text-muted-foreground">Şablon:</span> {viewingConsent.formTemplateName}</p>
+              <p><span className="text-muted-foreground">İmzalayan:</span> {viewingConsent.signerName ?? '—'}</p>
+              <p><span className="text-muted-foreground">İmzalandı:</span> {viewingConsent.signedAt ? format(new Date(viewingConsent.signedAt), 'dd MMM yyyy HH:mm', { locale: tr }) : '—'}</p>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    const res = await consentInstancesApi.downloadPdf(viewingConsent.publicId);
+                    const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+                    const a = document.createElement('a'); a.href = url; a.download = `${viewingConsent.consentCode}.pdf`; a.click();
+                    URL.revokeObjectURL(url);
+                  } catch { toast.error('PDF indirilemedi.'); }
+                }}
+              >
+                <FileDown className="size-3.5 mr-1" />
+                PDF İndir
+              </Button>
+              <Button variant="outline" onClick={() => setViewingConsent(null)}>Kapat</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Onaylanana geri al dialog */}
+      <Dialog open={!!revertTarget} onOpenChange={o => { if (!o) { setRevertTarget(null); setRevertReason(''); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RotateCcw className="size-4 text-amber-500" />
+              Tedaviyi Onaylanana Geri Al
+            </DialogTitle>
+          </DialogHeader>
+
+          {revertTarget && (
+            <div className="space-y-4 py-2">
+              {/* Tedavi bilgisi */}
+              <div className="rounded-lg bg-muted/50 border px-3 py-2 text-sm">
+                <p className="font-medium">{revertTarget.item.treatmentName ?? 'Bilinmeyen tedavi'}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {revertTarget.item.toothNumber ? `Diş ${revertTarget.item.toothNumber} · ` : ''}
+                  {revertTarget.planName}
+                  {revertTarget.item.completedAt && ` · Yapıldı: ${format(new Date(revertTarget.item.completedAt), 'dd MMM yyyy', { locale: tr })}`}
+                </p>
+              </div>
+
+              {/* Kurallar / uyarılar */}
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 space-y-1">
+                <p className="font-semibold">Geri alma kuralları:</p>
+                <ul className="list-disc list-inside space-y-0.5">
+                  <li>Tedaviye ödeme tahsisi yapılmışsa geri alınamaz.</li>
+                  <li>İmzalı onam formu geçerliliğini korur; gerekirse ayrıca iptal edilmelidir.</li>
+                  <li>Geri alma nedeni zorunludur ve kayıt altına alınır.</li>
+                </ul>
+              </div>
+
+              {/* Onam uyarısı */}
+              {signedConsentMap[revertTarget.item.publicId] && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                  <span className="font-medium">Onam formu mevcut:</span>{' '}
+                  {signedConsentMap[revertTarget.item.publicId].consentCode} — İmzalı onam formu otomatik iptal edilmez.
+                </div>
+              )}
+
+              {/* Neden */}
+              <div className="space-y-1.5">
+                <Label htmlFor="revert-reason">
+                  Geri alma nedeni <span className="text-destructive">*</span>
+                </Label>
+                <Textarea
+                  id="revert-reason"
+                  rows={3}
+                  value={revertReason}
+                  onChange={e => setRevertReason(e.target.value)}
+                  placeholder="Örn: Hasta tedaviyi yaptırmaktan vazgeçti, tekrar değerlendirme yapılacak..."
+                />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRevertTarget(null); setRevertReason(''); }}>
+              İptal
+            </Button>
+            <Button
+              variant="default"
+              className="bg-amber-500 hover:bg-amber-600 text-white"
+              disabled={!revertReason.trim() || revertMutation.isPending}
+              onClick={() => {
+                if (!revertTarget) return;
+                revertMutation.mutate({
+                  planId: revertTarget.planPublicId,
+                  itemId: revertTarget.item.publicId,
+                  reason: revertReason,
+                });
+              }}
+            >
+              {revertMutation.isPending ? 'Geri alınıyor...' : 'Onaylanana Geri Al'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -3142,30 +4251,54 @@ function CloseProtocolDialog({
   isPending,
 }: {
   protocol: DoctorProtocol;
-  onConfirm: () => void;
+  onConfirm: (notify: boolean, message: string) => void;
   onCancel: () => void;
   isPending: boolean;
 }) {
+  const [notify,  setNotify]  = useState(false);
+  const [message, setMessage] = useState('');
+
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onCancel(); }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>Protokolü Kapat</DialogTitle>
         </DialogHeader>
-        <div className="py-2">
+        <div className="py-2 space-y-4">
           <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
             <span className="font-medium">{protocol.patientName}</span>
-            <span className="text-muted-foreground ml-2 text-xs">{protocol.protocolNo}</span>
+            {protocol.protocolNo && (
+              <span className="text-muted-foreground ml-2 text-xs">{protocol.protocolNo}</span>
+            )}
           </div>
-          <p className="text-sm text-muted-foreground mt-3">
-            Protokol kapatılacak. Seçilen ICD tanıları kaydedilmiş durumda, tekrar girmenize gerek yok.
+          <p className="text-sm text-muted-foreground">
+            Protokol kapatılacak. ICD tanıları kaydedilmiş durumda.
           </p>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                className="size-4 rounded accent-primary"
+                checked={notify}
+                onChange={e => setNotify(e.target.checked)}
+              />
+              <span className="text-sm">Resepsiyona bildir</span>
+            </label>
+            {notify && (
+              <Textarea
+                className="text-sm min-h-[72px]"
+                placeholder="Resepsiyona iletmek istediğiniz not... (isteğe bağlı)"
+                value={message}
+                onChange={e => setMessage(e.target.value)}
+              />
+            )}
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onCancel} disabled={isPending}>
             İptal
           </Button>
-          <Button onClick={onConfirm} disabled={isPending}>
+          <Button onClick={() => onConfirm(notify, message)} disabled={isPending}>
             {isPending ? 'Kaydediliyor...' : 'Protokolü Kapat'}
           </Button>
         </DialogFooter>
@@ -3189,6 +4322,15 @@ export function ExaminationPage() {
   const protocolNo       = searchParams.get('no') ?? '';
   const patientPublicId  = searchParams.get('patientPublicId') ?? '';
 
+  // Fetch real protocol status so we can hide "Kapat" for already-closed protocols
+  const { data: protocolDetail } = useQuery({
+    queryKey: ['protocol-detail', publicId],
+    queryFn:  () => protocolsApi.getDetail(publicId!).then((r) => r.data),
+    enabled:  !!publicId,
+    staleTime: 30_000,
+  });
+  const isProtocolOpen = protocolDetail ? protocolDetail.status === 1 : true;
+
   // Placeholder protocol object from URL params
   const protocol: DoctorProtocol | null = patientPublicId ? {
     publicId: publicId ?? '',
@@ -3205,15 +4347,25 @@ export function ExaminationPage() {
   } : null;
 
   const completeMutation = useMutation({
-    mutationFn: () => protocolsApi.complete(publicId!),
+    mutationFn: async ({ notify, message }: { notify: boolean; message: string }) => {
+      await protocolsApi.complete(publicId!);
+      if (notify) {
+        const defaultMsg = `${patientName}${protocolNo ? ` (${protocolNo})` : ''} protokolü kapatıldı.`;
+        await notificationsApi.sendDoctorMessage({
+          title:   'Protokol Kapatıldı',
+          message: message.trim() || defaultMsg,
+        });
+      }
+    },
     onSuccess: () => {
       toast.success('Protokol kapatıldı.');
       qc.invalidateQueries({ queryKey: ['doctor-protocols'] });
       qc.invalidateQueries({ queryKey: ['doctor-appointments'] });
       navigate('/doctor');
     },
-    onError: () => {
-      toast.error('Protokol kapatılamadı.');
+    onError: (err: unknown) => {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(detail ?? 'Protokol kapatılamadı.');
     },
   });
 
@@ -3257,16 +4409,24 @@ export function ExaminationPage() {
           )}
         </div>
 
-        {/* Close protocol */}
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 shrink-0"
-          onClick={() => setCloseOpen(true)}
-        >
-          <CheckCheck className="size-4" />
-          Protokolü Kapat
-        </Button>
+        {/* Close protocol — only shown while protocol is still open */}
+        {isProtocolOpen && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 shrink-0"
+            onClick={() => setCloseOpen(true)}
+          >
+            <CheckCheck className="size-4" />
+            Protokolü Kapat
+          </Button>
+        )}
+        {!isProtocolOpen && protocolDetail && (
+          <Badge variant="outline" className="gap-1 border-slate-300 text-slate-500 shrink-0">
+            <CheckCheck className="size-3" />
+            {protocolDetail.statusName}
+          </Badge>
+        )}
       </div>
 
       {/* ── Tab bar ────────────────────────────────────────────── */}
@@ -3275,8 +4435,8 @@ export function ExaminationPage() {
         onValueChange={setActiveTab}
         className="flex flex-col flex-1 min-h-0"
       >
-        <div className="border-b px-4 bg-background shrink-0">
-          <TabsList className="h-10 bg-transparent gap-0 p-0 rounded-none">
+        <div className="border-b bg-background shrink-0 overflow-x-auto">
+          <TabsList className="h-10 bg-transparent gap-0 p-0 rounded-none w-max min-w-full">
             {TAB_ITEMS.map((tab) => {
               const Icon = tab.icon;
               return (
@@ -3386,7 +4546,7 @@ export function ExaminationPage() {
       {closeOpen && protocol && (
         <CloseProtocolDialog
           protocol={protocol}
-          onConfirm={() => completeMutation.mutate()}
+          onConfirm={(notify, message) => completeMutation.mutate({ notify, message })}
           onCancel={() => setCloseOpen(false)}
           isPending={completeMutation.isPending}
         />
