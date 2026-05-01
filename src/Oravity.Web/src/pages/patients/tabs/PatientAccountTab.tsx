@@ -6,6 +6,7 @@ import { CreditCard, Wallet, AlertCircle, CheckCircle2, Clock, ArrowRight, Chevr
 import { toast } from 'sonner';
 import { patientAccountApi } from '@/api/patientAccount';
 import type { PatientAccountPayment, PatientAccountItem } from '@/api/patientAccount';
+import { exchangeRatesApi } from '@/api/exchangeRates';
 import { patientInvoicesApi } from '@/api/patientInvoices';
 import type { InvoiceRecipientType, PatientInvoice } from '@/api/patientInvoices';
 import { settingsApi } from '@/api/settings';
@@ -1144,6 +1145,7 @@ function CollectPaymentDialog({
   const [amount,        setAmount]        = useState(remainingDebt > 0 ? String(remainingDebt.toFixed(2)) : '');
   const [currency,      setCurrency]      = useState('TRY');
   const [exchangeRate,  setExchangeRate]  = useState('1');
+  const [rateEdited,    setRateEdited]    = useState(false);
   const [method,        setMethod]        = useState('1');
   const [date,          setDate]          = useState(today);
   const [notes,         setNotes]         = useState('');
@@ -1153,6 +1155,23 @@ function CollectPaymentDialog({
   const methodNum = parseInt(method, 10);
   const showPos  = methodNum === 2 || methodNum === 4; // Kredi Kartı veya Taksit
   const showBank = methodNum === 3;                     // Havale/EFT
+  const isFx     = currency !== 'TRY';
+
+  // Otomatik kur çekme — döviz seçilince & tarih değişince
+  const { data: fxData, isFetching: fxLoading } = useQuery({
+    queryKey: ['exchange-rate', currency, date],
+    queryFn: () => exchangeRatesApi.getCurrent(currency, date).then(r => r.data),
+    enabled: isFx,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Kullanıcı manuel override yapmadıysa otomatik doldur
+  useEffect(() => {
+    if (!isFx) { setExchangeRate('1'); setRateEdited(false); return; }
+    if (fxData && !rateEdited) {
+      setExchangeRate(fxData.rate.toFixed(4));
+    }
+  }, [fxData, isFx, rateEdited]);
 
   const { data: posTerminals } = useQuery({
     queryKey: ['pos-terminals'],
@@ -1166,7 +1185,6 @@ function CollectPaymentDialog({
     enabled: showBank,
   });
 
-  const isFx      = currency !== 'TRY';
   const amountNum = parseFloat(amount)       || 0;
   const rateNum   = parseFloat(exchangeRate) || 1;
   const tryEquiv  = isFx ? amountNum * rateNum : amountNum;
@@ -1280,6 +1298,7 @@ function CollectPaymentDialog({
               </div>
               <Select value={currency} onValueChange={v => {
                 setCurrency(v);
+                setRateEdited(false);
                 if (v === 'TRY') setExchangeRate('1');
               }}>
                 <SelectTrigger className="w-28">
@@ -1297,9 +1316,24 @@ function CollectPaymentDialog({
           {/* Kur (sadece döviz seçilince) */}
           {isFx && (
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">
-                Kur <span className="text-muted-foreground font-normal">({currency}/TRY)</span>
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">
+                  Kur <span className="text-muted-foreground font-normal">({currency}/TRY)</span>
+                </label>
+                {fxLoading ? (
+                  <span className="text-xs text-muted-foreground animate-pulse">TCMB kuru alınıyor…</span>
+                ) : fxData && !rateEdited ? (
+                  <span className="text-xs text-muted-foreground">TCMB · {fxData.rateDate}</span>
+                ) : rateEdited ? (
+                  <button
+                    type="button"
+                    className="text-xs text-primary underline-offset-2 hover:underline"
+                    onClick={() => { setRateEdited(false); if (fxData) setExchangeRate(fxData.rate.toFixed(4)); }}
+                  >
+                    TCMB kuruna dön
+                  </button>
+                ) : null}
+              </div>
               <div className="flex items-center gap-2">
                 <Input
                   type="number"
@@ -1307,8 +1341,9 @@ function CollectPaymentDialog({
                   min="0.0001"
                   placeholder="38.50"
                   value={exchangeRate}
-                  onChange={e => setExchangeRate(e.target.value)}
+                  onChange={e => { setExchangeRate(e.target.value); setRateEdited(true); }}
                   className="flex-1"
+                  disabled={fxLoading}
                 />
                 {tryEquiv > 0 && (
                   <div className="text-sm text-muted-foreground whitespace-nowrap">
