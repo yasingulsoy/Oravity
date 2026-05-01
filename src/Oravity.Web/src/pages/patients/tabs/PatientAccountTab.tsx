@@ -1271,9 +1271,18 @@ function CollectPaymentDialog({
 
         <div className="space-y-4 py-2">
           {remainingDebt > 0 && (
-            <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm">
-              <span className="text-muted-foreground">Kalan borç: </span>
+            <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm flex items-center gap-2 flex-wrap">
+              <span className="text-muted-foreground">Kalan borç:</span>
               <span className="font-semibold text-destructive">{fmt(remainingDebt)}</span>
+              {isFx && rateNum > 0 && (
+                <>
+                  <span className="text-muted-foreground">≈</span>
+                  <span className="font-semibold text-destructive">
+                    {curSym}{(remainingDebt / rateNum).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-xs text-muted-foreground">({currency})</span>
+                </>
+              )}
             </div>
           )}
 
