@@ -7,13 +7,21 @@ public record InstitutionInvoiceResponse(
     long Id,
     long PatientId,
     string? PatientName,
+    string? PatientTcNumber,   // Çözülmüş TC Kimlik No
     long InstitutionId,
     string InstitutionName,
+    string? InstitutionTaxNumber,
+    string? InstitutionTaxOffice,
+    string? InstitutionAddress,
+    string? InstitutionCity,
     long BranchId,
     string InvoiceNo,
     DateOnly InvoiceDate,
     DateOnly DueDate,
-    decimal Amount,
+    decimal Amount,           // Matrah (KDV hariç)
+    decimal KdvAmount,
+    decimal NetPayableAmount, // Kurumun ödeyeceği net tutar (brüt - tevkifat)
+    decimal WithholdingAmount,
     string Currency,
     InstitutionInvoiceStatus Status,
     string StatusLabel,
@@ -42,6 +50,7 @@ public record InstitutionPaymentResponse(
     InstitutionPaymentMethod Method,
     string MethodLabel,
     string? ReferenceNo,
+    string? BankAccountPublicId,
     string? Notes,
     bool IsCancelled,
     DateTime CreatedAt
@@ -51,14 +60,22 @@ public static class InstitutionInvoiceMappings
 {
     public static InstitutionInvoiceResponse ToResponse(
         Oravity.SharedKernel.Entities.InstitutionInvoice i,
-        string? patientName, string institutionName)
+        string? patientName,
+        string institutionName,
+        string? patientTcNumber = null,
+        string? institutionTaxNumber = null,
+        string? institutionTaxOffice = null,
+        string? institutionAddress = null,
+        string? institutionCity = null)
         => new(
-            i.PublicId, i.Id, i.PatientId, patientName,
-            i.InstitutionId, institutionName, i.BranchId,
+            i.PublicId, i.Id, i.PatientId, patientName, patientTcNumber,
+            i.InstitutionId, institutionName,
+            institutionTaxNumber, institutionTaxOffice, institutionAddress, institutionCity,
+            i.BranchId,
             i.InvoiceNo, i.InvoiceDate, i.DueDate,
-            i.Amount, i.Currency,
+            i.Amount, i.KdvAmount, i.NetPayableAmount, i.WithholdingAmount, i.Currency,
             i.Status, StatusLabel(i.Status),
-            i.PaidAmount, Math.Max(0, i.Amount - i.PaidAmount),
+            i.PaidAmount, Math.Max(0, i.NetPayableAmount - i.PaidAmount),
             i.PaymentDate, i.PaymentReferenceNo,
             i.TreatmentItemIdsJson,
             i.FollowUpStatus, FollowUpLabel(i.FollowUpStatus),
@@ -70,7 +87,7 @@ public static class InstitutionInvoiceMappings
         => new(p.PublicId, p.Id, p.InvoiceId, p.PatientId, p.InstitutionId,
                p.Amount, p.Currency, p.PaymentDate,
                p.Method, MethodLabel(p.Method),
-               p.ReferenceNo, p.Notes, p.IsCancelled, p.CreatedAt);
+               p.ReferenceNo, p.BankAccountPublicId, p.Notes, p.IsCancelled, p.CreatedAt);
 
     public static string StatusLabel(InstitutionInvoiceStatus s) => s switch
     {
@@ -80,6 +97,7 @@ public static class InstitutionInvoiceMappings
         InstitutionInvoiceStatus.Rejected      => "Reddedildi",
         InstitutionInvoiceStatus.Overdue       => "Vadesi Geçti",
         InstitutionInvoiceStatus.InFollowUp    => "Takipte",
+        InstitutionInvoiceStatus.Cancelled     => "İptal Edildi",
         _ => s.ToString()
     };
 

@@ -10,6 +10,7 @@ import {
   FileText, Search, Trash2, History, Lock, X,
   Stethoscope, Plus, ChevronDown, ChevronRight, CheckCircle2, Megaphone, Info, FileDown,
   Pencil, RotateCcw, QrCode, ClipboardCheck, Copy, XCircle, ArrowUpDown, ArrowUp, ArrowDown, Building2,
+  LogOut,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -1501,8 +1502,8 @@ function PlanBuilderPanel({
         isOss: patientIsOss,
         campaignCode: selectedCampaignCode || undefined,
       }).then(r => r.data),
-      staleTime: 5 * 60 * 1000,
-      enabled: open && catalog.length > 0,
+      staleTime: 0,
+      enabled: open && catalog.length > 0 && patientData !== undefined,
     })),
   });
 
@@ -1674,6 +1675,7 @@ function PlanBuilderPanel({
           patientPublicId,
           doctorPublicId,
           name: planName.trim(),
+          institutionId: patientInstitutionId,
         });
         const planId = planRes.data.publicId;
         for (const item of draftItems) {
@@ -2200,6 +2202,7 @@ function PlanBuilderPanel({
 function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
   const qc = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
+  const { hasPermission } = usePermissions();
 
   const { data: plans = [], isLoading } = useQuery<TreatmentPlan[]>({
     queryKey: ['treatment-plans', patientPublicId],
@@ -2235,7 +2238,7 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
       });
       invalidate();
     },
-    onError: () => toast.error('Plan silinemedi.'),
+    onError: (e: any) => { if (!e._403handled) toast.error('Plan silinemedi.'); },
   });
 
   const statusColor = (status: string) => {
@@ -2293,9 +2296,10 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
       {!panelOpen && plans.map((plan) => {
         const isExpanded  = expandedPlan === plan.publicId;
         const isDraft     = plan.status === 'Draft';
-        const isCompleted = plan.status === 'Completed';
-        const isCancelled = plan.status === 'Cancelled';
-        const canModify   = !isCompleted && !isCancelled;
+        const isCompleted   = plan.status === 'Completed';
+        const isCancelled   = plan.status === 'Cancelled';
+        const canEditPlan   = !isCompleted && !isCancelled && hasPermission('treatment_plan:edit');
+        const canDeletePlan = !isCompleted && !isCancelled && hasPermission('treatment_plan:delete');
         const total       = plan.items.reduce((s, i) => s + (i.priceCurrency === 'TRY' ? i.totalAmount : i.priceBaseAmount), 0);
         const hasListDisc = plan.items.some(i => i.listPrice != null && i.listPrice > i.totalAmount);
         const catalogTotal = hasListDisc
@@ -2329,7 +2333,7 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
               </span>
 
               <span className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                {canModify && (
+                {canEditPlan && (
                   <button
                     className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
                     title="Düzenle"
@@ -2338,7 +2342,7 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
                     <Pencil className="size-3.5" />
                   </button>
                 )}
-                {canModify && (
+                {canDeletePlan && (
                   <button
                     className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-muted"
                     title={isDraft ? 'Sil' : 'İptal et'}
@@ -2927,7 +2931,12 @@ function OnaylananTedavilerTab({ patientPublicId }: { patientPublicId: string })
                   <td className="px-3 py-2 text-muted-foreground">{planBranchName ?? '—'}</td>
 
                   {/* Hekim */}
-                  <td className="px-3 py-2 text-muted-foreground">{treatingDoctor ?? '—'}</td>
+                  <td className="px-3 py-2">
+                    <div className="text-foreground">{item.doctorName ?? planDoctorName ?? '—'}</div>
+                    {planDoctorName && item.doctorName && item.doctorName !== planDoctorName && (
+                      <div className="text-[10px] text-muted-foreground">Planlayan: {planDoctorName}</div>
+                    )}
+                  </td>
 
                   {/* İşlem */}
                   <td className="px-3 py-2 font-medium text-foreground max-w-[180px]">
@@ -3420,6 +3429,7 @@ function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
       treatmentPlansApi.setContribution(planId, itemId, amount),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['treatment-plans', patientPublicId] });
+      qc.invalidateQueries({ queryKey: ['patient-account', patientNumericId] });
     },
     onError: () => toast.error('Kurum katkısı kaydedilemedi.'),
   });
@@ -3560,7 +3570,12 @@ function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
                   <td className="px-3 py-2 text-muted-foreground">{planBranchName ?? '—'}</td>
 
                   {/* Hekim */}
-                  <td className="px-3 py-2 text-muted-foreground">{treatingDoctor ?? '—'}</td>
+                  <td className="px-3 py-2">
+                    <div className="text-foreground">{treatingDoctor ?? planDoctorName ?? '—'}</div>
+                    {planDoctorName && treatingDoctor && treatingDoctor !== planDoctorName && (
+                      <div className="text-[10px] text-muted-foreground">Planlayan: {planDoctorName}</div>
+                    )}
+                  </td>
 
                   {/* İşlem */}
                   <td className="px-3 py-2 font-medium text-foreground max-w-[180px]">
@@ -3893,7 +3908,7 @@ function ProtokolTab({
     staleTime: 60_000,
   });
 
-  // ── Draft state (sadece mevcut protokol için) ──────────────────────────────
+  // ── Draft state — SADECE mevcut açık protokol için ───────────────────────
   const [chiefComplaint, setChiefComplaint]           = useState('');
   const [examinationFindings, setExaminationFindings] = useState('');
   const [treatmentPlan, setTreatmentPlan]             = useState('');
@@ -3906,13 +3921,12 @@ function ProtokolTab({
       setTreatmentPlan(detail.treatmentPlan ?? '');
       setInitialized(true);
     }
-    if (!isCurrentProtocol && detail) {
-      // Geçmiş protokolde form alanlarını detaydan doldur (read-only gösterim için)
-      setChiefComplaint(detail.chiefComplaint ?? '');
-      setExaminationFindings(detail.examinationFindings ?? '');
-      setTreatmentPlan(detail.treatmentPlan ?? '');
-    }
-  }, [detail, viewingId]);
+  }, [detail, isCurrentProtocol, initialized]);
+
+  // Geçmiş protokollerde doğrudan detail'den oku — state sync'e gerek yok
+  const displayChiefComplaint     = isCurrentProtocol ? chiefComplaint     : (detail?.chiefComplaint     ?? '');
+  const displayExaminationFindings = isCurrentProtocol ? examinationFindings : (detail?.examinationFindings ?? '');
+  const displayTreatmentPlan      = isCurrentProtocol ? treatmentPlan      : (detail?.treatmentPlan      ?? '');
 
   // ── Save details ───────────────────────────────────────────────────────────
   const saveMutation = useMutation({
@@ -4020,7 +4034,7 @@ function ProtokolTab({
           <Textarea
             rows={3}
             placeholder="Hastanın şikayetini yazın..."
-            value={chiefComplaint}
+            value={displayChiefComplaint}
             onChange={(e) => setChiefComplaint(e.target.value)}
             className="text-sm resize-none"
             disabled={!isEditable}
@@ -4033,7 +4047,7 @@ function ProtokolTab({
           <Textarea
             rows={3}
             placeholder="Muayene bulgularını yazın..."
-            value={examinationFindings}
+            value={displayExaminationFindings}
             onChange={(e) => setExaminationFindings(e.target.value)}
             className="text-sm resize-none"
             disabled={!isEditable}
@@ -4145,7 +4159,7 @@ function ProtokolTab({
           <Textarea
             rows={3}
             placeholder="Tedavi planını yazın..."
-            value={treatmentPlan}
+            value={displayTreatmentPlan}
             onChange={(e) => setTreatmentPlan(e.target.value)}
             className="text-sm resize-none"
             disabled={!isEditable}
@@ -4262,7 +4276,7 @@ function CloseProtocolDialog({
     <Dialog open onOpenChange={(open) => { if (!open) onCancel(); }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Protokolü Kapat</DialogTitle>
+          <DialogTitle>Odandan Ayrıldı — Protokolü Kapat</DialogTitle>
         </DialogHeader>
         <div className="py-2 space-y-4">
           <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
@@ -4272,7 +4286,7 @@ function CloseProtocolDialog({
             )}
           </div>
           <p className="text-sm text-muted-foreground">
-            Protokol kapatılacak. ICD tanıları kaydedilmiş durumda.
+            Hasta odadan ayrılıyor. Protokol kapatılacak, randevu durumu &quot;Geldi&quot; olarak güncellenecek.
           </p>
           <div className="space-y-2">
             <label className="flex items-center gap-2 cursor-pointer">
@@ -4369,6 +4383,22 @@ export function ExaminationPage() {
     },
   });
 
+  const handleLeaveRoom = () => {
+    if (!protocolDetail) return;
+    const missing: string[] = [];
+    if (!protocolDetail.diagnoses || protocolDetail.diagnoses.length === 0) missing.push('ICD Tanısı');
+    if (!protocolDetail.chiefComplaint?.trim()) missing.push('Şikayet');
+    if (!protocolDetail.examinationFindings?.trim()) missing.push('Muayene Bulguları');
+    if (!protocolDetail.treatmentPlan?.trim()) missing.push('Tedavi Planı');
+
+    if (missing.length > 0) {
+      toast.warning(`Eksik alanlar: ${missing.join(', ')}. Protokol sekmesinde doldurup kaydedin.`);
+      setActiveTab('protokol');
+      return;
+    }
+    setCloseOpen(true);
+  };
+
   const TAB_ITEMS = [
     { value: 'hasta-bilgileri',     label: 'Hasta Bilgileri', icon: User },
     { value: 'anamnez',             label: 'Anamnez',         icon: ClipboardList },
@@ -4409,16 +4439,16 @@ export function ExaminationPage() {
           )}
         </div>
 
-        {/* Close protocol — only shown while protocol is still open */}
+        {/* Odandan Ayrıldı — only shown while protocol is still open */}
         {isProtocolOpen && (
           <Button
             size="sm"
             variant="outline"
-            className="gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-50 shrink-0"
-            onClick={() => setCloseOpen(true)}
+            className="gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50 shrink-0"
+            onClick={handleLeaveRoom}
           >
-            <CheckCheck className="size-4" />
-            Protokolü Kapat
+            <LogOut className="size-4" />
+            Odandan Ayrıldı
           </Button>
         )}
         {!isProtocolOpen && protocolDetail && (

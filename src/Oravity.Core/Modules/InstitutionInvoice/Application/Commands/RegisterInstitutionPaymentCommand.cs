@@ -14,7 +14,8 @@ public record RegisterInstitutionPaymentCommand(
     InstitutionPaymentMethod Method,
     string? ReferenceNo,
     string? Notes,
-    string Currency = "TRY"
+    string Currency = "TRY",
+    string? BankAccountPublicId = null
 ) : IRequest<InstitutionPaymentResponse>;
 
 public class RegisterInstitutionPaymentCommandHandler
@@ -47,14 +48,14 @@ public class RegisterInstitutionPaymentCommandHandler
         if (invoice.Status is InstitutionInvoiceStatus.Rejected)
             throw new InvalidOperationException("Reddedilmiş faturaya ödeme alınamaz.");
 
-        var remaining = invoice.Amount - invoice.PaidAmount;
+        var remaining = invoice.NetPayableAmount - invoice.PaidAmount;
         if (r.Amount > remaining + 0.01m)
             throw new InvalidOperationException(
                 $"Ödeme tutarı ({r.Amount:N2}) kalan tutarı ({remaining:N2}) aşıyor.");
 
         var payment = InstitutionPayment.Create(
             invoice.Id, invoice.PatientId, invoice.InstitutionId,
-            r.Amount, r.Currency, r.PaymentDate, r.Method, r.ReferenceNo, r.Notes);
+            r.Amount, r.Currency, r.PaymentDate, r.Method, r.ReferenceNo, r.Notes, r.BankAccountPublicId);
 
         if (_user.IsAuthenticated)
             payment.SetCreatedBy(_user.UserId, _user.TenantId);

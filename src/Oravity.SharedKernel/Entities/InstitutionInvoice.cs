@@ -9,7 +9,8 @@ public enum InstitutionInvoiceStatus
     PartiallyPaid = 3, // Kısmi ödendi
     Rejected      = 4, // Kurum ödemeyi reddetti
     Overdue       = 5, // Vade geçti
-    InFollowUp    = 6  // Yasal takip
+    InFollowUp    = 6, // Yasal takip
+    Cancelled     = 7  // İptal edildi (kliniğin inisiyatifi)
 }
 
 public enum InstitutionInvoiceFollowUp
@@ -39,8 +40,21 @@ public class InstitutionInvoice : AuditableEntity
     public DateOnly InvoiceDate { get; private set; }
     public DateOnly DueDate { get; private set; }
 
+    /// <summary>Matrah (KDV hariç hizmet bedeli)</summary>
     public decimal Amount { get; private set; }
     public string Currency { get; private set; } = "TRY";
+
+    // KDV & Tevkifat — fatura kesilirken kurumdan kopyalanır, sonradan değişmez
+    public decimal KdvRate { get; private set; } = 0.20m;
+    public decimal KdvAmount { get; private set; }
+    public bool WithholdingApplies { get; private set; } = false;
+    public string? WithholdingCode { get; private set; }
+    public int WithholdingNumerator { get; private set; } = 5;
+    public int WithholdingDenominator { get; private set; } = 10;
+    /// <summary>KDV'nin tevkifata düşen kısmı — kurum vergi dairesine öder.</summary>
+    public decimal WithholdingAmount { get; private set; }
+    /// <summary>Kurumun kliniğe ödeyeceği net tutar = Matrah + KDV − Tevkifat</summary>
+    public decimal NetPayableAmount { get; private set; }
 
     public InstitutionInvoiceStatus Status { get; private set; } = InstitutionInvoiceStatus.Issued;
 
@@ -57,6 +71,19 @@ public class InstitutionInvoice : AuditableEntity
 
     public string? Notes { get; private set; }
 
+    // ── E-Fatura / Entegratör alanları ───────────────────────────────────────
+    /// <summary>
+    /// Entegratörden dönen GIB UUID'si (e-fatura / e-arşiv).
+    /// Yerel modda null.
+    /// </summary>
+    public string? ExternalUuid { get; private set; }
+
+    /// <summary>
+    /// Entegratör gönderim durumu: null (gönderilmedi), "SENT", "ACCEPTED", "ERROR".
+    /// Yerel modda null.
+    /// </summary>
+    public string? IntegratorStatus { get; private set; }
+
     public ICollection<InstitutionPayment> Payments { get; private set; } = [];
 
     private InstitutionInvoice() { }
@@ -71,29 +98,64 @@ public class InstitutionInvoice : AuditableEntity
         decimal amount,
         string currency,
         string? treatmentItemIdsJson,
-        string? notes)
+        string? notes,
+        decimal kdvRate = 0.20m,
+        bool withholdingApplies = false,
+        string? withholdingCode = null,
+        int withholdingNumerator = 5,
+        int withholdingDenominator = 10)
     {
         if (string.IsNullOrWhiteSpace(invoiceNo))
             throw new ArgumentException("Fatura numarası boş olamaz.", nameof(invoiceNo));
         if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
         if (dueDate < invoiceDate) throw new ArgumentException("Vade faturadan önce olamaz.");
 
+        // amount = KDV dahil brüt tutar (sistemde fiyatlar KDV dahil girilir)
+        var matrah = Math.Round(amount / (1 + kdvRate), 2);
+        var kdvAmount = Math.Round(amount - matrah, 2);
+        var withholdingAmount = withholdingApplies && withholdingDenominator > 0
+            ? Math.Round(kdvAmount * withholdingNumerator / withholdingDenominator, 2)
+            : 0m;
+        var netPayable = amount - withholdingAmount;
+
         return new InstitutionInvoice
         {
-            PatientId            = patientId,
-            InstitutionId        = institutionId,
-            BranchId             = branchId,
-            InvoiceNo            = invoiceNo.Trim(),
-            InvoiceDate          = invoiceDate,
-            DueDate              = dueDate,
-            Amount               = amount,
-            Currency             = currency,
-            Status               = InstitutionInvoiceStatus.Issued,
-            PaidAmount           = 0,
-            TreatmentItemIdsJson = treatmentItemIdsJson,
-            Notes                = notes,
-            FollowUpStatus       = InstitutionInvoiceFollowUp.None
+            PatientId              = patientId,
+            InstitutionId          = institutionId,
+            BranchId               = branchId,
+            InvoiceNo              = invoiceNo.Trim(),
+            InvoiceDate            = invoiceDate,
+            DueDate                = dueDate,
+            Amount                 = matrah,
+            Currency               = currency,
+            KdvRate                = kdvRate,
+            KdvAmount              = kdvAmount,
+            WithholdingApplies     = withholdingApplies,
+            WithholdingCode        = withholdingCode?.Trim(),
+            WithholdingNumerator   = withholdingNumerator,
+            WithholdingDenominator = withholdingDenominator,
+            WithholdingAmount      = withholdingAmount,
+            NetPayableAmount       = netPayable,
+            Status                 = InstitutionInvoiceStatus.Issued,
+            PaidAmount             = 0,
+            TreatmentItemIdsJson   = treatmentItemIdsJson,
+            Notes                  = notes,
+            FollowUpStatus         = InstitutionInvoiceFollowUp.None
         };
+    }
+
+    /// <summary>Entegratörden dönen UUID ve durumu kaydeder.</summary>
+    public void SetExternalInvoiceData(string uuid, string status = "SENT")
+    {
+        ExternalUuid      = uuid;
+        IntegratorStatus  = status;
+        MarkUpdated();
+    }
+
+    public void UpdateIntegratorStatus(string status)
+    {
+        IntegratorStatus = status;
+        MarkUpdated();
     }
 
     public void RegisterPayment(decimal paidNow, DateOnly paymentDate, string? referenceNo)
@@ -104,10 +166,24 @@ public class InstitutionInvoice : AuditableEntity
         PaymentDate        = paymentDate;
         PaymentReferenceNo = referenceNo;
 
-        if (PaidAmount >= Amount)
+        if (PaidAmount >= NetPayableAmount - 0.005m)
             Status = InstitutionInvoiceStatus.Paid;
         else
             Status = InstitutionInvoiceStatus.PartiallyPaid;
+        MarkUpdated();
+    }
+
+    public void Cancel(string reason)
+    {
+        if (Status is InstitutionInvoiceStatus.Paid)
+            throw new InvalidOperationException("Ödenmiş fatura iptal edilemez.");
+        if (Status is InstitutionInvoiceStatus.PartiallyPaid)
+            throw new InvalidOperationException("Kısmi ödemesi alınmış fatura iptal edilemez. Önce ödemeleri iade edin.");
+        if (Status is InstitutionInvoiceStatus.Cancelled)
+            throw new InvalidOperationException("Fatura zaten iptal edilmiş.");
+
+        Status = InstitutionInvoiceStatus.Cancelled;
+        Notes  = string.IsNullOrWhiteSpace(Notes) ? $"[İPTAL] {reason}" : $"{Notes}\n[İPTAL] {reason}";
         MarkUpdated();
     }
 

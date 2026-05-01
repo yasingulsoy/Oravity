@@ -8,7 +8,8 @@ export type InstitutionInvoiceStatus =
   | 'PartiallyPaid'
   | 'Rejected'
   | 'Overdue'
-  | 'InFollowUp';
+  | 'InFollowUp'
+  | 'Cancelled';
 
 export type InstitutionInvoiceFollowUp =
   | 'None'
@@ -24,9 +25,14 @@ export interface InstitutionInvoice {
 
   patientId: number;
   patientName: string | null;
+  patientTcNumber: string | null;
 
   institutionId: number;
   institutionName: string;
+  institutionTaxNumber: string | null;
+  institutionTaxOffice: string | null;
+  institutionAddress: string | null;
+  institutionCity: string | null;
 
   branchId: number;
 
@@ -34,7 +40,10 @@ export interface InstitutionInvoice {
   invoiceDate: string;
   dueDate: string;
 
-  amount: number;
+  amount: number;         // Matrah (KDV hariç)
+  kdvAmount: number;
+  netPayableAmount: number; // Kurumun ödemesi gereken net tutar
+  withholdingAmount: number;
   currency: string;
 
   status: InstitutionInvoiceStatus;
@@ -68,9 +77,21 @@ export interface InstitutionPayment {
   method: InstitutionPaymentMethod;
   methodLabel: string;
   referenceNo: string | null;
+  bankAccountPublicId: string | null;
   notes: string | null;
   isCancelled: boolean;
   createdAt: string;
+}
+
+export interface BillableItem {
+  id: number;
+  treatmentName: string;
+  toothNumber: string | null;
+  completedAt: string | null;
+  institutionAmount: number;
+  currency: string;
+  planPublicId: string;
+  branchId: number;
 }
 
 export interface PagedInvoiceResult {
@@ -81,6 +102,16 @@ export interface PagedInvoiceResult {
 }
 
 export const institutionInvoicesApi = {
+  nextNumber: (branchId?: number, type?: string) =>
+    apiClient.get<{ number: string; uuid: string | null }>('/institution-invoices/next-number', {
+      params: { ...(branchId !== undefined && { branchId }), ...(type && { type }) },
+    }),
+
+  getBillableItems: (patientId: number, institutionId: number) =>
+    apiClient.get<BillableItem[]>('/institution-invoices/billable-items', {
+      params: { patientId, institutionId },
+    }),
+
   list: (params?: {
     status?: InstitutionInvoiceStatus;
     institutionId?: number;
@@ -116,10 +147,14 @@ export const institutionInvoicesApi = {
       referenceNo?: string;
       notes?: string;
       currency?: string;
+      bankAccountPublicId?: string;
     }
   ) => apiClient.post<InstitutionPayment>(
     `/institution-invoices/${publicId}/payments`, body
   ),
+
+  cancel: (publicId: string, reason: string) =>
+    apiClient.post(`/institution-invoices/${publicId}/cancel`, { reason }),
 
   reject: (publicId: string, reason: string) =>
     apiClient.post(`/institution-invoices/${publicId}/reject`, { reason }),
@@ -132,4 +167,7 @@ export const institutionInvoicesApi = {
 
   updateNotes: (publicId: string, notes: string) =>
     apiClient.patch(`/institution-invoices/${publicId}/notes`, { notes }),
+
+  downloadPdf: (publicId: string) =>
+    apiClient.get(`/institution-invoices/${publicId}/pdf`, { responseType: 'blob' }),
 };

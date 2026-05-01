@@ -2,6 +2,7 @@ using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Oravity.Infrastructure.Database;
+using Oravity.SharedKernel.Entities;
 using Oravity.SharedKernel.Exceptions;
 using Oravity.SharedKernel.Interfaces;
 
@@ -16,7 +17,12 @@ public record CreateInstitutionInvoiceCommand(
     decimal Amount,
     string Currency,
     IReadOnlyList<long>? TreatmentItemIds,
-    string? Notes
+    string? Notes,
+    bool IsEInvoiceTaxpayer = false,
+    bool WithholdingApplies = false,
+    string? WithholdingCode = null,
+    int WithholdingNumerator = 5,
+    int WithholdingDenominator = 10
 ) : IRequest<InstitutionInvoiceResponse>;
 
 public class CreateInstitutionInvoiceCommandHandler
@@ -53,6 +59,36 @@ public class CreateInstitutionInvoiceCommandHandler
         if (duplicateNo)
             throw new ConflictException($"'{r.InvoiceNo}' numaralı fatura zaten var.");
 
+        // Aynı tedavi kalemi birden fazla aktif kurum faturasına girilemez
+        if (r.TreatmentItemIds is { Count: > 0 })
+        {
+            var activeStatuses = new[]
+            {
+                InstitutionInvoiceStatus.Issued,
+                InstitutionInvoiceStatus.PartiallyPaid,
+                InstitutionInvoiceStatus.Overdue,
+                InstitutionInvoiceStatus.InFollowUp
+            };
+
+            var existingInvoices = await _db.InstitutionInvoices
+                .Where(i => i.PatientId == r.PatientId
+                            && i.InstitutionId == r.InstitutionId
+                            && activeStatuses.Contains(i.Status)
+                            && i.TreatmentItemIdsJson != null)
+                .Select(i => new { i.InvoiceNo, i.TreatmentItemIdsJson })
+                .ToListAsync(ct);
+
+            foreach (var inv in existingInvoices)
+            {
+                var billedIds = ParseIds(inv.TreatmentItemIdsJson);
+                var duplicate = r.TreatmentItemIds.FirstOrDefault(id => billedIds.Contains(id));
+                if (duplicate != default)
+                    throw new ConflictException(
+                        $"Seçili tedavi kalemleri '{inv.InvoiceNo}' numaralı aktif kurum faturasında zaten mevcut. " +
+                        "Önce o faturayı iptal edin.");
+            }
+        }
+
         string? itemsJson = r.TreatmentItemIds is { Count: > 0 }
             ? JsonSerializer.Serialize(r.TreatmentItemIds)
             : null;
@@ -60,7 +96,12 @@ public class CreateInstitutionInvoiceCommandHandler
         var invoice = Oravity.SharedKernel.Entities.InstitutionInvoice.Create(
             r.PatientId, r.InstitutionId, branchId,
             r.InvoiceNo, r.InvoiceDate, r.DueDate,
-            r.Amount, r.Currency, itemsJson, r.Notes);
+            r.Amount, r.Currency, itemsJson, r.Notes,
+            kdvRate: 0.20m,
+            withholdingApplies: r.WithholdingApplies,
+            withholdingCode: r.WithholdingCode,
+            withholdingNumerator: r.WithholdingNumerator,
+            withholdingDenominator: r.WithholdingDenominator);
 
         if (_user.IsAuthenticated)
             invoice.SetCreatedBy(_user.UserId, _user.TenantId);
@@ -71,6 +112,18 @@ public class CreateInstitutionInvoiceCommandHandler
         return InstitutionInvoiceMappings.ToResponse(
             invoice,
             $"{patient.FirstName} {patient.LastName}".Trim(),
-            institution.Name);
+            institution.Name,
+            patientTcNumber: null, // create response'unda TC şifre çözümü yok; GET üzerinden okunur
+            institutionTaxNumber: institution.TaxNumber,
+            institutionTaxOffice: institution.TaxOffice,
+            institutionAddress: institution.Address,
+            institutionCity: institution.City);
+    }
+
+    private static HashSet<long> ParseIds(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return [.. JsonSerializer.Deserialize<long[]>(json) ?? []]; }
+        catch { return []; }
     }
 }

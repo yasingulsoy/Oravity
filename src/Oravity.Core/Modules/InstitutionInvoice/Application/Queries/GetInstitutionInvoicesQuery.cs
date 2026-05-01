@@ -28,11 +28,13 @@ public class GetInstitutionInvoicesQueryHandler
 {
     private readonly AppDbContext _db;
     private readonly ITenantContext _tenant;
+    private readonly IEncryptionService _encryption;
 
-    public GetInstitutionInvoicesQueryHandler(AppDbContext db, ITenantContext tenant)
+    public GetInstitutionInvoicesQueryHandler(AppDbContext db, ITenantContext tenant, IEncryptionService encryption)
     {
         _db = db;
         _tenant = tenant;
+        _encryption = encryption;
     }
 
     public async Task<PagedInvoiceResult> Handle(
@@ -59,14 +61,33 @@ public class GetInstitutionInvoicesQueryHandler
             .Select(i => new
             {
                 Invoice = i,
-                PatientName = (i.Patient.FirstName ?? "") + " " + (i.Patient.LastName ?? ""),
-                InstitutionName = i.Institution.Name
+                PatientFirstName = i.Patient.FirstName ?? "",
+                PatientLastName  = i.Patient.LastName ?? "",
+                PatientTcEnc     = i.Patient.TcNumberEncrypted,
+                InstitutionName      = i.Institution.Name,
+                InstitutionTaxNumber = i.Institution.TaxNumber,
+                InstitutionTaxOffice = i.Institution.TaxOffice,
+                InstitutionAddress   = i.Institution.Address,
+                InstitutionCity      = i.Institution.City,
             })
             .ToListAsync(ct);
 
-        var items = raw
-            .Select(x => InstitutionInvoiceMappings.ToResponse(x.Invoice, x.PatientName.Trim(), x.InstitutionName))
-            .ToList();
+        var items = raw.Select(x =>
+        {
+            string? tc = null;
+            if (!string.IsNullOrEmpty(x.PatientTcEnc))
+                try { tc = _encryption.Decrypt(x.PatientTcEnc); } catch { /* şifre çözülemezse null bırak */ }
+
+            return InstitutionInvoiceMappings.ToResponse(
+                x.Invoice,
+                $"{x.PatientFirstName} {x.PatientLastName}".Trim(),
+                x.InstitutionName,
+                tc,
+                x.InstitutionTaxNumber,
+                x.InstitutionTaxOffice,
+                x.InstitutionAddress,
+                x.InstitutionCity);
+        }).ToList();
 
         return new PagedInvoiceResult(items, total, page, pageSize);
     }
@@ -79,11 +100,13 @@ public class GetInstitutionInvoiceByIdQueryHandler
 {
     private readonly AppDbContext _db;
     private readonly ITenantContext _tenant;
+    private readonly IEncryptionService _encryption;
 
-    public GetInstitutionInvoiceByIdQueryHandler(AppDbContext db, ITenantContext tenant)
+    public GetInstitutionInvoiceByIdQueryHandler(AppDbContext db, ITenantContext tenant, IEncryptionService encryption)
     {
         _db = db;
         _tenant = tenant;
+        _encryption = encryption;
     }
 
     public async Task<InstitutionInvoiceResponse?> Handle(
@@ -99,13 +122,31 @@ public class GetInstitutionInvoiceByIdQueryHandler
             .Select(i => new
             {
                 Invoice = i,
-                PatientName = (i.Patient.FirstName ?? "") + " " + (i.Patient.LastName ?? ""),
-                InstitutionName = i.Institution.Name
+                PatientFirstName = i.Patient.FirstName ?? "",
+                PatientLastName  = i.Patient.LastName ?? "",
+                PatientTcEnc     = i.Patient.TcNumberEncrypted,
+                InstitutionName      = i.Institution.Name,
+                InstitutionTaxNumber = i.Institution.TaxNumber,
+                InstitutionTaxOffice = i.Institution.TaxOffice,
+                InstitutionAddress   = i.Institution.Address,
+                InstitutionCity      = i.Institution.City,
             })
             .FirstOrDefaultAsync(ct);
 
-        return row == null
-            ? null
-            : InstitutionInvoiceMappings.ToResponse(row.Invoice, row.PatientName.Trim(), row.InstitutionName);
+        if (row == null) return null;
+
+        string? tc = null;
+        if (!string.IsNullOrEmpty(row.PatientTcEnc))
+            try { tc = _encryption.Decrypt(row.PatientTcEnc); } catch { /* şifre çözülemezse null bırak */ }
+
+        return InstitutionInvoiceMappings.ToResponse(
+            row.Invoice,
+            $"{row.PatientFirstName} {row.PatientLastName}".Trim(),
+            row.InstitutionName,
+            tc,
+            row.InstitutionTaxNumber,
+            row.InstitutionTaxOffice,
+            row.InstitutionAddress,
+            row.InstitutionCity);
     }
 }

@@ -7,6 +7,38 @@ using Oravity.SharedKernel.Interfaces;
 
 namespace Oravity.Core.Modules.InstitutionInvoice.Application.Commands;
 
+public record CancelInstitutionInvoiceCommand(Guid PublicId, string Reason) : IRequest<Unit>;
+
+public class CancelInstitutionInvoiceCommandHandler : IRequestHandler<CancelInstitutionInvoiceCommand, Unit>
+{
+    private readonly AppDbContext _db;
+    private readonly ITenantContext _tenant;
+    private readonly ICurrentUser _user;
+
+    public CancelInstitutionInvoiceCommandHandler(AppDbContext db, ITenantContext tenant, ICurrentUser user)
+    {
+        _db = db; _tenant = tenant; _user = user;
+    }
+
+    public async Task<Unit> Handle(CancelInstitutionInvoiceCommand r, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(r.Reason))
+            throw new InvalidOperationException("İptal gerekçesi zorunludur.");
+
+        var invoice = await _db.InstitutionInvoices
+            .FirstOrDefaultAsync(i => i.PublicId == r.PublicId, ct)
+            ?? throw new NotFoundException($"Fatura bulunamadı: {r.PublicId}");
+
+        if (_tenant.IsBranchLevel && invoice.BranchId != _tenant.BranchId)
+            throw new ForbiddenException("Bu faturaya erişim yetkiniz yok.");
+
+        invoice.Cancel(r.Reason); // entity kuralları uygular (Paid/PartiallyPaid → exception)
+        if (_user.IsAuthenticated) invoice.SetUpdatedBy(_user.UserId);
+        await _db.SaveChangesAsync(ct);
+        return Unit.Value;
+    }
+}
+
 public record RejectInstitutionInvoiceCommand(Guid PublicId, string Reason) : IRequest<Unit>;
 
 public class RejectInstitutionInvoiceCommandHandler : IRequestHandler<RejectInstitutionInvoiceCommand, Unit>
