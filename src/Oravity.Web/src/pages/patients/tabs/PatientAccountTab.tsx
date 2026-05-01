@@ -1176,8 +1176,14 @@ function CollectPaymentDialog({
     }
     if (fxData) {
       if (!rateEdited)   setExchangeRate(fxData.rate.toFixed(4));
-      if (!amountEdited && remainingDebt > 0)
-        setAmount((remainingDebt / fxData.rate).toFixed(2));
+      if (!amountEdited && remainingDebt > 0) {
+        const raw     = remainingDebt / fxData.rate;
+        const rounded = parseFloat(raw.toFixed(2));
+        // Aşağı yuvarladığında TRY karşılığı eksik kalıyorsa 1 kuruş yukarı al
+        const tryBack = parseFloat((rounded * fxData.rate).toFixed(2));
+        const fxFinal = tryBack < remainingDebt ? parseFloat((rounded + 0.01).toFixed(2)) : rounded;
+        setAmount(fxFinal.toFixed(2));
+      }
     }
   }, [fxData, isFx, rateEdited, amountEdited, remainingDebt]);
 
