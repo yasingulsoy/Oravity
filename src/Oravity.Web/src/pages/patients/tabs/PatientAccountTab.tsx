@@ -1143,6 +1143,7 @@ function CollectPaymentDialog({
   const canBackdate = hasPermission('payment.backdate');
   const today = format(new Date(), 'yyyy-MM-dd');
   const [amount,        setAmount]        = useState(remainingDebt > 0 ? String(remainingDebt.toFixed(2)) : '');
+  const [amountEdited,  setAmountEdited]  = useState(false);
   const [currency,      setCurrency]      = useState('TRY');
   const [exchangeRate,  setExchangeRate]  = useState('1');
   const [rateEdited,    setRateEdited]    = useState(false);
@@ -1165,13 +1166,20 @@ function CollectPaymentDialog({
     staleTime: 5 * 60 * 1000,
   });
 
-  // Kullanıcı manuel override yapmadıysa otomatik doldur
+  // Kur gelince: rate + tutar alanını otomatik doldur
   useEffect(() => {
-    if (!isFx) { setExchangeRate('1'); setRateEdited(false); return; }
-    if (fxData && !rateEdited) {
-      setExchangeRate(fxData.rate.toFixed(4));
+    if (!isFx) {
+      setExchangeRate('1');
+      setRateEdited(false);
+      if (!amountEdited && remainingDebt > 0) setAmount(remainingDebt.toFixed(2));
+      return;
     }
-  }, [fxData, isFx, rateEdited]);
+    if (fxData) {
+      if (!rateEdited)   setExchangeRate(fxData.rate.toFixed(4));
+      if (!amountEdited && remainingDebt > 0)
+        setAmount((remainingDebt / fxData.rate).toFixed(2));
+    }
+  }, [fxData, isFx, rateEdited, amountEdited, remainingDebt]);
 
   const { data: posTerminals } = useQuery({
     queryKey: ['pos-terminals'],
@@ -1271,18 +1279,9 @@ function CollectPaymentDialog({
 
         <div className="space-y-4 py-2">
           {remainingDebt > 0 && (
-            <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm flex items-center gap-2 flex-wrap">
-              <span className="text-muted-foreground">Kalan borç:</span>
+            <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2 text-sm">
+              <span className="text-muted-foreground">Kalan borç: </span>
               <span className="font-semibold text-destructive">{fmt(remainingDebt)}</span>
-              {isFx && rateNum > 0 && (
-                <>
-                  <span className="text-muted-foreground">≈</span>
-                  <span className="font-semibold text-destructive">
-                    {curSym}{(remainingDebt / rateNum).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                  <span className="text-xs text-muted-foreground">({currency})</span>
-                </>
-              )}
             </div>
           )}
 
@@ -1301,13 +1300,14 @@ function CollectPaymentDialog({
                   placeholder="0,00"
                   className="pl-7"
                   value={amount}
-                  onChange={e => setAmount(e.target.value)}
+                  onChange={e => { setAmount(e.target.value); setAmountEdited(true); }}
                   autoFocus
                 />
               </div>
               <Select value={currency} onValueChange={v => {
                 setCurrency(v);
                 setRateEdited(false);
+                setAmountEdited(false);
                 if (v === 'TRY') setExchangeRate('1');
               }}>
                 <SelectTrigger className="w-28">
