@@ -69,13 +69,16 @@ public class SearchPatientsQueryHandler
         var totalCount = await q.CountAsync(cancellationToken);
         var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
 
-        var items = await q
+        var canViewContact = await CanViewContactAsync(cancellationToken);
+
+        var patients = await q
             .OrderBy(p => p.LastName)
             .ThenBy(p => p.FirstName)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(p => PatientMappings.ToResponse(p))
             .ToListAsync(cancellationToken);
+
+        var items = patients.Select(p => PatientMappings.ToResponse(p, canViewContact)).ToList();
 
         return new PagedResult<PatientResponse>(items, page, pageSize, totalCount, totalPages);
     }
@@ -92,5 +95,24 @@ public class SearchPatientsQueryHandler
             return query.Where(p => p.Branch.CompanyId == _tenantContext.CompanyId.Value);
 
         return query.Where(_ => false);
+    }
+
+    private async Task<bool> CanViewContactAsync(CancellationToken ct)
+    {
+        if (_tenantContext.IsPlatformAdmin) return true;
+
+        var hasRole = await _db.UserRoleAssignments
+            .Where(a => a.UserId == _tenantContext.UserId
+                        && a.IsActive
+                        && (a.ExpiresAt == null || a.ExpiresAt > DateTime.UtcNow))
+            .SelectMany(a => a.RoleTemplate.RoleTemplatePermissions)
+            .AnyAsync(rtp => rtp.Permission.Code == "patient.view_contact", ct);
+
+        if (hasRole) return true;
+
+        return await _db.UserPermissionOverrides
+            .AnyAsync(o => o.UserId == _tenantContext.UserId
+                           && o.Permission.Code == "patient.view_contact"
+                           && o.IsGranted, ct);
     }
 }

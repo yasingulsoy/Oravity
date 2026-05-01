@@ -116,16 +116,20 @@ public record PagedResult<T>(
 
 public static class PatientMappings
 {
-    public static PatientResponse ToResponse(PatientEntity p) => new(
+    public static PatientResponse ToResponse(PatientEntity p, bool canViewContact = true) => new(
         p.Id, p.PublicId, p.BranchId,
         p.TcNumberEncrypted != null, p.PassportNoEncrypted != null,
         p.FirstName, p.LastName, p.MotherName, p.FatherName,
         p.Gender, p.MaritalStatus, p.Nationality,
         p.CitizenshipTypeId, p.CitizenshipType?.Name,
         p.Occupation, p.SmokingType, p.PregnancyStatus,
-        p.BirthDate,
-        p.Phone, p.HomePhone, p.WorkPhone, p.Email,
-        p.Country, p.City, p.District, p.Address,
+        canViewContact ? p.BirthDate : null,
+        canViewContact ? p.Phone    : null,
+        canViewContact ? p.HomePhone : null,
+        canViewContact ? p.WorkPhone : null,
+        canViewContact ? p.Email    : null,
+        p.Country, p.City, p.District,
+        canViewContact ? p.Address  : null,
         p.BloodType,
         p.ReferralSourceId, p.ReferralSource?.Name, p.ReferralPerson,
         p.AgreementInstitutionId, p.AgreementInstitution?.Name,

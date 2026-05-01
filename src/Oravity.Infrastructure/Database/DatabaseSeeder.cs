@@ -40,6 +40,8 @@ public class DatabaseSeeder
         await SeedAppointmentTypesAsync(ct);
         await SeedProtocolTypesAsync(ct);
         await SeedTreatmentCatalogAsync(ct);
+        await SeedBanksAsync(ct);
+        await SeedPaymentProvidersAsync(ct);
 
         if (_env.IsDevelopment())
         {
@@ -115,6 +117,7 @@ public class DatabaseSeeder
             ["DOCTOR"] =
             [
                 "patient.view", "patient.create", "patient.edit", "patient.edit_basic",
+                "patient.view_contact",
                 "appointment.view", "appointment.create", "appointment.edit", "appointment.cancel",
                 "visit.view", "visit.create", "visit.update",
                 "protocol.view", "protocol.create", "protocol.update",
@@ -133,6 +136,7 @@ public class DatabaseSeeder
             ["ASSISTANT"] =
             [
                 "patient.view", "patient.create", "patient.edit_basic",
+                "patient.view_contact",
                 "appointment.view", "appointment.create", "appointment.edit", "appointment.cancel",
                 "visit.view", "visit.create",
                 "protocol.view",
@@ -144,6 +148,7 @@ public class DatabaseSeeder
             ["RECEPTIONIST"] =
             [
                 "patient.view", "patient.create", "patient.edit_basic",
+                "patient.view_contact",
                 "appointment.view", "appointment.create", "appointment.edit", "appointment.cancel",
                 "visit.view",
                 "protocol.view",
@@ -161,8 +166,10 @@ public class DatabaseSeeder
                 "allocation.view", "allocation.request",
                 "institution_invoice.view", "institution_invoice.create",
                 "institution_invoice.payment", "institution_invoice.follow_up",
-                "patient.view",
+                "patient_invoice.view", "patient_invoice.create",
+                "patient.view", "patient.view_contact",
                 "pricing.view",
+                "institution.view",
             ],
             ["READONLY"] =
             [
@@ -177,6 +184,7 @@ public class DatabaseSeeder
             [
                 "patient.view", "patient.create", "patient.edit", "patient.edit_basic",
                 "patient.delete", "patient.upload_document", "patient.write_hidden_note",
+                "patient.view_contact",
                 "appointment.view", "appointment.create", "appointment.edit",
                 "appointment.cancel", "appointment.delete", "appointment.create_overlap",
                 "visit.view", "visit.create", "visit.update",
@@ -199,10 +207,11 @@ public class DatabaseSeeder
                 "institution_invoice.view", "institution_invoice.create",
                 "institution_invoice.payment", "institution_invoice.follow_up",
                 "institution_invoice.cancel",
+                "patient_invoice.view", "patient_invoice.create", "patient_invoice.cancel",
                 "survey.manage", "survey.view_results",
                 "audit.view",
                 "report.view_daily",
-                "institution.view",
+                "institution.view", "institution.manage",
                 "pricing.view", "pricing.create", "pricing.edit", "pricing.delete",
                 "laboratory.view", "laboratory.manage",
                 "laboratory.work_create", "laboratory.work_send", "laboratory.work_receive",
@@ -416,9 +425,17 @@ public class DatabaseSeeder
             ("institution_invoice", "follow_up",     false),   // takip / hatırlatma
             ("institution_invoice", "cancel",        true),
 
+            // Patient Invoice / Hasta Fatura
+            ("patient_invoice",  "view",             false),
+            ("patient_invoice",  "create",           false),
+            ("patient_invoice",  "cancel",           true),
+
             // Consent Form / Onam Formu
             ("consent_form",     "view",             false),   // şablon listesi
             ("consent_form",     "manage",           false),   // şablon CRUD
+
+            // Patient contact visibility
+            ("patient",          "view_contact",     false),   // telefon, e-posta, adres, doğum tarihi
         };
 
         var existingCodes = await _db.Permissions
@@ -1100,6 +1117,53 @@ public class DatabaseSeeder
 
         if (changed) await _db.SaveChangesAsync(ct);
         _logger.LogInformation("Tedavi kataloğu seed tamamlandı ({Count} kategori).", catalog.Length);
+    }
+
+    // ─── Bankalar ────────────────────────────────────────────────────────
+    private async Task SeedBanksAsync(CancellationToken ct)
+    {
+        if (await _db.Banks.AnyAsync(ct)) return;
+
+        var banks = new[]
+        {
+            Bank.Create("Türkiye İş Bankası A.Ş.",    "İşbank",      "ISBKTRIS"),
+            Bank.Create("T.C. Ziraat Bankası A.Ş.",   "Ziraat",      "TCZBTR2A"),
+            Bank.Create("Türkiye Garanti Bankası A.Ş.", "Garanti BBVA", "TGBATRIS"),
+            Bank.Create("Akbank T.A.Ş.",               "Akbank",      "AKBKTRIS"),
+            Bank.Create("Yapı ve Kredi Bankası A.Ş.", "YapıKredi",   "YAPITRISFEX"),
+            Bank.Create("Türkiye Halk Bankası A.Ş.",  "Halkbank",    "TRHBTR2A"),
+            Bank.Create("Türkiye Vakıflar Bankası T.A.O.", "VakıfBank", "TVBATR2A"),
+            Bank.Create("QNB Finansbank A.Ş.",         "QNB Finansbank", "FNNBTRSX"),
+            Bank.Create("Denizbank A.Ş.",              "DenizBank",   "DENITRIS"),
+            Bank.Create("ING Bank A.Ş.",               "ING",         "INGBTRIS"),
+            Bank.Create("HSBC Bank A.Ş.",              "HSBC",        "HSBCTRIS"),
+            Bank.Create("TEB A.Ş.",                    "TEB",         "TEBUTRIS"),
+            Bank.Create("Şekerbank T.A.Ş.",            "Şekerbank",   "SEKETR2A"),
+            Bank.Create("Odeabank A.Ş.",               "Odeabank",    "ODEATRI2"),
+        };
+
+        _db.Banks.AddRange(banks);
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("Bankalar seed tamamlandı ({Count} banka).", banks.Length);
+    }
+
+    // ─── Ödeme Sağlayıcıları ─────────────────────────────────────────────
+    private async Task SeedPaymentProvidersAsync(CancellationToken ct)
+    {
+        if (await _db.PaymentProviders.AnyAsync(ct)) return;
+
+        var providers = new[]
+        {
+            PaymentProvider.Create("PayTR",   "PayTR",   "https://www.paytr.com"),
+            PaymentProvider.Create("iyzico",  "iyzico",  "https://www.iyzico.com"),
+            PaymentProvider.Create("Stripe",  "Stripe",  "https://stripe.com"),
+            PaymentProvider.Create("Param",   "Param",   "https://www.param.com.tr"),
+            PaymentProvider.Create("PayU",    "PayU",    "https://www.payu.com.tr"),
+        };
+
+        _db.PaymentProviders.AddRange(providers);
+        await _db.SaveChangesAsync(ct);
+        _logger.LogInformation("Ödeme sağlayıcıları seed tamamlandı ({Count} sağlayıcı).", providers.Length);
     }
 
     // ─── Demo Fiyat Verileri (sadece Development) ─────────────────────────

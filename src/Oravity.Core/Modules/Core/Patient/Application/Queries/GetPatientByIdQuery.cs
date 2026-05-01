@@ -36,7 +36,27 @@ public class GetPatientByIdQueryHandler : IRequestHandler<GetPatientByIdQuery, P
         var patient = await query.FirstOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException($"Hasta bulunamadı: {request.PublicId}");
 
-        return PatientMappings.ToResponse(patient);
+        var canViewContact = await CanViewContactAsync(cancellationToken);
+        return PatientMappings.ToResponse(patient, canViewContact);
+    }
+
+    private async Task<bool> CanViewContactAsync(CancellationToken ct)
+    {
+        if (_tenantContext.IsPlatformAdmin) return true;
+
+        var hasRole = await _db.UserRoleAssignments
+            .Where(a => a.UserId == _tenantContext.UserId
+                        && a.IsActive
+                        && (a.ExpiresAt == null || a.ExpiresAt > DateTime.UtcNow))
+            .SelectMany(a => a.RoleTemplate.RoleTemplatePermissions)
+            .AnyAsync(rtp => rtp.Permission.Code == "patient.view_contact", ct);
+
+        if (hasRole) return true;
+
+        return await _db.UserPermissionOverrides
+            .AnyAsync(o => o.UserId == _tenantContext.UserId
+                           && o.Permission.Code == "patient.view_contact"
+                           && o.IsGranted, ct);
     }
 
     private IQueryable<SharedKernel.Entities.Patient> ApplyTenantFilter(

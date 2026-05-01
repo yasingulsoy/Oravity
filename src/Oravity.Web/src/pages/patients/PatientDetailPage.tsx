@@ -21,6 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
+import { usePermissions } from '@/hooks/usePermissions';
 import {
   Select,
   SelectContent,
@@ -99,6 +100,8 @@ export function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
+  const { hasPermission } = usePermissions();
+  const canViewContact = hasPermission('patient.view_contact');
 
   const { data, isLoading } = useQuery({
     queryKey: ['patient', id],
@@ -289,10 +292,12 @@ export function PatientDetailPage() {
                     <Label>Baba Adı</Label>
                     <Input {...register('fatherName')} />
                   </div>
-                  <div className="space-y-1.5">
-                    <Label>Doğum Tarihi</Label>
-                    <Input {...register('birthDate')} type="date" />
-                  </div>
+                  {canViewContact && (
+                    <div className="space-y-1.5">
+                      <Label>Doğum Tarihi</Label>
+                      <Input {...register('birthDate')} type="date" />
+                    </div>
+                  )}
                   <div className="space-y-1.5">
                     <Label>Cinsiyet</Label>
                     <FormSelect control={control} name="gender"
@@ -396,81 +401,85 @@ export function PatientDetailPage() {
               </Card>
 
               {/* ── İletişim ── */}
-              <Card>
-                <CardHeader><CardTitle className="text-base">İletişim</CardTitle></CardHeader>
-                <CardContent className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label>Cep Telefonu</Label>
-                    <Input {...register('phone')} placeholder="05XX XXX XX XX" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Ev Telefonu</Label>
-                    <Input {...register('homePhone')} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>İş Telefonu</Label>
-                    <Input {...register('workPhone')} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>E-posta</Label>
-                    <Input {...register('email')} type="email" />
-                  </div>
-                </CardContent>
-              </Card>
+              {canViewContact && (
+                <Card>
+                  <CardHeader><CardTitle className="text-base">İletişim</CardTitle></CardHeader>
+                  <CardContent className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label>Cep Telefonu</Label>
+                      <Input {...register('phone')} placeholder="05XX XXX XX XX" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Ev Telefonu</Label>
+                      <Input {...register('homePhone')} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>İş Telefonu</Label>
+                      <Input {...register('workPhone')} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>E-posta</Label>
+                      <Input {...register('email')} type="email" />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* ── Adres ── */}
-              <Card>
-                <CardHeader><CardTitle className="text-base">Adres</CardTitle></CardHeader>
-                <CardContent className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label>Ülke</Label>
-                    <FormSelect
-                      control={control}
-                      name="country"
-                      options={(countriesData?.data ?? []).map((c) => c.name)}
-                    />
-                  </div>
-
-                  {/* İl: Türkiye ise dropdown, değilse text */}
-                  <div className="space-y-1.5">
-                    <Label>İl / Şehir</Label>
-                    {isTurkeyCountry ? (
+              {canViewContact && (
+                <Card>
+                  <CardHeader><CardTitle className="text-base">Adres</CardTitle></CardHeader>
+                  <CardContent className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label>Ülke</Label>
                       <FormSelect
                         control={control}
-                        name="city"
-                        options={(citiesData?.data ?? []).map((c) => c.name)}
-                        placeholder="İl seçin…"
+                        name="country"
+                        options={(countriesData?.data ?? []).map((c) => c.name)}
                       />
-                    ) : (
-                      <Input {...register('city')} />
-                    )}
-                  </div>
+                    </div>
 
-                  {/* İlçe: Türkiye + il seçili ise dropdown, değilse text */}
-                  <div className="space-y-1.5">
-                    <Label>İlçe</Label>
-                    {isTurkeyCountry && selectedCityId ? (
-                      <FormSelect
-                        control={control}
-                        name="district"
-                        options={(districtsData?.data ?? []).map((d) => d.name)}
-                        placeholder="İlçe seçin…"
-                      />
-                    ) : (
-                      <Input
-                        {...register('district')}
-                        disabled={isTurkeyCountry && !watchedCity}
-                        placeholder={isTurkeyCountry && !watchedCity ? 'Önce il seçin' : ''}
-                      />
-                    )}
-                  </div>
+                    {/* İl: Türkiye ise dropdown, değilse text */}
+                    <div className="space-y-1.5">
+                      <Label>İl / Şehir</Label>
+                      {isTurkeyCountry ? (
+                        <FormSelect
+                          control={control}
+                          name="city"
+                          options={(citiesData?.data ?? []).map((c) => c.name)}
+                          placeholder="İl seçin…"
+                        />
+                      ) : (
+                        <Input {...register('city')} />
+                      )}
+                    </div>
 
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label>Açık Adres</Label>
-                    <Textarea {...register('address')} rows={2} />
-                  </div>
-                </CardContent>
-              </Card>
+                    {/* İlçe: Türkiye + il seçili ise dropdown, değilse text */}
+                    <div className="space-y-1.5">
+                      <Label>İlçe</Label>
+                      {isTurkeyCountry && selectedCityId ? (
+                        <FormSelect
+                          control={control}
+                          name="district"
+                          options={(districtsData?.data ?? []).map((d) => d.name)}
+                          placeholder="İlçe seçin…"
+                        />
+                      ) : (
+                        <Input
+                          {...register('district')}
+                          disabled={isTurkeyCountry && !watchedCity}
+                          placeholder={isTurkeyCountry && !watchedCity ? 'Önce il seçin' : ''}
+                        />
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label>Açık Adres</Label>
+                      <Textarea {...register('address')} rows={2} />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* ── Geliş Bilgileri ── */}
               <Card>
@@ -610,7 +619,7 @@ export function PatientDetailPage() {
                     <Field label="Ad Soyad" value={fullName} />
                     <Field label="Ana Adı" value={patient.motherName} />
                     <Field label="Baba Adı" value={patient.fatherName} />
-                    <Field label="Doğum Tarihi" value={formatDate(patient.birthDate)} />
+                    {canViewContact && <Field label="Doğum Tarihi" value={formatDate(patient.birthDate)} />}
                     <Field label="Cinsiyet" value={patient.gender ? (GENDER_LABELS[patient.gender] ?? patient.gender) : null} />
                     <Field label="Medeni Durum" value={patient.maritalStatus ? (MARITAL_LABELS[patient.maritalStatus] ?? patient.maritalStatus) : null} />
                     <Field label="Meslek" value={patient.occupation} />
@@ -631,34 +640,45 @@ export function PatientDetailPage() {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader><CardTitle className="text-base">İletişim</CardTitle></CardHeader>
-                <CardContent>
-                  <dl className="grid gap-4 sm:grid-cols-3">
-                    <Field label="Cep Telefonu" value={patient.phone} />
-                    <Field label="Ev Telefonu" value={patient.homePhone} />
-                    <Field label="İş Telefonu" value={patient.workPhone} />
-                    <Field label="E-posta" value={patient.email} />
-                  </dl>
-                </CardContent>
-              </Card>
+              {canViewContact ? (
+                <>
+                  <Card>
+                    <CardHeader><CardTitle className="text-base">İletişim</CardTitle></CardHeader>
+                    <CardContent>
+                      <dl className="grid gap-4 sm:grid-cols-3">
+                        <Field label="Cep Telefonu" value={patient.phone} />
+                        <Field label="Ev Telefonu" value={patient.homePhone} />
+                        <Field label="İş Telefonu" value={patient.workPhone} />
+                        <Field label="E-posta" value={patient.email} />
+                      </dl>
+                    </CardContent>
+                  </Card>
 
-              <Card>
-                <CardHeader><CardTitle className="text-base">Adres</CardTitle></CardHeader>
-                <CardContent>
-                  <dl className="grid gap-4 sm:grid-cols-3">
-                    <Field label="Ülke" value={patient.country} />
-                    <Field label="İl" value={patient.city} />
-                    <Field label="İlçe" value={patient.district} />
-                    {patient.address && (
-                      <div className="sm:col-span-3">
-                        <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Açık Adres</dt>
-                        <dd className="text-sm mt-0.5">{patient.address}</dd>
-                      </div>
-                    )}
-                  </dl>
-                </CardContent>
-              </Card>
+                  <Card>
+                    <CardHeader><CardTitle className="text-base">Adres</CardTitle></CardHeader>
+                    <CardContent>
+                      <dl className="grid gap-4 sm:grid-cols-3">
+                        <Field label="Ülke" value={patient.country} />
+                        <Field label="İl" value={patient.city} />
+                        <Field label="İlçe" value={patient.district} />
+                        {patient.address && (
+                          <div className="sm:col-span-3">
+                            <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Açık Adres</dt>
+                            <dd className="text-sm mt-0.5">{patient.address}</dd>
+                          </div>
+                        )}
+                      </dl>
+                    </CardContent>
+                  </Card>
+                </>
+              ) : (
+                <Card>
+                  <CardHeader><CardTitle className="text-base">İletişim &amp; Adres</CardTitle></CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">Bu bilgileri görüntülemek için yetkiniz bulunmuyor.</p>
+                  </CardContent>
+                </Card>
+              )}
 
               <Card>
                 <CardHeader><CardTitle className="text-base">Geliş Bilgileri</CardTitle></CardHeader>
