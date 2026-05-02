@@ -28,28 +28,31 @@ public class DoctorSchedulesController : ControllerBase
     }
 
     /// <summary>Hekimin tüm şubelerdeki haftalık programını döner.</summary>
-    [HttpGet("{doctorId:long}")]
+    [HttpGet("{doctorPublicId:guid}")]
     [RequirePermission("appointment:view")]
     [ProducesResponseType(typeof(IReadOnlyList<DoctorScheduleResponse>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetSchedules(long doctorId)
+    public async Task<IActionResult> GetSchedules(Guid doctorPublicId, CancellationToken ct)
     {
         var items = await _db.DoctorSchedules
-            .Where(s => s.DoctorId == doctorId && s.IsActive)
+            .Where(s => s.Doctor.PublicId == doctorPublicId && s.IsActive)
             .OrderBy(s => s.BranchId).ThenBy(s => s.DayOfWeek)
             .Select(s => new DoctorScheduleResponse(
-                s.Id, s.DoctorId, s.BranchId, s.Branch.Name,
+                s.Id,
+                s.Doctor.PublicId,
+                s.Branch.PublicId,
+                s.Branch.Name,
                 s.DayOfWeek, s.IsWorking,
                 s.StartTime.ToString("HH:mm"), s.EndTime.ToString("HH:mm"),
                 s.BreakStart != null ? s.BreakStart.Value.ToString("HH:mm") : null,
                 s.BreakEnd   != null ? s.BreakEnd.Value.ToString("HH:mm")   : null,
                 s.BreakLabel))
-            .ToListAsync();
+            .ToListAsync(ct);
 
         return Ok(items);
     }
 
     /// <summary>
-    /// Yeni haftalık program kaydı oluşturur.
+    /// Yeni haftalık program kaydı oluşturur (upsert).
     /// Aynı hekim aynı gün başka şubede çakışan saat varsa 409 döner.
     /// </summary>
     [HttpPost]
@@ -57,32 +60,40 @@ public class DoctorSchedulesController : ControllerBase
     [ProducesResponseType(typeof(DoctorScheduleResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> CreateSchedule([FromBody] UpsertDoctorScheduleRequest request)
+    public async Task<IActionResult> UpsertSchedule([FromBody] UpsertDoctorScheduleRequest request, CancellationToken ct)
     {
+        var doctor = await _db.Users
+            .Where(u => u.PublicId == request.DoctorPublicId)
+            .Select(u => new { u.Id, u.PublicId })
+            .FirstOrDefaultAsync(ct);
+        if (doctor is null) return NotFound("Hekim bulunamadı.");
+
+        var branch = await _db.Branches
+            .Where(b => b.PublicId == request.BranchPublicId && !b.IsDeleted)
+            .Select(b => new { b.Id, b.Name, b.PublicId })
+            .FirstOrDefaultAsync(ct);
+        if (branch is null) return NotFound("Şube bulunamadı.");
+
         var start = TimeOnly.Parse(request.StartTime);
         var end   = TimeOnly.Parse(request.EndTime);
 
         if (start >= end)
             return BadRequest("Başlangıç saati bitiş saatinden önce olmalıdır.");
 
-        var conflict = await FindConflictAsync(
-            request.DoctorId, request.BranchId, request.DayOfWeek,
-            start, end, excludeScheduleId: null);
-
+        var conflict = await FindConflictAsync(doctor.Id, branch.Id, request.DayOfWeek, start, end, null, ct);
         if (conflict is not null)
             return Conflict(new
             {
-                message = $"Hekim bu gün {conflict.BranchName} şubesinde " +
-                          $"{conflict.WorkStart}-{conflict.WorkEnd} saatleri arasında çalışmaktadır.",
+                message          = $"Hekim bu gün {conflict.BranchName} şubesinde {conflict.WorkStart}-{conflict.WorkEnd} saatleri arasında çalışmaktadır.",
                 conflictingBranch = conflict.BranchName,
-                conflictStart = conflict.WorkStart,
-                conflictEnd   = conflict.WorkEnd,
+                conflictStart    = conflict.WorkStart,
+                conflictEnd      = conflict.WorkEnd,
             });
 
         var existing = await _db.DoctorSchedules
-            .FirstOrDefaultAsync(s => s.DoctorId == request.DoctorId
-                                   && s.BranchId == request.BranchId
-                                   && s.DayOfWeek == request.DayOfWeek);
+            .FirstOrDefaultAsync(s => s.DoctorId == doctor.Id
+                                   && s.BranchId == branch.Id
+                                   && s.DayOfWeek == request.DayOfWeek, ct);
 
         if (existing is not null)
         {
@@ -93,7 +104,7 @@ public class DoctorSchedulesController : ControllerBase
         }
         else
         {
-            existing = DoctorSchedule.Create(request.DoctorId, request.BranchId, request.DayOfWeek);
+            existing = DoctorSchedule.Create(doctor.Id, branch.Id, request.DayOfWeek);
             existing.Update(request.IsWorking, start, end,
                 request.BreakStart != null ? TimeOnly.Parse(request.BreakStart) : null,
                 request.BreakEnd   != null ? TimeOnly.Parse(request.BreakEnd)   : null,
@@ -101,8 +112,13 @@ public class DoctorSchedulesController : ControllerBase
             _db.DoctorSchedules.Add(existing);
         }
 
-        await _db.SaveChangesAsync();
-        return StatusCode(StatusCodes.Status201Created, ToResponse(existing, request.BranchId));
+        await _db.SaveChangesAsync(ct);
+
+        return StatusCode(StatusCodes.Status201Created, new DoctorScheduleResponse(
+            existing.Id, doctor.PublicId, branch.PublicId, branch.Name,
+            existing.DayOfWeek, existing.IsWorking,
+            existing.StartTime.ToString("HH:mm"), existing.EndTime.ToString("HH:mm"),
+            existing.BreakStart?.ToString("HH:mm"), existing.BreakEnd?.ToString("HH:mm"), existing.BreakLabel));
     }
 
     /// <summary>
@@ -115,9 +131,12 @@ public class DoctorSchedulesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> UpdateSchedule(long id, [FromBody] UpsertDoctorScheduleRequest request)
+    public async Task<IActionResult> UpdateSchedule(long id, [FromBody] UpdateDoctorScheduleRequest request, CancellationToken ct)
     {
-        var schedule = await _db.DoctorSchedules.FindAsync(id);
+        var schedule = await _db.DoctorSchedules
+            .Include(s => s.Doctor)
+            .Include(s => s.Branch)
+            .FirstOrDefaultAsync(s => s.Id == id, ct);
         if (schedule is null) return NotFound();
 
         var start = TimeOnly.Parse(request.StartTime);
@@ -126,26 +145,28 @@ public class DoctorSchedulesController : ControllerBase
         if (start >= end)
             return BadRequest("Başlangıç saati bitiş saatinden önce olmalıdır.");
 
-        var conflict = await FindConflictAsync(
-            schedule.DoctorId, request.BranchId, request.DayOfWeek,
-            start, end, excludeScheduleId: id);
-
+        var conflict = await FindConflictAsync(schedule.DoctorId, schedule.BranchId, schedule.DayOfWeek, start, end, id, ct);
         if (conflict is not null)
             return Conflict(new
             {
-                message = $"Hekim bu gün {conflict.BranchName} şubesinde " +
-                          $"{conflict.WorkStart}-{conflict.WorkEnd} saatleri arasında çalışmaktadır.",
+                message          = $"Hekim bu gün {conflict.BranchName} şubesinde {conflict.WorkStart}-{conflict.WorkEnd} saatleri arasında çalışmaktadır.",
                 conflictingBranch = conflict.BranchName,
-                conflictStart = conflict.WorkStart,
-                conflictEnd   = conflict.WorkEnd,
+                conflictStart    = conflict.WorkStart,
+                conflictEnd      = conflict.WorkEnd,
             });
 
         schedule.Update(request.IsWorking, start, end,
             request.BreakStart != null ? TimeOnly.Parse(request.BreakStart) : null,
-            request.BreakEnd   != null ? TimeOnly.Parse(request.BreakEnd)   : null);
+            request.BreakEnd   != null ? TimeOnly.Parse(request.BreakEnd)   : null,
+            request.BreakLabel);
 
-        await _db.SaveChangesAsync();
-        return Ok(ToResponse(schedule, schedule.BranchId));
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(new DoctorScheduleResponse(
+            schedule.Id, schedule.Doctor.PublicId, schedule.Branch.PublicId, schedule.Branch.Name,
+            schedule.DayOfWeek, schedule.IsWorking,
+            schedule.StartTime.ToString("HH:mm"), schedule.EndTime.ToString("HH:mm"),
+            schedule.BreakStart?.ToString("HH:mm"), schedule.BreakEnd?.ToString("HH:mm"), schedule.BreakLabel));
     }
 
     // ─── Çakışma kontrolü ─────────────────────────────────────────────────────
@@ -153,11 +174,12 @@ public class DoctorSchedulesController : ControllerBase
     private async Task<ScheduleConflictInfo?> FindConflictAsync(
         long doctorId, long branchId, int dayOfWeek,
         TimeOnly start, TimeOnly end,
-        long? excludeScheduleId)
+        long? excludeScheduleId,
+        CancellationToken ct)
     {
         var query = _db.DoctorSchedules
             .Where(s => s.DoctorId  == doctorId
-                     && s.BranchId  != branchId      // farklı şube
+                     && s.BranchId  != branchId
                      && s.DayOfWeek == dayOfWeek
                      && s.IsActive
                      && s.IsWorking);
@@ -167,42 +189,39 @@ public class DoctorSchedulesController : ControllerBase
 
         var sameDay = await query
             .Select(s => new { s.Id, s.BranchId, BranchName = s.Branch.Name, s.StartTime, s.EndTime })
-            .ToListAsync();
+            .ToListAsync(ct);
 
         foreach (var existing in sameDay)
         {
-            // Zaman çakışması: start < existing.End && existing.Start < end
             if (start < existing.EndTime && existing.StartTime < end)
-            {
-                return new ScheduleConflictInfo(
-                    existing.BranchName,
-                    existing.StartTime.ToString("HH:mm"),
-                    existing.EndTime.ToString("HH:mm"));
-            }
+                return new ScheduleConflictInfo(existing.BranchName, existing.StartTime.ToString("HH:mm"), existing.EndTime.ToString("HH:mm"));
         }
 
         return null;
     }
 
-    /// <summary>
-    /// Verilen hekim + gün kombinasyonu için çakışma olup olmadığını kontrol eder.
-    /// Schedule kaydetmeden önce UI'dan sorgulanabilir.
-    /// </summary>
+    /// <summary>Verilen hekim+gün için çakışma kontrolü (UI'dan kullanılır).</summary>
     [HttpGet("conflict-check")]
     [RequirePermission("appointment:view")]
     [ProducesResponseType(typeof(ConflictCheckResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> CheckConflict(
-        [FromQuery] long doctorId,
-        [FromQuery] long branchId,
-        [FromQuery] int dayOfWeek,
+        [FromQuery] Guid   doctorPublicId,
+        [FromQuery] Guid   branchPublicId,
+        [FromQuery] int    dayOfWeek,
         [FromQuery] string startTime,
         [FromQuery] string endTime,
-        [FromQuery] long? excludeScheduleId = null)
+        [FromQuery] long?  excludeScheduleId,
+        CancellationToken ct)
     {
         if (!TimeOnly.TryParse(startTime, out var start) || !TimeOnly.TryParse(endTime, out var end))
             return BadRequest("Geçersiz saat formatı.");
 
-        var conflict = await FindConflictAsync(doctorId, branchId, dayOfWeek, start, end, excludeScheduleId);
+        var doctorId = await _db.Users.Where(u => u.PublicId == doctorPublicId).Select(u => (long?)u.Id).FirstOrDefaultAsync(ct);
+        var branchId = await _db.Branches.Where(b => b.PublicId == branchPublicId).Select(b => (long?)b.Id).FirstOrDefaultAsync(ct);
+
+        if (doctorId is null || branchId is null) return NotFound();
+
+        var conflict = await FindConflictAsync(doctorId.Value, branchId.Value, dayOfWeek, start, end, excludeScheduleId, ct);
 
         return Ok(new ConflictCheckResponse(
             HasConflict: conflict is not null,
@@ -210,20 +229,14 @@ public class DoctorSchedulesController : ControllerBase
             ConflictStart: conflict?.WorkStart,
             ConflictEnd: conflict?.WorkEnd));
     }
-
-    private static DoctorScheduleResponse ToResponse(DoctorSchedule s, long branchId) =>
-        new(s.Id, s.DoctorId, branchId, string.Empty,
-            s.DayOfWeek, s.IsWorking,
-            s.StartTime.ToString("HH:mm"), s.EndTime.ToString("HH:mm"),
-            s.BreakStart?.ToString("HH:mm"), s.BreakEnd?.ToString("HH:mm"), s.BreakLabel);
 }
 
 // ─── DTOs ──────────────────────────────────────────────────────────────────────
 
 public record DoctorScheduleResponse(
     long    Id,
-    long    DoctorId,
-    long    BranchId,
+    Guid    DoctorPublicId,
+    Guid    BranchPublicId,
     string  BranchName,
     int     DayOfWeek,
     bool    IsWorking,
@@ -235,9 +248,18 @@ public record DoctorScheduleResponse(
 );
 
 public record UpsertDoctorScheduleRequest(
-    long    DoctorId,
-    long    BranchId,
+    Guid    DoctorPublicId,
+    Guid    BranchPublicId,
     int     DayOfWeek,
+    bool    IsWorking,
+    string  StartTime,
+    string  EndTime,
+    string? BreakStart,
+    string? BreakEnd,
+    string? BreakLabel
+);
+
+public record UpdateDoctorScheduleRequest(
     bool    IsWorking,
     string  StartTime,
     string  EndTime,

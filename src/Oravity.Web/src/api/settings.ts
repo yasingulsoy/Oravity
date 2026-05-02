@@ -26,6 +26,7 @@ export interface BranchItem {
   pricingMultiplier: number;
   activeUserCount: number;
   createdAt: string;
+  companyName?: string;
 }
 
 export interface BranchUserInfo {
@@ -102,6 +103,7 @@ export interface UserDetail {
   isActive: boolean;
   isPlatformAdmin: boolean;
   title: string | null;
+  specializationId: number | null;
   specializationName: string | null;
   calendarColor: string | null;
   defaultAppointmentDuration: number | null;
@@ -126,6 +128,7 @@ export interface UpdateUserPayload {
   fullName?: string;
   isActive?: boolean;
   title?: string;
+  specializationId?: number; // 0 = clear
   calendarColor?: string;
   defaultAppointmentDuration?: number;
   preferredLanguageCode?: string;
@@ -184,6 +187,62 @@ export interface SpecializationItem {
   code: string;
 }
 
+export interface BankItem {
+  publicId: string;
+  name: string;
+  shortName: string;
+  bicCode?: string;
+  isActive: boolean;
+}
+
+export interface CreateBankPayload {
+  name: string;
+  shortName: string;
+  bicCode?: string;
+}
+
+export interface PaymentProviderItem {
+  publicId: string;
+  name: string;
+  shortName?: string;
+  website?: string;
+  isActive: boolean;
+}
+
+export interface PosTerminalItem {
+  publicId: string;
+  name: string;
+  bankId?: number;
+  bankPublicId?: string;
+  bankShortName?: string;
+  terminalId?: string;
+  isActive: boolean;
+}
+
+export interface CreatePosTerminalPayload {
+  name: string;
+  bankPublicId?: string;
+  terminalId?: string;
+}
+
+export interface BankAccountItem {
+  publicId: string;
+  bankId?: number;
+  bankPublicId?: string;
+  bankShortName?: string;
+  accountName: string;
+  iban?: string;
+  currency: string;
+  isActive: boolean;
+}
+
+export interface CreateBankAccountPayload {
+  bankPublicId?: string;
+  accountName: string;
+  iban?: string;
+  currency?: string;
+}
+
 // ─── API ─────────────────────────────────────────────────────────────────────
 
 export const settingsApi = {
@@ -238,4 +297,36 @@ export const settingsApi = {
   // Uzmanlık Alanları
   listSpecializations: () =>
     apiClient.get<SpecializationItem[]>('/settings/specializations'),
+
+  // Bankalar (global referans)
+  listBanks: () =>
+    apiClient.get<BankItem[]>('/settings/banks'),
+  createBank: (data: CreateBankPayload) =>
+    apiClient.post<BankItem>('/settings/banks', data),
+  updateBank: (publicId: string, data: CreateBankPayload) =>
+    apiClient.put<BankItem>(`/settings/banks/${publicId}`, data),
+
+  // Ödeme Sağlayıcıları (global referans)
+  listPaymentProviders: () =>
+    apiClient.get<PaymentProviderItem[]>('/settings/payment-providers'),
+
+  // POS Cihazları
+  listPosTerminals: (branchId?: string) =>
+    apiClient.get<PosTerminalItem[]>('/settings/pos-terminals', { params: { branchId } }),
+  createPosTerminal: (data: CreatePosTerminalPayload, branchId?: string) =>
+    apiClient.post<PosTerminalItem>('/settings/pos-terminals', data, { params: { branchId } }),
+  updatePosTerminal: (publicId: string, data: CreatePosTerminalPayload) =>
+    apiClient.put<PosTerminalItem>(`/settings/pos-terminals/${publicId}`, data),
+  deletePosTerminal: (publicId: string) =>
+    apiClient.delete(`/settings/pos-terminals/${publicId}`),
+
+  // Banka Hesapları
+  listBankAccounts: (branchId?: string) =>
+    apiClient.get<BankAccountItem[]>('/settings/bank-accounts', { params: { branchId } }),
+  createBankAccount: (data: CreateBankAccountPayload, branchId?: string) =>
+    apiClient.post<BankAccountItem>('/settings/bank-accounts', data, { params: { branchId } }),
+  updateBankAccount: (publicId: string, data: CreateBankAccountPayload) =>
+    apiClient.put<BankAccountItem>(`/settings/bank-accounts/${publicId}`, data),
+  deleteBankAccount: (publicId: string) =>
+    apiClient.delete(`/settings/bank-accounts/${publicId}`),
 };

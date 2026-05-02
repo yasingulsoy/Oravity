@@ -101,6 +101,70 @@ Oluşturulan tablolar (her şey migrations ile yönetiliyor):
 - [ ] Fatura / ödeme PDF
 - [ ] Çoklu dil frontend entegrasyonu
 - [ ] Treatment catalog: kategori CRUD UI (şu an sadece listeleme var)
+- [ ] **Kambiyo kârı/zararı muhasebesi (VUK 280)**: Dövizli ödemelerde `Payment.ExchangeRate` ile TCMB kuru arasındaki fark ileride 646 (Kambiyo Kârları) / 656 (Kambiyo Zararları) hesabına kayıt edilmeli. Şu an backend ₺1 toleransıyla zorunlu yuvarlama farkını klinik üstleniyor (kabul edilebilir); ama kullanıcı kuru elle değiştirirse büyük fark oluşabilir → `UpdatePaymentRate` komutu + muhasebe kaydı gerekli.
+- [ ] **Dövizli ödemede kur kilidi / uyarı**: Ödeme dialogunda TCMB kurundan %X'den fazla sapma olursa kullanıcıya uyarı göster. Büyük sapmalı manuel kur girişi kambiyo kârı/zararı doğurur ve şu an muhasebeleştirilmiyor.
+
+## Vizite & Protokol Akışı (Visit/Protocol Flow)
+
+### Durum Geçişleri
+
+```
+Appointment ──► Geldi(3) ──► Odada(5) ──► Ayrıldı(4)
+                  │                           ▲
+                  ▼                           │
+               Visit(Waiting) ──► ProtocolOpened ──► Completed
+```
+
+### Adım Adım Kural
+
+| # | Kim | Aksiyon | Backend | Sonuç |
+|---|-----|---------|---------|-------|
+| 1 | Resepsiyon | Randevu → "Geldi" | `UpdateAppointmentStatusCommand` | Apt→Arrived(3), Visit oluşturulur (Waiting), WaitingList'e düşer |
+| 2 | Resepsiyon | WaitingList → "Protokol Aç" | `CreateProtocolCommand` | Protocol oluşturulur, Visit→ProtocolOpened, WaitingList: **"Protokol Açık"** (violet) |
+| 3 | Hekim | Dashboard → "Odaya Al" | `StartProtocolCommand` | Protocol.StartedAt=now, Apt→InRoom(5), WaitingList: **"Odada"** (blue) |
+| 4 | Hekim | Dashboard → "Protokolü Kapat" | `CompleteProtocolCommand` | Protocol→Completed, auto-checkout: Visit→Completed, Apt→Ayrıldı(4), WaitingList'ten çıkar |
+| 5 | Resepsiyon | WaitingList → "Klinikten Çıktı" | `CheckOutVisitCommand` | Manuel çıkış (fallback, açık protokol yoksa çalışır), Apt→Tamamlandı(7) |
+
+### Hekim "Hastayı Çağır" Butonu (RequestPatientCallCommand)
+- **Gösterim koşulu:** `apt.statusId === 3 (Arrived) && !isActive && !apt.hasOpenProtocol`
+- **Sonuç:** Visit.CalledAt=now, resepsiyona bildirim → WaitingList: **"Çağrıldı"** (amber), AppointmentBlock'ta çan ikonu
+- Bu buton yalnızca protokol YOK iken görünür; protokol açıldıktan sonra hekim "Odaya Al" kullanır
+
+### IsBeingCalled Kuralı
+- `Visit.CalledAt.HasValue && Visit.Status == Waiting` — her iki sorguda da (GetWaitingList + GetAppointmentsByDate) aynı kural
+- Visit.Status ProtocolOpened'a geçince otomatik false olur
+
+### WaitingList Bölümleri (Section)
+| Bölüm | Koşul | Renk |
+|-------|-------|------|
+| Çağrıldı | isBeingCalled=true | Amber |
+| Protokol Açık | ProtocolOpened + hasOpenProtocol + protocol.startedAt=null | Violet |
+| Odada | ProtocolOpened + hasOpenProtocol + protocol.startedAt!=null | Blue |
+| Çıkış Hazır | ProtocolOpened + !hasOpenProtocol | Emerald |
+| Bekliyor | Waiting | Gri |
+
+### 1 Vizite = 1 Protokol Kuralı
+- `CreateProtocolCommand`: aktif (non-Cancelled) protokol varsa `InvalidOperationException` fırlatır
+- Randevulu hastada hekim her zaman randevunun hekiminden belirlenir (`visit.Appointment?.DoctorId ?? request.DoctorId`)
+
+### SignalR Broadcast Haritası
+| Command | Broadcast Mesajı | Frontend Etkisi |
+|---------|-----------------|-----------------|
+| CheckInPatient / UpdateAptStatus(Arrived) | `VisitUpdated` | WaitingList refetch |
+| RequestPatientCall | `VisitUpdated` + (PatientInRoom varsa) `CalendarUpdated` | WaitingList + Calendar |
+| CreateProtocol | `ProtocolUpdated` | WaitingList + Calendar (AppointmentCalendarPage invalidates both) |
+| StartProtocol | `ProtocolUpdated` | WaitingList + Calendar |
+| CompleteProtocol | `ProtocolUpdated` + `VisitUpdated` + `CalendarUpdated` | WaitingList + Calendar + DoctorDashboard |
+| CheckOutVisit | `VisitUpdated` | WaitingList + Calendar |
+
+### Önemli Dosyalar
+- `GetWaitingListQuery.cs` — WaitingList sorgusu, IsBeingCalled ve WaitingProtocolItem.StartedAt dahil
+- `GetAppointmentsByDateQuery.cs` — Appointments sorgusu, IsBeingCalled aynı mantıkla
+- `RequestPatientCallCommand.cs` — Çağır akışı, ConflictException guard var (ProtocolOpened zaten)
+- `CompleteProtocolCommand.cs` — Auto-checkout mantığı (remainingOpen==0 → visit.CheckOut())
+- `WaitingList.tsx` — 5 section, getSection() protocol.startedAt'e bakıyor
+- `AppointmentBlock.tsx` — isBeingCalled → amber border + "Hekim Çağırdı" chip
+- `AppointmentCalendarPage.tsx` — useCalendarSocket → her event'te appointments + visits/waiting invalidate; selectedAppointment live sync useEffect
 
 ## Kayıtlı Servisler (DI)
 FormulaEngine, PricingEngine → Singleton

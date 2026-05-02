@@ -106,7 +106,8 @@ public class SettingsController : ControllerBase
                 b.PublicId, b.Name, b.DefaultLanguageCode, b.IsActive,
                 b.PricingMultiplier,
                 b.UserRoleAssignments.Count(a => a.IsActive),
-                b.CreatedAt))
+                b.CreatedAt,
+                b.Company.Name))
             .ToListAsync(ct);
 
         return Ok(branches);
@@ -178,9 +179,14 @@ public class SettingsController : ControllerBase
         _db.Branches.Add(branch);
         await _db.SaveChangesAsync(ct);
 
+        var companyName = await _db.Companies.AsNoTracking()
+            .Where(c => c.Id == companyId.Value)
+            .Select(c => c.Name)
+            .FirstOrDefaultAsync(ct);
+
         return Ok(new BranchResponse(
             branch.PublicId, branch.Name, branch.DefaultLanguageCode, branch.IsActive,
-            branch.PricingMultiplier, 0, branch.CreatedAt));
+            branch.PricingMultiplier, 0, branch.CreatedAt, companyName));
     }
 
     [HttpPut("branches/{publicId:guid}")]
@@ -209,9 +215,14 @@ public class SettingsController : ControllerBase
         var userCount = await _db.UserRoleAssignments
             .CountAsync(a => a.BranchId == branch.Id && a.IsActive, ct);
 
+        var companyName = await _db.Companies.AsNoTracking()
+            .Where(c => c.Id == branch.CompanyId)
+            .Select(c => c.Name)
+            .FirstOrDefaultAsync(ct);
+
         return Ok(new BranchResponse(
             branch.PublicId, branch.Name, branch.DefaultLanguageCode, branch.IsActive,
-            branch.PricingMultiplier, userCount, branch.CreatedAt));
+            branch.PricingMultiplier, userCount, branch.CreatedAt, companyName));
     }
 
     [HttpDelete("branches/{publicId:guid}")]
@@ -289,7 +300,7 @@ public class SettingsController : ControllerBase
         return Ok(new UserDetailResponse(
             user.PublicId, user.FullName, user.Email, user.IsActive,
             user.IsPlatformAdmin, user.Title,
-            user.Specialization?.Name, user.CalendarColor,
+            user.SpecializationId, user.Specialization?.Name, user.CalendarColor,
             user.DefaultAppointmentDuration, user.IsChiefPhysician,
             user.PreferredLanguageCode, user.LastLoginAt,
             user.RoleAssignments.Select(a => new UserRoleAssignmentResponse(
@@ -349,10 +360,12 @@ public class SettingsController : ControllerBase
             user.SetFullName(req.FullName.Trim());
         if (req.IsActive.HasValue)
             user.SetActive(req.IsActive.Value);
-        if (req.Title is not null || req.CalendarColor is not null || req.DefaultAppointmentDuration.HasValue)
+        if (req.Title is not null || req.CalendarColor is not null || req.DefaultAppointmentDuration.HasValue || req.SpecializationId.HasValue)
             user.UpdateDoctorProfile(
                 req.Title ?? user.Title,
-                null,
+                req.SpecializationId.HasValue
+                    ? (req.SpecializationId.Value == 0 ? null : (int?)req.SpecializationId.Value)
+                    : user.SpecializationId,
                 req.CalendarColor ?? user.CalendarColor,
                 req.DefaultAppointmentDuration ?? user.DefaultAppointmentDuration);
         if (req.PreferredLanguageCode is not null)
@@ -529,6 +542,258 @@ public class SettingsController : ControllerBase
 
         return Ok(items);
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // POS CİHAZLARI
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private async Task<long?> ResolveBranchIdAsync(Guid? branchPublicId, CancellationToken ct)
+    {
+        if (_tenant.BranchId is not null) return _tenant.BranchId;
+        if (branchPublicId is null) return null;
+
+        var companyId = await TenantCompanyResolver.ResolveCompanyIdAsync(_tenant, _db, ct);
+        return await _db.Branches.AsNoTracking()
+            .Where(b => b.PublicId == branchPublicId.Value && !b.IsDeleted &&
+                        (companyId == null || b.CompanyId == companyId))
+            .Select(b => (long?)b.Id)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // BANKALAR (global referans)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [HttpGet("banks")]
+    [RequirePermission("settings:view")]
+    public async Task<IActionResult> ListBanks(CancellationToken ct)
+    {
+        var items = await _db.Banks.AsNoTracking()
+            .Where(b => b.IsActive && !b.IsDeleted)
+            .OrderBy(b => b.ShortName)
+            .Select(b => new BankResponse(b.PublicId, b.Name, b.ShortName, b.BicCode, b.IsActive))
+            .ToListAsync(ct);
+        return Ok(items);
+    }
+
+    [HttpPost("banks")]
+    [RequirePermission("settings:edit_general")]
+    public async Task<IActionResult> CreateBank([FromBody] CreateBankRequest req, CancellationToken ct)
+    {
+        var bank = Bank.Create(req.Name, req.ShortName, req.BicCode);
+        _db.Banks.Add(bank);
+        await _db.SaveChangesAsync(ct);
+        return Ok(new BankResponse(bank.PublicId, bank.Name, bank.ShortName, bank.BicCode, bank.IsActive));
+    }
+
+    [HttpPut("banks/{publicId:guid}")]
+    [RequirePermission("settings:edit_general")]
+    public async Task<IActionResult> UpdateBank(Guid publicId, [FromBody] CreateBankRequest req, CancellationToken ct)
+    {
+        var bank = await _db.Banks.FirstOrDefaultAsync(b => b.PublicId == publicId && !b.IsDeleted, ct);
+        if (bank is null) return NotFound();
+        bank.Update(req.Name, req.ShortName, req.BicCode);
+        await _db.SaveChangesAsync(ct);
+        return Ok(new BankResponse(bank.PublicId, bank.Name, bank.ShortName, bank.BicCode, bank.IsActive));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ÖDEME SAĞLAYICILARI (global referans)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [HttpGet("payment-providers")]
+    [RequirePermission("settings:view")]
+    public async Task<IActionResult> ListPaymentProviders(CancellationToken ct)
+    {
+        var items = await _db.PaymentProviders.AsNoTracking()
+            .Where(p => !p.IsDeleted)
+            .OrderBy(p => p.Name)
+            .Select(p => new PaymentProviderResponse(p.PublicId, p.Name, p.ShortName, p.Website, p.IsActive))
+            .ToListAsync(ct);
+        return Ok(items);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // POS CİHAZLARI
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [HttpGet("pos-terminals")]
+    [RequirePermission("settings:view")]
+    public async Task<IActionResult> ListPosTerminals([FromQuery] Guid? branchId, CancellationToken ct)
+    {
+        var bid = await ResolveBranchIdAsync(branchId, ct);
+        if (bid is null) return BadRequest("Şube bilgisi gereklidir.");
+
+        var items = await _db.PosTerminals.AsNoTracking()
+            .Include(p => p.Bank)
+            .Where(p => p.BranchId == bid && !p.IsDeleted)
+            .OrderBy(p => p.Name)
+            .Select(p => new PosTerminalResponse(
+                p.PublicId, p.Name,
+                p.BankId, p.Bank != null ? p.Bank.PublicId : (Guid?)null,
+                p.Bank != null ? p.Bank.ShortName : null,
+                p.TerminalId, p.IsActive))
+            .ToListAsync(ct);
+
+        return Ok(items);
+    }
+
+    [HttpPost("pos-terminals")]
+    [RequirePermission("settings:edit_general")]
+    public async Task<IActionResult> CreatePosTerminal(
+        [FromQuery] Guid? branchId, [FromBody] CreatePosTerminalRequest req, CancellationToken ct)
+    {
+        var bid = await ResolveBranchIdAsync(branchId, ct);
+        if (bid is null) return BadRequest("Şube bilgisi gereklidir.");
+
+        long? bankId = null;
+        if (req.BankPublicId.HasValue)
+            bankId = await _db.Banks.Where(b => b.PublicId == req.BankPublicId.Value && !b.IsDeleted)
+                .Select(b => (long?)b.Id).FirstOrDefaultAsync(ct);
+
+        var terminal = PosTerminal.Create(bid.Value, req.Name, bankId, req.TerminalId);
+        _db.PosTerminals.Add(terminal);
+        await _db.SaveChangesAsync(ct);
+
+        var bank = bankId.HasValue
+            ? await _db.Banks.AsNoTracking().FirstOrDefaultAsync(b => b.Id == bankId, ct)
+            : null;
+
+        return Ok(new PosTerminalResponse(
+            terminal.PublicId, terminal.Name,
+            bankId, bank?.PublicId, bank?.ShortName,
+            terminal.TerminalId, terminal.IsActive));
+    }
+
+    [HttpPut("pos-terminals/{publicId:guid}")]
+    [RequirePermission("settings:edit_general")]
+    public async Task<IActionResult> UpdatePosTerminal(
+        Guid publicId, [FromBody] CreatePosTerminalRequest req, CancellationToken ct)
+    {
+        var terminal = await _db.PosTerminals.FirstOrDefaultAsync(p => p.PublicId == publicId && !p.IsDeleted, ct);
+        if (terminal is null) return NotFound();
+
+        long? bankId = null;
+        if (req.BankPublicId.HasValue)
+            bankId = await _db.Banks.Where(b => b.PublicId == req.BankPublicId.Value && !b.IsDeleted)
+                .Select(b => (long?)b.Id).FirstOrDefaultAsync(ct);
+
+        terminal.Update(req.Name, bankId, req.TerminalId);
+        await _db.SaveChangesAsync(ct);
+
+        var bank = bankId.HasValue
+            ? await _db.Banks.AsNoTracking().FirstOrDefaultAsync(b => b.Id == bankId, ct)
+            : null;
+
+        return Ok(new PosTerminalResponse(
+            terminal.PublicId, terminal.Name,
+            bankId, bank?.PublicId, bank?.ShortName,
+            terminal.TerminalId, terminal.IsActive));
+    }
+
+    [HttpDelete("pos-terminals/{publicId:guid}")]
+    [RequirePermission("settings:edit_general")]
+    public async Task<IActionResult> DeletePosTerminal(Guid publicId, CancellationToken ct)
+    {
+        var terminal = await _db.PosTerminals.FirstOrDefaultAsync(p => p.PublicId == publicId && !p.IsDeleted, ct);
+        if (terminal is null) return NotFound();
+
+        terminal.Deactivate();
+        terminal.SoftDelete();
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // BANKA HESAPLARI
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [HttpGet("bank-accounts")]
+    [RequirePermission("settings:view")]
+    public async Task<IActionResult> ListBankAccounts([FromQuery] Guid? branchId, CancellationToken ct)
+    {
+        var bid = await ResolveBranchIdAsync(branchId, ct);
+        if (bid is null) return BadRequest("Şube bilgisi gereklidir.");
+
+        var items = await _db.BankAccounts.AsNoTracking()
+            .Include(b => b.Bank)
+            .Where(b => b.BranchId == bid && !b.IsDeleted)
+            .OrderBy(b => b.Bank != null ? b.Bank.ShortName : "").ThenBy(b => b.AccountName)
+            .Select(b => new BankAccountResponse(
+                b.PublicId,
+                b.BankId, b.Bank != null ? b.Bank.PublicId : (Guid?)null,
+                b.Bank != null ? b.Bank.ShortName : null,
+                b.AccountName, b.Iban, b.Currency, b.IsActive))
+            .ToListAsync(ct);
+
+        return Ok(items);
+    }
+
+    [HttpPost("bank-accounts")]
+    [RequirePermission("settings:edit_general")]
+    public async Task<IActionResult> CreateBankAccount(
+        [FromQuery] Guid? branchId, [FromBody] CreateBankAccountRequest req, CancellationToken ct)
+    {
+        var bid = await ResolveBranchIdAsync(branchId, ct);
+        if (bid is null) return BadRequest("Şube bilgisi gereklidir.");
+
+        long? bankId = null;
+        if (req.BankPublicId.HasValue)
+            bankId = await _db.Banks.Where(b => b.PublicId == req.BankPublicId.Value && !b.IsDeleted)
+                .Select(b => (long?)b.Id).FirstOrDefaultAsync(ct);
+
+        var account = BankAccount.Create(bid.Value, bankId, req.AccountName, req.Iban, req.Currency ?? "TRY");
+        _db.BankAccounts.Add(account);
+        await _db.SaveChangesAsync(ct);
+
+        var bank = bankId.HasValue
+            ? await _db.Banks.AsNoTracking().FirstOrDefaultAsync(b => b.Id == bankId, ct)
+            : null;
+
+        return Ok(new BankAccountResponse(
+            account.PublicId,
+            bankId, bank?.PublicId, bank?.ShortName,
+            account.AccountName, account.Iban, account.Currency, account.IsActive));
+    }
+
+    [HttpPut("bank-accounts/{publicId:guid}")]
+    [RequirePermission("settings:edit_general")]
+    public async Task<IActionResult> UpdateBankAccount(
+        Guid publicId, [FromBody] CreateBankAccountRequest req, CancellationToken ct)
+    {
+        var account = await _db.BankAccounts.FirstOrDefaultAsync(b => b.PublicId == publicId && !b.IsDeleted, ct);
+        if (account is null) return NotFound();
+
+        long? bankId = null;
+        if (req.BankPublicId.HasValue)
+            bankId = await _db.Banks.Where(b => b.PublicId == req.BankPublicId.Value && !b.IsDeleted)
+                .Select(b => (long?)b.Id).FirstOrDefaultAsync(ct);
+
+        account.Update(bankId, req.AccountName, req.Iban, req.Currency ?? "TRY");
+        await _db.SaveChangesAsync(ct);
+
+        var bank = bankId.HasValue
+            ? await _db.Banks.AsNoTracking().FirstOrDefaultAsync(b => b.Id == bankId, ct)
+            : null;
+
+        return Ok(new BankAccountResponse(
+            account.PublicId,
+            bankId, bank?.PublicId, bank?.ShortName,
+            account.AccountName, account.Iban, account.Currency, account.IsActive));
+    }
+
+    [HttpDelete("bank-accounts/{publicId:guid}")]
+    [RequirePermission("settings:edit_general")]
+    public async Task<IActionResult> DeleteBankAccount(Guid publicId, CancellationToken ct)
+    {
+        var account = await _db.BankAccounts.FirstOrDefaultAsync(b => b.PublicId == publicId && !b.IsDeleted, ct);
+        if (account is null) return NotFound();
+
+        account.Deactivate();
+        account.SoftDelete();
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -543,7 +808,7 @@ public record UpdateCompanyRequest(string? Name, string? DefaultLanguageCode);
 
 public record BranchResponse(
     Guid PublicId, string Name, string DefaultLanguageCode, bool IsActive,
-    decimal PricingMultiplier, int ActiveUserCount, DateTime CreatedAt);
+    decimal PricingMultiplier, int ActiveUserCount, DateTime CreatedAt, string? CompanyName = null);
 
 public record BranchDetailResponse(
     Guid PublicId, string Name, string DefaultLanguageCode, bool IsActive,
@@ -568,7 +833,7 @@ public record UserRoleInfo(string RoleName, string RoleCode, string? BranchName)
 
 public record UserDetailResponse(
     Guid PublicId, string FullName, string Email, bool IsActive, bool IsPlatformAdmin,
-    string? Title, string? SpecializationName, string? CalendarColor,
+    string? Title, int? SpecializationId, string? SpecializationName, string? CalendarColor,
     int? DefaultAppointmentDuration, bool IsChiefPhysician,
     string? PreferredLanguageCode, DateTime? LastLoginAt,
     List<UserRoleAssignmentResponse> RoleAssignments);
@@ -583,9 +848,16 @@ public record CreateUserRequest(
     string? RoleCode, Guid? BranchPublicId,
     string? Title, string? CalendarColor, int? DefaultAppointmentDuration);
 
-public record UpdateUserRequest(
-    string? FullName, bool? IsActive, string? Title,
-    string? CalendarColor, int? DefaultAppointmentDuration, string? PreferredLanguageCode);
+public class UpdateUserRequest
+{
+    public string? FullName { get; init; }
+    public bool? IsActive { get; init; }
+    public string? Title { get; init; }
+    public int? SpecializationId { get; init; } // null=no change, 0=clear, >0=set
+    public string? CalendarColor { get; init; }
+    public int? DefaultAppointmentDuration { get; init; }
+    public string? PreferredLanguageCode { get; init; }
+}
 
 public record AssignRoleRequest(string RoleCode, Guid? BranchPublicId);
 
@@ -608,3 +880,22 @@ public record UpdateSecurityPolicyRequest(
     bool TwoFaRequired, bool TwoFaSkipInternalIp,
     string? AllowedIpRanges, int SessionTimeoutMinutes,
     int MaxFailedAttempts, int LockoutMinutes);
+
+public record BankResponse(Guid PublicId, string Name, string ShortName, string? BicCode, bool IsActive);
+public record CreateBankRequest(string Name, string ShortName, string? BicCode);
+
+public record PaymentProviderResponse(Guid PublicId, string Name, string? ShortName, string? Website, bool IsActive);
+
+public record PosTerminalResponse(
+    Guid PublicId, string Name,
+    long? BankId, Guid? BankPublicId, string? BankShortName,
+    string? TerminalId, bool IsActive);
+
+public record CreatePosTerminalRequest(string Name, Guid? BankPublicId, string? TerminalId);
+
+public record BankAccountResponse(
+    Guid PublicId,
+    long? BankId, Guid? BankPublicId, string? BankShortName,
+    string AccountName, string? Iban, string Currency, bool IsActive);
+
+public record CreateBankAccountRequest(Guid? BankPublicId, string AccountName, string? Iban, string? Currency);

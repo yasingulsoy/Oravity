@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building2, GitBranch, Users, Shield, KeyRound, Plus, Pencil, Check, X, Percent,
   Loader2, UserPlus, Eye, EyeOff, ChevronDown, ChevronRight, AlertTriangle,
-  Trash2, ArrowLeft, MapPin, Calendar, User as UserIcon, Info, ClipboardCheck,
+  Trash2, ArrowLeft, MapPin, Calendar, User as UserIcon, Info, ClipboardCheck, Landmark, Wallet, Stethoscope,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -41,6 +41,9 @@ import {
 import { cn } from '@/lib/utils';
 import { CommissionTemplatesTab } from './tabs/CommissionTemplatesTab';
 import { ConsentFormsTab } from './tabs/ConsentFormsTab';
+import { InstitutionsTab } from './tabs/InstitutionsTab';
+import { FinancialSettingsTab } from './tabs/FinancialSettingsTab';
+import { DoctorSchedulesTab } from './tabs/DoctorSchedulesTab';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ŞİRKET SEKMESI
@@ -207,6 +210,7 @@ function BranchesTab() {
           <TableHeader>
             <TableRow>
               <TableHead>Şube Adı</TableHead>
+              <TableHead>Firma</TableHead>
               <TableHead>Dil</TableHead>
               <TableHead>Durum</TableHead>
               <TableHead className="text-right">Fiyat Çarpanı</TableHead>
@@ -223,6 +227,7 @@ function BranchesTab() {
                 onClick={() => setDetailId(b.publicId)}
               >
                 <TableCell className="font-medium">{b.name}</TableCell>
+                <TableCell className="text-muted-foreground text-sm">{b.companyName ?? '—'}</TableCell>
                 <TableCell>{langLabel(b.defaultLanguageCode)}</TableCell>
                 <TableCell>
                   <Badge variant={b.isActive ? 'default' : 'secondary'} className="text-xs">
@@ -251,7 +256,7 @@ function BranchesTab() {
               </TableRow>
             ))}
             {branches?.length === 0 && (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Henüz şube eklenmemiş.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">Henüz şube eklenmemiş.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
@@ -752,7 +757,11 @@ function CreateUserDialog({ open, onClose, branches, roles, onSuccess }: {
             <div className="space-y-1.5">
               <Label>Rol</Label>
               <Select value={form.roleCode ?? ''} onValueChange={v => set({ roleCode: v || undefined })}>
-                <SelectTrigger><SelectValue placeholder="Rol seçin" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Rol seçin">
+                    {(val: string | null) => val ? (roles.find(r => r.code === val)?.name ?? val) : undefined}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
                   {roles.map(r => <SelectItem key={r.code} value={r.code}>{r.name}</SelectItem>)}
                 </SelectContent>
@@ -761,7 +770,11 @@ function CreateUserDialog({ open, onClose, branches, roles, onSuccess }: {
             <div className="space-y-1.5">
               <Label>Şube</Label>
               <Select value={form.branchPublicId ?? ''} onValueChange={v => set({ branchPublicId: v || undefined })}>
-                <SelectTrigger><SelectValue placeholder="Tüm şubeler" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Tüm şubeler">
+                    {(val: string | null) => val ? (branches.find(b => b.publicId === val)?.name ?? val) : undefined}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
                   {branches.filter(b => b.isActive).map(b => <SelectItem key={b.publicId} value={b.publicId}>{b.name}</SelectItem>)}
                 </SelectContent>
@@ -809,8 +822,12 @@ function EditUserDialog({ publicId, onClose, branches, roles, onSuccess }: {
   }, [user]);
 
   const updateMut = useMutation({
-    mutationFn: () => settingsApi.updateUser(publicId, form),
-    onSuccess: () => { toast.success('Kullanıcı güncellendi'); onSuccess(); },
+    mutationFn: (payload: typeof form) => settingsApi.updateUser(publicId, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['settings', 'users', publicId] });
+      toast.success('Kullanıcı güncellendi');
+      onSuccess();
+    },
     onError: () => toast.error('Güncelleme başarısız'),
   });
 
@@ -888,7 +905,11 @@ function EditUserDialog({ publicId, onClose, branches, roles, onSuccess }: {
                 <div className="space-y-1.5 flex-1">
                   <Label className="text-xs">Rol</Label>
                   <Select value={roleCode} onValueChange={setRoleCode}>
-                    <SelectTrigger><SelectValue placeholder="Rol seçin" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Rol seçin">
+                        {(val: string | null) => val ? (roles.find(r => r.code === val)?.name ?? val) : undefined}
+                      </SelectValue>
+                    </SelectTrigger>
                     <SelectContent>
                       {roles.map(r => <SelectItem key={r.code} value={r.code}>{r.name}</SelectItem>)}
                     </SelectContent>
@@ -897,7 +918,11 @@ function EditUserDialog({ publicId, onClose, branches, roles, onSuccess }: {
                 <div className="space-y-1.5 flex-1">
                   <Label className="text-xs">Şube</Label>
                   <Select value={branchId} onValueChange={setBranchId}>
-                    <SelectTrigger><SelectValue placeholder="Tüm şubeler" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Tüm şubeler">
+                        {(val: string | null) => val ? (branches.find(b => b.publicId === val)?.name ?? val) : undefined}
+                      </SelectValue>
+                    </SelectTrigger>
                     <SelectContent>
                       {branches.filter(b => b.isActive).map(b => <SelectItem key={b.publicId} value={b.publicId}>{b.name}</SelectItem>)}
                     </SelectContent>
@@ -912,7 +937,7 @@ function EditUserDialog({ publicId, onClose, branches, roles, onSuccess }: {
         )}
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Kapat</Button>
-          <Button onClick={() => updateMut.mutate()} disabled={updateMut.isPending}>
+          <Button onClick={() => updateMut.mutate(form)} disabled={updateMut.isPending}>
             {updateMut.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
             Kaydet
           </Button>
@@ -1257,6 +1282,18 @@ export function SettingsPage() {
             <ClipboardCheck className="h-3.5 w-3.5 mr-1.5" />
             Onam Formları
           </TabsTrigger>
+          <TabsTrigger value="institutions">
+            <Landmark className="h-3.5 w-3.5 mr-1.5" />
+            Anlaşmalı Kurumlar
+          </TabsTrigger>
+          <TabsTrigger value="financial">
+            <Wallet className="h-3.5 w-3.5 mr-1.5" />
+            Finansal
+          </TabsTrigger>
+          <TabsTrigger value="doctor-schedules">
+            <Stethoscope className="h-3.5 w-3.5 mr-1.5" />
+            Hekimler
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="company" className="mt-4">
@@ -1279,6 +1316,15 @@ export function SettingsPage() {
         </TabsContent>
         <TabsContent value="consent-forms" className="mt-4">
           <ConsentFormsTab />
+        </TabsContent>
+        <TabsContent value="institutions" className="mt-4">
+          <InstitutionsTab />
+        </TabsContent>
+        <TabsContent value="financial" className="mt-4">
+          <FinancialSettingsTab />
+        </TabsContent>
+        <TabsContent value="doctor-schedules" className="mt-4">
+          <DoctorSchedulesTab />
         </TabsContent>
       </Tabs>
     </div>
