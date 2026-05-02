@@ -2,6 +2,14 @@ using Oravity.SharedKernel.BaseEntities;
 
 namespace Oravity.SharedKernel.Entities;
 
+public enum InstitutionPaymentModel
+{
+    /// <summary>İndirim: hasta indirimli fiyatı öder, kuruma fatura kesilmez.</summary>
+    Discount  = 1,
+    /// <summary>Provizyon: kurum tedavi başına sabit tutar öder, kalan hastadan alınır.</summary>
+    Provision = 2,
+}
+
 /// <summary>
 /// Anlaşmalı kurum (sigorta şirketi, kurumsal müşteri, anlaşmalı hastane vb.)
 /// CompanyId = null  → platform geneli
@@ -39,6 +47,22 @@ public class Institution : BaseEntity
     public string? TaxNumber { get; private set; }
     public string? TaxOffice { get; private set; }
 
+    // E-Fatura & Tevkifat
+    /// <summary>Kurum e-fatura mükellefi mi? Evet ise e-fatura, hayır ise kağıt fatura kesilir.</summary>
+    public bool IsEInvoiceTaxpayer { get; private set; } = false;
+    /// <summary>Bu kuruma kesilen faturalarda KDV tevkifatı uygulanır mı?</summary>
+    public bool WithholdingApplies { get; private set; } = false;
+    /// <summary>Tevkifat kodu. Örn: "616" (Diğer Hizmetler, KDVGUT-I/C-2.1.3.4.1)</summary>
+    public string? WithholdingCode { get; private set; }
+    /// <summary>Tevkifat oranı pay. Örn: 5 (5/10)</summary>
+    public int WithholdingNumerator { get; private set; } = 5;
+    /// <summary>Tevkifat oranı payda. Örn: 10 (5/10)</summary>
+    public int WithholdingDenominator { get; private set; } = 10;
+
+    // Ödeme Modeli
+    /// <summary>Discount = indirim uygula, Provision = kurum katkı tutarı öder.</summary>
+    public InstitutionPaymentModel PaymentModel { get; private set; } = InstitutionPaymentModel.Discount;
+
     // Ödeme Koşulları
     public decimal? DiscountRate { get; private set; }
     public int PaymentDays { get; private set; } = 30;
@@ -55,6 +79,7 @@ public class Institution : BaseEntity
         string? code = null,
         string? type = null,
         long? companyId = null,
+        InstitutionPaymentModel paymentModel = InstitutionPaymentModel.Discount,
         string? marketSegment = null,
         string? phone = null,
         string? email = null,
@@ -70,12 +95,18 @@ public class Institution : BaseEntity
         decimal? discountRate = null,
         int paymentDays = 30,
         string? paymentTerms = null,
-        string? notes = null)
+        string? notes = null,
+        bool isEInvoiceTaxpayer = false,
+        bool withholdingApplies = false,
+        string? withholdingCode = null,
+        int withholdingNumerator = 5,
+        int withholdingDenominator = 10)
         => new()
         {
             Name = name.Trim(),
             Code = code?.Trim().ToUpperInvariant(),
             Type = type,
+            PaymentModel = paymentModel,
             MarketSegment = marketSegment,
             CompanyId = companyId,
             Phone = phone?.Trim(),
@@ -94,6 +125,11 @@ public class Institution : BaseEntity
             PaymentTerms = paymentTerms?.Trim(),
             Notes = notes?.Trim(),
             IsActive = true,
+            IsEInvoiceTaxpayer = isEInvoiceTaxpayer,
+            WithholdingApplies = withholdingApplies,
+            WithholdingCode = withholdingCode?.Trim(),
+            WithholdingNumerator = withholdingNumerator > 0 ? withholdingNumerator : 5,
+            WithholdingDenominator = withholdingDenominator > 0 ? withholdingDenominator : 10,
         };
 
     public void Update(
@@ -101,6 +137,7 @@ public class Institution : BaseEntity
         string? code,
         string? type,
         bool isActive,
+        InstitutionPaymentModel paymentModel = InstitutionPaymentModel.Discount,
         string? marketSegment = null,
         string? phone = null,
         string? email = null,
@@ -116,11 +153,17 @@ public class Institution : BaseEntity
         decimal? discountRate = null,
         int paymentDays = 30,
         string? paymentTerms = null,
-        string? notes = null)
+        string? notes = null,
+        bool isEInvoiceTaxpayer = false,
+        bool withholdingApplies = false,
+        string? withholdingCode = null,
+        int withholdingNumerator = 5,
+        int withholdingDenominator = 10)
     {
         Name = name.Trim();
         Code = code?.Trim().ToUpperInvariant();
         Type = type;
+        PaymentModel = paymentModel;
         MarketSegment = marketSegment;
         IsActive = isActive;
         Phone = phone?.Trim();
@@ -138,6 +181,11 @@ public class Institution : BaseEntity
         PaymentDays = paymentDays;
         PaymentTerms = paymentTerms?.Trim();
         Notes = notes?.Trim();
+        IsEInvoiceTaxpayer = isEInvoiceTaxpayer;
+        WithholdingApplies = withholdingApplies;
+        WithholdingCode = withholdingCode?.Trim();
+        WithholdingNumerator = withholdingNumerator > 0 ? withholdingNumerator : 5;
+        WithholdingDenominator = withholdingDenominator > 0 ? withholdingDenominator : 10;
         MarkUpdated();
     }
 }

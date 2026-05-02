@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Oravity.Infrastructure.Database;
@@ -11,9 +12,11 @@ using Oravity.Infrastructure.Database;
 namespace Oravity.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260430141730_AddPatientInvoice")]
+    partial class AddPatientInvoice
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -7046,9 +7049,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Property<decimal?>("InstitutionContributionAmount")
                         .HasColumnType("numeric(12,2)");
 
-                    b.Property<long?>("InstitutionId")
-                        .HasColumnType("bigint");
-
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
@@ -7133,8 +7133,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.HasIndex("ApprovedByUserId");
 
                     b.HasIndex("DoctorId");
-
-                    b.HasIndex("InstitutionId");
 
                     b.HasIndex("PlanId")
                         .HasDatabaseName("ix_treatment_plan_items_plan");
@@ -9255,11 +9253,6 @@ namespace Oravity.Infrastructure.Migrations
                         .HasForeignKey("DoctorId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("Oravity.SharedKernel.Entities.Institution", "Institution")
-                        .WithMany()
-                        .HasForeignKey("InstitutionId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("Oravity.SharedKernel.Entities.TreatmentPlan", "Plan")
                         .WithMany("Items")
                         .HasForeignKey("PlanId")
@@ -9275,8 +9268,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("ApprovedBy");
 
                     b.Navigation("Doctor");
-
-                    b.Navigation("Institution");
 
                     b.Navigation("Plan");
 

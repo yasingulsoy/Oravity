@@ -34,6 +34,15 @@ public class TreatmentPlan : AuditableEntity
     public long?     ProtocolId { get; private set; }
     public Protocol? Protocol   { get; private set; }
 
+    /// <summary>
+    /// Anlaşmalı kurum (opsiyonel).
+    /// Null = bireysel hasta, kurum bağlantısı yok.
+    /// İndirim tipinde: fiyat kuralları otomatik uygulanır.
+    /// Provizyon tipinde: kalem bazında InstitutionContributionAmount ayrıca girilir.
+    /// </summary>
+    public long?        InstitutionId { get; private set; }
+    public Institution? Institution   { get; private set; }
+
     public ICollection<TreatmentPlanItem> Items { get; private set; } = [];
 
     private TreatmentPlan() { }
@@ -43,27 +52,35 @@ public class TreatmentPlan : AuditableEntity
         long branchId,
         long doctorId,
         string name,
-        string? notes = null)
+        string? notes = null,
+        long? institutionId = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Plan adı boş olamaz.", nameof(name));
 
         return new TreatmentPlan
         {
-            PatientId = patientId,
-            BranchId  = branchId,
-            DoctorId  = doctorId,
-            Name      = name,
-            Notes     = notes,
-            Status    = TreatmentPlanStatus.Draft
+            PatientId     = patientId,
+            BranchId      = branchId,
+            DoctorId      = doctorId,
+            Name          = name,
+            Notes         = notes,
+            Status        = TreatmentPlanStatus.Draft,
+            InstitutionId = institutionId,
         };
+    }
+
+    public void SetInstitution(long? institutionId)
+    {
+        InstitutionId = institutionId;
+        MarkUpdated();
     }
 
     /// <summary>
     /// Planı ve tüm item'larını Onaylandı (2) yapar.
     /// Sadece Taslak planlar onaylanabilir.
     /// </summary>
-    public void Approve()
+    public void Approve(long? approvedByUserId = null)
     {
         if (Status != TreatmentPlanStatus.Draft)
             throw new InvalidOperationException(
@@ -71,7 +88,7 @@ public class TreatmentPlan : AuditableEntity
 
         Status = TreatmentPlanStatus.Approved;
         foreach (var item in Items.Where(i => i.Status == TreatmentItemStatus.Planned))
-            item.SetApproved();
+            item.SetApproved(approvedByUserId);
 
         MarkUpdated();
     }

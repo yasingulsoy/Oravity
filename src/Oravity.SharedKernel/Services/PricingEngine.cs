@@ -60,6 +60,12 @@ public record RuleEvalContext
     public string? CampaignCode { get; init; }
 
     /// <summary>
+    /// Tedavinin para birimi — referans fiyat listesindeki Currency alanından gelir.
+    /// Kural filtrelerinde "currencies" koşuluyla eşleştirilir.
+    /// </summary>
+    public string TreatmentCurrency { get; init; } = "TRY";
+
+    /// <summary>
     /// Şubeye özel cari fiyat çarpanı — formüllerde MULTI değişkeni.
     /// Varsayılan 1.0. Bodrum gibi şubeler için 1.10 vb. girilebilir.
     /// </summary>
@@ -160,7 +166,7 @@ public class PricingEngine
         var now = DateTime.UtcNow;
         PricingResult? lastResult = null;
 
-        trace?.Add(new("Bağlam", $"Tedavi={ctx.TreatmentCode}, Kurum={ctx.InstitutionId?.ToString() ?? "yok"}, ÖSS={ctx.IsOss}, Kampanya={ctx.CampaignCode ?? "yok"}, MULTI={ctx.PricingMultiplier}"));
+        trace?.Add(new("Bağlam", $"Tedavi={ctx.TreatmentCode}, Para Birimi={ctx.TreatmentCurrency}, Kurum={ctx.InstitutionId?.ToString() ?? "yok"}, ÖSS={ctx.IsOss}, Kampanya={ctx.CampaignCode ?? "yok"}, MULTI={ctx.PricingMultiplier}"));
         trace?.Add(new("Referans Fiyatlar", string.Join(", ", ctx.ReferencePrices.Select(kv => $"{kv.Key}={kv.Value:N2}"))));
         trace?.Add(new("Kural Sayısı", $"{rules.Count} kural yüklendi, öncelik sırasıyla işlenecek"));
 
@@ -226,6 +232,14 @@ public class PricingEngine
 
             trace?.Add(new("Hesaplama", $"{ruleLabel} → formül \"{rule.Formula}\" → sonuç: {finalPrice:N2} (ref: {tdb:N2}, indirim: %{discountPct:N1})", $"💰 {finalPrice:N2}"));
 
+            // OutputCurrency "TRY" (default) ise ve tedavinin kanonik para birimi
+            // farklıysa (EUR, USD…) → tedavinin currency'sini koru.
+            // Kullanıcı gerçekten TRY çıktısı istiyorsa OutputCurrency'yi açıkça TRY
+            // seçmiş olmalı VE formülde kur dönüşümü uygulamış olmalıdır.
+            var effectiveCurrency = rule.OutputCurrency == "TRY" && ctx.TreatmentCurrency != "TRY"
+                ? ctx.TreatmentCurrency
+                : rule.OutputCurrency;
+
             var result = new PricingResult
             {
                 OriginalPrice  = tdb,
@@ -233,7 +247,7 @@ public class PricingEngine
                 TotalDiscount  = discount,
                 AppliedStrategy = rule.RuleType,
                 AppliedRuleName = rule.Name,
-                Currency        = rule.OutputCurrency,
+                Currency        = effectiveCurrency,
                 Trace           = trace ?? [],
             };
 
@@ -356,6 +370,19 @@ public class PricingEngine
                 var codes = campaignArr.EnumerateArray().Select(c => c.GetString()).ToList();
                 if (codes.Count > 0 && (ctx.CampaignCode == null
                     || !codes.Any(c => string.Equals(c, ctx.CampaignCode, StringComparison.OrdinalIgnoreCase))))
+                    return false;
+            }
+
+            // Para birimi filtresi: "currencies": ["TRY"] → sadece TRY tedavilere uygula
+            if (root.TryGetProperty("currencies", out var currArr)
+                && currArr.ValueKind == JsonValueKind.Array
+                && currArr.GetArrayLength() > 0)
+            {
+                var allowed = currArr.EnumerateArray()
+                    .Select(c => c.GetString())
+                    .Where(c => c != null)
+                    .ToList();
+                if (!allowed.Any(c => string.Equals(c, ctx.TreatmentCurrency, StringComparison.OrdinalIgnoreCase)))
                     return false;
             }
 

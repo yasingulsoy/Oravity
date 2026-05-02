@@ -80,7 +80,13 @@ public class AppDbContext : DbContext
     public DbSet<BranchTarget> BranchTargets => Set<BranchTarget>();
     public DbSet<InstitutionInvoice> InstitutionInvoices => Set<InstitutionInvoice>();
     public DbSet<InstitutionPayment> InstitutionPayments => Set<InstitutionPayment>();
+    public DbSet<PatientInvoice> PatientInvoices => Set<PatientInvoice>();
+    public DbSet<BranchInvoiceSettings> BranchInvoiceSettings => Set<BranchInvoiceSettings>();
     public DbSet<DailyCashReport> DailyCashReports => Set<DailyCashReport>();
+    public DbSet<Bank> Banks => Set<Bank>();
+    public DbSet<PosTerminal> PosTerminals => Set<PosTerminal>();
+    public DbSet<BankAccount> BankAccounts => Set<BankAccount>();
+    public DbSet<PaymentProvider> PaymentProviders => Set<PaymentProvider>();
 
     // ─── Notifications ─────────────────────────────────────────────────────
     public DbSet<Notification> Notifications => Set<Notification>();
@@ -889,6 +895,12 @@ public class AppDbContext : DbContext
              .HasForeignKey(x => x.DoctorId)
              .IsRequired(false)
              .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Institution)
+             .WithMany()
+             .HasForeignKey(x => x.InstitutionId)
+             .IsRequired(false)
+             .OnDelete(DeleteBehavior.Restrict);
         });
 
         // ── Payment ────────────────────────────────────────────────────────
@@ -924,6 +936,16 @@ public class AppDbContext : DbContext
              .WithOne(x => x.Payment)
              .HasForeignKey(x => x.PaymentId)
              .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.PosTerminal)
+             .WithMany()
+             .HasForeignKey(x => x.PosTerminalId)
+             .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasOne(x => x.BankAccount)
+             .WithMany()
+             .HasForeignKey(x => x.BankAccountId)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── PaymentAllocation ──────────────────────────────────────────────
@@ -1169,6 +1191,62 @@ public class AppDbContext : DbContext
              .OnDelete(DeleteBehavior.Restrict);
         });
 
+        // ── PatientInvoice ────────────────────────────────────────────────
+        m.Entity<PatientInvoice>(e =>
+        {
+            e.ToTable("patient_invoices");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_patient_invoices_public_id");
+
+            e.Property(x => x.InvoiceNo).HasMaxLength(50).IsRequired();
+            e.Property(x => x.InvoiceType).HasMaxLength(20).HasDefaultValue("EARCHIVE");
+            e.Property(x => x.Amount).HasColumnType("numeric(14,2)").IsRequired();
+            e.Property(x => x.KdvRate).HasColumnType("numeric(5,4)").HasDefaultValue(0.10m);
+            e.Property(x => x.KdvAmount).HasColumnType("numeric(14,2)").HasDefaultValue(0m);
+            e.Property(x => x.TotalAmount).HasColumnType("numeric(14,2)").HasDefaultValue(0m);
+            e.Property(x => x.PaidAmount).HasColumnType("numeric(14,2)").HasDefaultValue(0m);
+            e.Property(x => x.Currency).HasMaxLength(3).HasDefaultValue("TRY");
+            e.Property(x => x.RecipientName).HasMaxLength(200).IsRequired();
+            e.Property(x => x.RecipientTcNo).HasMaxLength(11);
+            e.Property(x => x.RecipientVkn).HasMaxLength(11);
+            e.Property(x => x.RecipientTaxOffice).HasMaxLength(100);
+            e.Property(x => x.TreatmentItemIdsJson).HasColumnType("text");
+            e.Property(x => x.Notes).HasColumnType("text");
+            e.Property(x => x.ExternalUuid).HasMaxLength(100);
+            e.Property(x => x.IntegratorStatus).HasMaxLength(30);
+            e.Property(x => x.TenantId).IsRequired();
+
+            e.HasIndex(x => new { x.BranchId, x.Status })
+             .HasDatabaseName("ix_patient_invoices_branch_status");
+            e.HasIndex(x => x.PatientId).HasDatabaseName("ix_patient_invoices_patient");
+            e.HasIndex(x => new { x.BranchId, x.InvoiceNo }).IsUnique()
+             .HasDatabaseName("ix_patient_invoices_branch_no");
+
+            e.HasOne(x => x.Patient).WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── BranchInvoiceSettings ─────────────────────────────────────────
+        m.Entity<BranchInvoiceSettings>(e =>
+        {
+            e.ToTable("branch_invoice_settings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.HasIndex(x => x.BranchId).IsUnique().HasDatabaseName("ix_branch_invoice_settings_branch");
+
+            e.Property(x => x.CompanyVkn).HasMaxLength(11);
+            e.Property(x => x.IntegratorEndpoint).HasMaxLength(500);
+            e.Property(x => x.IntegratorCompanyCode).HasMaxLength(50);
+            e.Property(x => x.IntegratorUsername).HasMaxLength(100);
+            e.Property(x => x.IntegratorPassword).HasMaxLength(500);
+
+            e.Property(x => x.NormalPrefix).HasMaxLength(10);
+            e.Property(x => x.EArchivePrefix).HasMaxLength(10);
+            e.Property(x => x.EInvoicePrefix).HasMaxLength(10);
+        });
+
         // ── InstitutionPayment ────────────────────────────────────────────
         m.Entity<InstitutionPayment>(e =>
         {
@@ -1208,6 +1286,87 @@ public class AppDbContext : DbContext
              .WithMany()
              .HasForeignKey(x => x.BranchId)
              .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── Bank ──────────────────────────────────────────────────────────
+        m.Entity<Bank>(e =>
+        {
+            e.ToTable("banks");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_banks_public_id");
+
+            e.Property(x => x.Name).HasMaxLength(150).IsRequired();
+            e.Property(x => x.ShortName).HasMaxLength(50).IsRequired();
+            e.Property(x => x.BicCode).HasMaxLength(12);
+
+            e.HasIndex(x => x.ShortName).HasDatabaseName("ix_banks_short_name");
+        });
+
+        // ── PaymentProvider ────────────────────────────────────────────────
+        m.Entity<PaymentProvider>(e =>
+        {
+            e.ToTable("payment_providers");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_payment_providers_public_id");
+
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            e.Property(x => x.ShortName).HasMaxLength(50);
+            e.Property(x => x.Website).HasMaxLength(200);
+        });
+
+        // ── PosTerminal ────────────────────────────────────────────────────
+        m.Entity<PosTerminal>(e =>
+        {
+            e.ToTable("pos_terminals");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_pos_terminals_public_id");
+
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            e.Property(x => x.TerminalId).HasMaxLength(50);
+
+            e.HasIndex(x => new { x.BranchId, x.IsActive }).HasDatabaseName("ix_pos_terminals_branch");
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Bank)
+             .WithMany()
+             .HasForeignKey(x => x.BankId)
+             .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ── BankAccount ────────────────────────────────────────────────────
+        m.Entity<BankAccount>(e =>
+        {
+            e.ToTable("bank_accounts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.PublicId).HasDefaultValueSql("gen_random_uuid()");
+            e.HasIndex(x => x.PublicId).IsUnique().HasDatabaseName("ix_bank_accounts_public_id");
+
+            e.Property(x => x.AccountName).HasMaxLength(150).IsRequired();
+            e.Property(x => x.Iban).HasMaxLength(34);
+            e.Property(x => x.Currency).HasMaxLength(3).HasDefaultValue("TRY");
+
+            e.HasIndex(x => new { x.BranchId, x.IsActive }).HasDatabaseName("ix_bank_accounts_branch");
+
+            e.HasOne(x => x.Branch)
+             .WithMany()
+             .HasForeignKey(x => x.BranchId)
+             .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.Bank)
+             .WithMany()
+             .HasForeignKey(x => x.BankId)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         // ── Notification ───────────────────────────────────────────────────

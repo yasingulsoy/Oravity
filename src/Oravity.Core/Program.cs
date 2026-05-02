@@ -129,6 +129,8 @@ try
     // PDF
     builder.Services.AddHttpClient();
     builder.Services.AddScoped<Oravity.Core.Services.TreatmentPlanPdfService>();
+    builder.Services.AddScoped<Oravity.Core.Services.ConsentPdfService>();
+    builder.Services.AddScoped<Oravity.Core.Services.InvoicePdfService>();
 
     // Döviz kuru job
     builder.Services.AddScoped<TcmbExchangeRateJob>();
@@ -149,6 +151,17 @@ try
     builder.Services.AddScoped<ParasutAdapter>();
     builder.Services.AddScoped<LogoAdapter>();
     builder.Services.AddScoped<EInvoiceAdapterFactory>();
+
+    // Fatura entegratörü
+    builder.Services.AddHttpClient("sovos-earchive")
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            // Sovos IP: 46.18.105.21 (test) / 46.18.105.11 (live) — firewall izni gerekli
+        });
+    builder.Services.AddHttpClient("sovos-einvoice")
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler());
+    builder.Services.AddScoped<Oravity.Core.Modules.InvoiceIntegration.LocalCounterIntegrator>();
+    builder.Services.AddScoped<Oravity.Core.Modules.InvoiceIntegration.InvoiceIntegratorFactory>();
 
     // Health checks
     builder.Services.AddHealthChecks()

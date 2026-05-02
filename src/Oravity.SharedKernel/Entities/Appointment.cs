@@ -126,6 +126,13 @@ public class Appointment : AuditableEntity
         MarkUpdated();
     }
 
+    public void ReassignDoctor(long newDoctorId)
+    {
+        DoctorId = newDoctorId;
+        IncrementRowVersion();
+        MarkUpdated();
+    }
+
     public void SetAppointmentNo(string no) => AppointmentNo = no;
 
     public void AddNote(string note) { Notes = note; MarkUpdated(); }

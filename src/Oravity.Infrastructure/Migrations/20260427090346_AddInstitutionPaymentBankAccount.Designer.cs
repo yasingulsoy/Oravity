@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Oravity.Infrastructure.Database;
@@ -11,9 +12,11 @@ using Oravity.Infrastructure.Database;
 namespace Oravity.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260427090346_AddInstitutionPaymentBankAccount")]
+    partial class AddInstitutionPaymentBankAccount
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -4825,147 +4828,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.ToTable("patient_files", (string)null);
                 });
 
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.PatientInvoice", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("numeric(14,2)");
-
-                    b.Property<long>("BranchId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long?>("CreatedByUserId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(3)
-                        .HasColumnType("character varying(3)")
-                        .HasDefaultValue("TRY");
-
-                    b.Property<DateOnly>("DueDate")
-                        .HasColumnType("date");
-
-                    b.Property<string>("ExternalUuid")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("IntegratorStatus")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateOnly>("InvoiceDate")
-                        .HasColumnType("date");
-
-                    b.Property<string>("InvoiceNo")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("InvoiceType")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasDefaultValue("EARCHIVE");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<decimal>("KdvAmount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("numeric(14,2)")
-                        .HasDefaultValue(0m);
-
-                    b.Property<decimal>("KdvRate")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("numeric(5,4)")
-                        .HasDefaultValue(0.10m);
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("text");
-
-                    b.Property<decimal>("PaidAmount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("numeric(14,2)")
-                        .HasDefaultValue(0m);
-
-                    b.Property<long>("PatientId")
-                        .HasColumnType("bigint");
-
-                    b.Property<Guid>("PublicId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<string>("RecipientName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("RecipientTaxOffice")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("RecipientTcNo")
-                        .HasMaxLength(11)
-                        .HasColumnType("character varying(11)");
-
-                    b.Property<int>("RecipientType")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("RecipientVkn")
-                        .HasMaxLength(11)
-                        .HasColumnType("character varying(11)");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("TenantId")
-                        .HasColumnType("bigint");
-
-                    b.Property<decimal>("TotalAmount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("numeric(14,2)")
-                        .HasDefaultValue(0m);
-
-                    b.Property<string>("TreatmentItemIdsJson")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long?>("UpdatedByUserId")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PatientId")
-                        .HasDatabaseName("ix_patient_invoices_patient");
-
-                    b.HasIndex("PublicId")
-                        .IsUnique()
-                        .HasDatabaseName("ix_patient_invoices_public_id");
-
-                    b.HasIndex("BranchId", "InvoiceNo")
-                        .IsUnique()
-                        .HasDatabaseName("ix_patient_invoices_branch_no");
-
-                    b.HasIndex("BranchId", "Status")
-                        .HasDatabaseName("ix_patient_invoices_branch_status");
-
-                    b.ToTable("patient_invoices", (string)null);
-                });
-
             modelBuilder.Entity("Oravity.SharedKernel.Entities.PatientMedication", b =>
                 {
                     b.Property<long>("Id")
@@ -7046,9 +6908,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Property<decimal?>("InstitutionContributionAmount")
                         .HasColumnType("numeric(12,2)");
 
-                    b.Property<long?>("InstitutionId")
-                        .HasColumnType("bigint");
-
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
@@ -7133,8 +6992,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.HasIndex("ApprovedByUserId");
 
                     b.HasIndex("DoctorId");
-
-                    b.HasIndex("InstitutionId");
 
                     b.HasIndex("PlanId")
                         .HasDatabaseName("ix_treatment_plan_items_plan");
@@ -8692,25 +8549,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("UploadedByUser");
                 });
 
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.PatientInvoice", b =>
-                {
-                    b.HasOne("Oravity.SharedKernel.Entities.Branch", "Branch")
-                        .WithMany()
-                        .HasForeignKey("BranchId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Oravity.SharedKernel.Entities.Patient", "Patient")
-                        .WithMany()
-                        .HasForeignKey("PatientId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Branch");
-
-                    b.Navigation("Patient");
-                });
-
             modelBuilder.Entity("Oravity.SharedKernel.Entities.PatientMedication", b =>
                 {
                     b.HasOne("Oravity.SharedKernel.Entities.User", "AddedByUser")
@@ -9255,11 +9093,6 @@ namespace Oravity.Infrastructure.Migrations
                         .HasForeignKey("DoctorId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("Oravity.SharedKernel.Entities.Institution", "Institution")
-                        .WithMany()
-                        .HasForeignKey("InstitutionId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("Oravity.SharedKernel.Entities.TreatmentPlan", "Plan")
                         .WithMany("Items")
                         .HasForeignKey("PlanId")
@@ -9275,8 +9108,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("ApprovedBy");
 
                     b.Navigation("Doctor");
-
-                    b.Navigation("Institution");
 
                     b.Navigation("Plan");
 

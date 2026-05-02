@@ -35,6 +35,14 @@ public class Payment : AuditableEntity
     public DateOnly PaymentDate { get; private set; }
     public string? Notes { get; private set; }
 
+    /// <summary>Kredi kartı / taksit ödemesinde kullanılan POS cihazı.</summary>
+    public long? PosTerminalId { get; private set; }
+    public PosTerminal? PosTerminal { get; private set; }
+
+    /// <summary>Havale/EFT ödemesinde paranın yatırıldığı banka hesabı.</summary>
+    public long? BankAccountId { get; private set; }
+    public BankAccount? BankAccount { get; private set; }
+
     /// <summary>true = iade edildi; ödeme muhasebe kaydında kalır.</summary>
     public bool IsRefunded { get; private set; }
 
@@ -50,7 +58,9 @@ public class Payment : AuditableEntity
         DateOnly paymentDate,
         string currency = "TRY",
         decimal exchangeRate = 1m,
-        string? notes = null)
+        string? notes = null,
+        long? posTerminalId = null,
+        long? bankAccountId = null)
     {
         if (amount <= 0)
             throw new ArgumentException("Ödeme tutarı sıfırdan büyük olmalıdır.", nameof(amount));
@@ -61,16 +71,18 @@ public class Payment : AuditableEntity
 
         return new Payment
         {
-            PatientId    = patientId,
-            BranchId     = branchId,
-            Amount       = amount,
-            Currency     = currency,
-            ExchangeRate = currency == "TRY" ? 1m : exchangeRate,
-            BaseAmount   = baseAmount,
-            Method       = method,
-            PaymentDate  = paymentDate,
-            Notes        = notes,
-            IsRefunded   = false
+            PatientId     = patientId,
+            BranchId      = branchId,
+            Amount        = amount,
+            Currency      = currency,
+            ExchangeRate  = currency == "TRY" ? 1m : exchangeRate,
+            BaseAmount    = baseAmount,
+            Method        = method,
+            PaymentDate   = paymentDate,
+            Notes         = notes,
+            IsRefunded    = false,
+            PosTerminalId = posTerminalId,
+            BankAccountId = bankAccountId,
         };
     }
 

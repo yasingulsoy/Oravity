@@ -18,7 +18,8 @@ public class ConsentInstance : BaseEntity
 {
     public long CompanyId { get; private set; }
     public long PatientId { get; private set; }
-    public long TreatmentPlanId { get; private set; }
+    /// <summary>Null ise tedaviden bağımsız (standalone) onam formudur.</summary>
+    public long? TreatmentPlanId { get; private set; }
     public long FormTemplateId { get; private set; }
 
     /// <summary>İnsan okunabilir kod: CF-2026-00042</summary>
@@ -48,6 +49,8 @@ public class ConsentInstance : BaseEntity
     public string? SignerName { get; private set; }
     /// <summary>Canvas imzası — base64 PNG veri URI.</summary>
     public string? SignatureDataBase64 { get; private set; }
+    /// <summary>Doktor canvas imzası — base64 PNG veri URI (requireDoctorSignature=true ise).</summary>
+    public string? DoctorSignatureDataBase64 { get; private set; }
     /// <summary>JSON: [{id, checked}] — hastanın işaretlediği checkbox'lar.</summary>
     public string? CheckboxAnswersJson { get; private set; }
 
@@ -63,7 +66,7 @@ public class ConsentInstance : BaseEntity
     public static ConsentInstance Create(
         long companyId,
         long patientId,
-        long treatmentPlanId,
+        long? treatmentPlanId,
         long formTemplateId,
         string consentCode,
         string itemPublicIdsJson,
@@ -104,6 +107,7 @@ public class ConsentInstance : BaseEntity
     public void Sign(
         string? signerName,
         string? signatureDataBase64,
+        string? doctorSignatureDataBase64,
         string? checkboxAnswersJson,
         string? signerIp,
         string? signerDevice)
@@ -113,13 +117,14 @@ public class ConsentInstance : BaseEntity
         if (Status == ConsentInstanceStatus.Expired || Status == ConsentInstanceStatus.Cancelled)
             throw new InvalidOperationException("Bu form artık imzalanamaz.");
 
-        Status                = ConsentInstanceStatus.Signed;
-        SignedAt              = DateTime.UtcNow;
-        SignerName            = signerName;
-        SignatureDataBase64   = signatureDataBase64;
-        CheckboxAnswersJson   = checkboxAnswersJson;
-        SignerIp              = signerIp;
-        SignerDevice          = signerDevice;
+        Status                      = ConsentInstanceStatus.Signed;
+        SignedAt                    = DateTime.UtcNow;
+        SignerName                  = signerName;
+        SignatureDataBase64         = signatureDataBase64;
+        DoctorSignatureDataBase64  = doctorSignatureDataBase64;
+        CheckboxAnswersJson         = checkboxAnswersJson;
+        SignerIp                    = signerIp;
+        SignerDevice                = signerDevice;
         MarkUpdated();
     }
 

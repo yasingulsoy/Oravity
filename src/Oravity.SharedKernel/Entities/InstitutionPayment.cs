@@ -27,6 +27,9 @@ public class InstitutionPayment : AuditableEntity
     public InstitutionPaymentMethod Method { get; private set; }
     public string? ReferenceNo { get; private set; }
 
+    /// <summary>Ödemenin geldiği banka hesabının PublicId'si (BankAccount.PublicId).</summary>
+    public string? BankAccountPublicId { get; private set; }
+
     public string? Notes { get; private set; }
     public bool IsCancelled { get; private set; }
 
@@ -41,22 +44,24 @@ public class InstitutionPayment : AuditableEntity
         DateOnly paymentDate,
         InstitutionPaymentMethod method,
         string? referenceNo,
-        string? notes)
+        string? notes,
+        string? bankAccountPublicId = null)
     {
         if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
 
         return new InstitutionPayment
         {
-            InvoiceId     = invoiceId,
-            PatientId     = patientId,
-            InstitutionId = institutionId,
-            Amount        = amount,
-            Currency      = currency,
-            PaymentDate   = paymentDate,
-            Method        = method,
-            ReferenceNo   = referenceNo,
-            Notes         = notes,
-            IsCancelled   = false
+            InvoiceId            = invoiceId,
+            PatientId            = patientId,
+            InstitutionId        = institutionId,
+            Amount               = amount,
+            Currency             = currency,
+            PaymentDate          = paymentDate,
+            Method               = method,
+            ReferenceNo          = referenceNo,
+            BankAccountPublicId  = bankAccountPublicId,
+            Notes                = notes,
+            IsCancelled          = false
         };
     }
 

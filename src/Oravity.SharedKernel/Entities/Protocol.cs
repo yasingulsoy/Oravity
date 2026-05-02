@@ -168,6 +168,16 @@ public class Protocol : BaseEntity
         Status = ProtocolStatus.Cancelled;
         MarkUpdated();
     }
+
+    /// <summary>
+    /// Odandan ayrılma için zorunlu alanların tümü doldurulmuşsa true döner.
+    /// Zorunlu: en az 1 ICD tanısı, şikayet, muayene bulguları, tedavi planı.
+    /// </summary>
+    public bool IsReadyToClose() =>
+        GetIcdDiagnoses().Count > 0
+        && !string.IsNullOrWhiteSpace(ChiefComplaint)
+        && !string.IsNullOrWhiteSpace(ExaminationFindings)
+        && !string.IsNullOrWhiteSpace(TreatmentPlan);
 }
 
 /// <summary>Protokol JSON alanında saklanan tek ICD tanı girişi.</summary>
