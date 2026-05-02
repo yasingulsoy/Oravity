@@ -5,6 +5,7 @@ using Oravity.Core.Filters;
 using Oravity.Core.Modules.Consent.Application;
 using Oravity.Core.Modules.Consent.Application.Commands;
 using Oravity.Core.Modules.Consent.Application.Queries;
+using Oravity.Core.Services;
 
 namespace Oravity.Core.Controllers;
 
@@ -16,9 +17,14 @@ namespace Oravity.Core.Controllers;
 [Produces("application/json")]
 public class ConsentController : ControllerBase
 {
-    private readonly IMediator _mediator;
+    private readonly IMediator        _mediator;
+    private readonly ConsentPdfService _pdfService;
 
-    public ConsentController(IMediator mediator) => _mediator = mediator;
+    public ConsentController(IMediator mediator, ConsentPdfService pdfService)
+    {
+        _mediator   = mediator;
+        _pdfService = pdfService;
+    }
 
     // ── Şablon Sorguları ──────────────────────────────────────────────────
 
@@ -109,7 +115,7 @@ public class ConsentController : ControllerBase
 
     // ── Onam Örneği ───────────────────────────────────────────────────────
 
-    /// <summary>Tedavi planı için onam örneği oluşturur.</summary>
+    /// <summary>Onam örneği oluşturur. Plan bağlı veya standalone (sadece hasta publicId) olabilir.</summary>
     [HttpPost("api/consent-instances")]
     [Authorize]
     [RequirePermission("treatment_plan:complete")]
@@ -121,9 +127,23 @@ public class ConsentController : ControllerBase
             request.TreatmentPlanPublicId,
             request.FormTemplatePublicId,
             request.ItemPublicIds,
-            request.DeliveryMethod));
+            request.DeliveryMethod,
+            request.PatientPublicId));
 
         return StatusCode(StatusCodes.Status201Created, result);
+    }
+
+    /// <summary>Onam örneğini iptal eder.</summary>
+    [HttpPut("api/consent-instances/{id:guid}/cancel")]
+    [Authorize]
+    [RequirePermission("consent_form:manage")]
+    [ProducesResponseType(typeof(ConsentInstanceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CancelInstance(Guid id)
+    {
+        var result = await _mediator.Send(new CancelConsentInstanceCommand(id));
+        return Ok(result);
     }
 
     /// <summary>Tedavi planına ait onam örneklerini listeler.</summary>
@@ -135,6 +155,30 @@ public class ConsentController : ControllerBase
     {
         var result = await _mediator.Send(new GetConsentInstancesByPlanQuery(planId));
         return Ok(result);
+    }
+
+    /// <summary>Hastaya ait tüm onam örneklerini listeler (standalone dahil).</summary>
+    [HttpGet("api/patients/{patientId:guid}/consent-instances")]
+    [Authorize]
+    [RequirePermission("treatment_plan:view")]
+    [ProducesResponseType(typeof(IReadOnlyList<ConsentInstanceResponse>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetInstancesByPatient(Guid patientId)
+    {
+        var result = await _mediator.Send(new GetPatientConsentInstancesQuery(patientId));
+        return Ok(result);
+    }
+
+    /// <summary>İmzalanan onam formunu PDF olarak indirir.</summary>
+    [HttpGet("api/consent-instances/{id:guid}/pdf")]
+    [Authorize]
+    [RequirePermission("consent_form:view")]
+    [Produces("application/pdf")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DownloadPdf(Guid id)
+    {
+        var bytes = await _pdfService.GenerateAsync(id);
+        return File(bytes, "application/pdf", $"onam-formu-{id:N}.pdf");
     }
 
     // ── Public (anonim) imzalama ──────────────────────────────────────────
@@ -165,6 +209,7 @@ public class ConsentController : ControllerBase
             token,
             request.SignerName,
             request.SignatureDataBase64,
+            request.DoctorSignatureDataBase64,
             request.CheckboxAnswersJson,
             signerIp,
             signerDevice));
@@ -206,14 +251,16 @@ public record UpdateConsentFormTemplateRequest(
 );
 
 public record CreateConsentInstanceRequest(
-    Guid         TreatmentPlanPublicId,
+    Guid?        TreatmentPlanPublicId,
     Guid         FormTemplatePublicId,
     List<string> ItemPublicIds,
-    string       DeliveryMethod
+    string       DeliveryMethod,
+    Guid?        PatientPublicId = null
 );
 
 public record SignConsentRequest(
     string? SignerName,
     string? SignatureDataBase64,
+    string? DoctorSignatureDataBase64,
     string? CheckboxAnswersJson
 );

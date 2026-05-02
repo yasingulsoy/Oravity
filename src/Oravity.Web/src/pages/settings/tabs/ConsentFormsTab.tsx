@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Pencil, Trash2, Eye } from 'lucide-react';
 import { toast } from 'sonner';
@@ -56,6 +56,22 @@ Hastalık, yapılacak olan tedavi işlemi, bu tedavinin neden ve faydaları, iş
 
 Yukarıdaki bilgileri okudum, anladım ve onaylıyorum.`;
 
+const TEMPLATE_VARIABLES = [
+  { variable: '{HastaAdSoyad}',    label: 'Hasta Adı Soyadı' },
+  { variable: '{TCKimlikNo}',      label: 'TC Kimlik No' },
+  { variable: '{HastaTelefon}',    label: 'Telefon' },
+  { variable: '{HastaYas}',        label: 'Yaş' },
+  { variable: '{HastaDogumTarihi}', label: 'Doğum Tarihi' },
+  { variable: '{AnneAdi}',         label: 'Anne Adı' },
+  { variable: '{BabaAdi}',         label: 'Baba Adı' },
+  { variable: '{Adres}',           label: 'Adres' },
+  { variable: '{Hekim}',           label: 'Hekim' },
+  { variable: '{Klinik}',          label: 'Klinik' },
+  { variable: '{Sirket}',          label: 'Şirket' },
+  { variable: '{Tarih}',           label: 'Tarih' },
+  { variable: '{FormNo}',          label: 'Form No' },
+];
+
 const EMPTY_FORM: FormState = {
   code: '',
   name: '',
@@ -71,6 +87,22 @@ const EMPTY_FORM: FormState = {
 
 export function ConsentFormsTab() {
   const qc = useQueryClient();
+  const contentRef = useRef<HTMLTextAreaElement>(null);
+
+  const insertVariable = (variable: string) => {
+    const el = contentRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? el.value.length;
+    const end   = el.selectionEnd   ?? el.value.length;
+    const newValue = el.value.slice(0, start) + variable + el.value.slice(end);
+    set({ contentHtml: newValue });
+    // Restore cursor after inserted variable
+    requestAnimationFrame(() => {
+      el.selectionStart = start + variable.length;
+      el.selectionEnd   = start + variable.length;
+      el.focus();
+    });
+  };
 
   const { data: templates = [], isLoading } = useQuery<ConsentFormTemplateSummary[]>({
     queryKey: ['consent-form-templates'],
@@ -87,23 +119,27 @@ export function ConsentFormsTab() {
   const set = (patch: Partial<FormState>) => setForm(prev => ({ ...prev, ...patch }));
 
   // Fetch detail when editing
-  const { isLoading: detailLoading } = useQuery<ConsentFormTemplateDetail>({
+  const { data: detail, isLoading: detailLoading } = useQuery<ConsentFormTemplateDetail>({
     queryKey: ['consent-form-template', editingId],
     queryFn: () => consentFormsApi.getById(editingId!).then(r => r.data),
     enabled: !!editingId && editOpen,
-    onSuccess: (d) => set({
-      code: d.code,
-      name: d.name,
-      language: d.language,
-      version: d.version,
-      contentHtml: d.contentHtml,
-      checkboxesJson: d.checkboxesJson,
-      appliesToAllTreatments: d.appliesToAllTreatments,
-      showDentalChart: d.showDentalChart,
-      showTreatmentTable: d.showTreatmentTable,
-      requireDoctorSignature: d.requireDoctorSignature,
-    }),
-  } as Parameters<typeof useQuery>[0]);
+  });
+
+  useEffect(() => {
+    if (!detail) return;
+    set({
+      code: detail.code,
+      name: detail.name,
+      language: detail.language,
+      version: detail.version,
+      contentHtml: detail.contentHtml,
+      checkboxesJson: detail.checkboxesJson,
+      appliesToAllTreatments: detail.appliesToAllTreatments,
+      showDentalChart: detail.showDentalChart,
+      showTreatmentTable: detail.showTreatmentTable,
+      requireDoctorSignature: detail.requireDoctorSignature,
+    });
+  }, [detail]);
 
   const createMutation = useMutation({
     mutationFn: (data: FormState) => consentFormsApi.create(data),
@@ -304,15 +340,30 @@ export function ConsentFormsTab() {
               <div className="space-y-1.5">
                 <Label>Form İçeriği <span className="text-destructive">*</span></Label>
                 <Textarea
+                  ref={contentRef}
                   value={form.contentHtml}
                   onChange={e => set({ contentHtml: e.target.value })}
                   rows={8}
                   placeholder="Form metni..."
                   className="font-mono text-xs"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Değişkenler: #hastaadi# · #hastano# · #tarih# · #klinikadi# · #doktoradi#
-                </p>
+                <div className="rounded-md border bg-muted/40 p-2 space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">Değişkenler — tıklayarak ekleyin:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {TEMPLATE_VARIABLES.map(({ variable, label }) => (
+                      <button
+                        key={variable}
+                        type="button"
+                        onClick={() => insertVariable(variable)}
+                        className="inline-flex items-center gap-1 rounded border border-border bg-background px-2 py-0.5 text-xs font-mono hover:bg-accent hover:text-accent-foreground transition-colors"
+                        title={label}
+                      >
+                        {variable}
+                        <span className="font-sans text-muted-foreground not-italic">{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-1.5">

@@ -30,7 +30,8 @@ export interface ConsentInstanceResponse {
   publicId: string;
   consentCode: string;
   patientId: number;
-  treatmentPlanId: number;
+  treatmentPlanId: number | null;
+  treatmentPlanPublicId: string | null;
   formTemplatePublicId: string;
   formTemplateName: string;
   itemPublicIdsJson: string;
@@ -53,6 +54,7 @@ export interface ConsentPublicDto {
   checkboxesJson: string;
   showDentalChart: boolean;
   showTreatmentTable: boolean;
+  requireDoctorSignature: boolean;
   itemPublicIdsJson: string;
   patientId: number;
   patientName: string;
@@ -102,14 +104,24 @@ export const consentFormsApi = {
 
 export const consentInstancesApi = {
   create: (data: {
-    treatmentPlanPublicId: string;
+    treatmentPlanPublicId?: string | null;
     formTemplatePublicId: string;
     itemPublicIds: string[];
     deliveryMethod: string;
+    patientPublicId?: string | null;
   }) => apiClient.post<ConsentInstanceResponse>('/consent-instances', data),
+
+  cancel: (instancePublicId: string) =>
+    apiClient.put<ConsentInstanceResponse>(`/consent-instances/${instancePublicId}/cancel`),
 
   getByPlan: (planPublicId: string) =>
     apiClient.get<ConsentInstanceResponse[]>(`/treatment-plans/${planPublicId}/consent-instances`),
+
+  getByPatient: (patientPublicId: string) =>
+    apiClient.get<ConsentInstanceResponse[]>(`/patients/${patientPublicId}/consent-instances`),
+
+  downloadPdf: (instancePublicId: string) =>
+    apiClient.get(`/consent-instances/${instancePublicId}/pdf`, { responseType: 'blob' }),
 
   // Public — no auth
   getPublicForm: (token: string) =>
@@ -118,6 +130,7 @@ export const consentInstancesApi = {
   sign: (token: string, data: {
     signerName?: string;
     signatureDataBase64?: string;
+    doctorSignatureDataBase64?: string;
     checkboxAnswersJson?: string;
   }) => apiClient.post<{ success: boolean; message: string }>(`/public/consent/${token}/sign`, data),
 };

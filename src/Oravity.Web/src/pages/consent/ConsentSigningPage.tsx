@@ -15,42 +15,18 @@ interface ConsentCheckbox {
   isRequired: boolean;
 }
 
-export function ConsentSigningPage() {
-  const { token } = useParams<{ token: string }>();
+function SignatureCanvas({
+  label,
+  canvasRef,
+  onClear,
+}: {
+  label: string;
+  canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  onClear: () => void;
+}) {
+  const isDrawingRef = useRef(false);
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
 
-  const { data: form, isLoading, isError } = useQuery<ConsentPublicDto>({
-    queryKey: ['consent-public', token],
-    queryFn: () => consentInstancesApi.getPublicForm(token!).then(r => r.data),
-    enabled: !!token,
-    retry: false,
-  });
-
-  const [signerName, setSignerName]       = useState('');
-  const [checkboxes, setCheckboxes]       = useState<Record<string, boolean>>({});
-  const [signatureDone, setSignatureDone] = useState(false);
-  const [submitted, setSubmitted]         = useState(false);
-
-  const canvasRef      = useRef<HTMLCanvasElement>(null);
-  const isDrawingRef   = useRef(false);
-  const lastPointRef   = useRef<{ x: number; y: number } | null>(null);
-
-  // Parse checkboxes from form
-  const parsedCheckboxes: ConsentCheckbox[] = (() => {
-    try { return JSON.parse(form?.checkboxesJson ?? '[]'); }
-    catch { return []; }
-  })();
-
-  useEffect(() => {
-    if (!form) return;
-    // Pre-fill signer name from patient
-    setSignerName(form.patientName || '');
-    // Initialize checkbox state
-    const initial: Record<string, boolean> = {};
-    parsedCheckboxes.forEach(cb => { initial[cb.id] = false; });
-    setCheckboxes(initial);
-  }, [form?.checkboxesJson]);
-
-  // Canvas drawing
   const getPos = (e: React.MouseEvent | React.TouchEvent, canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();
     if ('touches' in e) {
@@ -73,7 +49,7 @@ export function ConsentSigningPage() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const current = getPos(e, canvas);
-    const last    = lastPointRef.current!;
+    const last = lastPointRef.current!;
     ctx.beginPath();
     ctx.moveTo(last.x, last.y);
     ctx.lineTo(current.x, current.y);
@@ -82,22 +58,101 @@ export function ConsentSigningPage() {
     ctx.lineCap = 'round';
     ctx.stroke();
     lastPointRef.current = current;
-    setSignatureDone(true);
   };
 
-  const endDraw = () => { isDrawingRef.current = false; lastPointRef.current = null; };
+  const endDraw = () => {
+    isDrawingRef.current = false;
+    lastPointRef.current = null;
+  };
 
-  const clearCanvas = () => {
-    const canvas = canvasRef.current;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label>{label}</Label>
+        <button
+          className="text-xs text-muted-foreground hover:text-foreground underline"
+          onClick={onClear}
+        >
+          Temizle
+        </button>
+      </div>
+      <div className="border rounded-lg overflow-hidden bg-white touch-none">
+        <canvas
+          ref={canvasRef}
+          width={600}
+          height={160}
+          className="w-full cursor-crosshair"
+          style={{ touchAction: 'none' }}
+          onMouseDown={startDraw}
+          onMouseMove={draw}
+          onMouseUp={endDraw}
+          onMouseLeave={endDraw}
+          onTouchStart={startDraw}
+          onTouchMove={draw}
+          onTouchEnd={endDraw}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground text-center">Parmağınızla veya fareyle imzalayın</p>
+    </div>
+  );
+}
+
+function isCanvasEmpty(canvas: HTMLCanvasElement): boolean {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return true;
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  return !data.some((v) => v !== 0);
+}
+
+export function ConsentSigningPage() {
+  const { token } = useParams<{ token: string }>();
+
+  const { data: form, isLoading, isError } = useQuery<ConsentPublicDto>({
+    queryKey: ['consent-public', token],
+    queryFn: () => consentInstancesApi.getPublicForm(token!).then(r => r.data),
+    enabled: !!token,
+    retry: false,
+  });
+
+  const [signerName, setSignerName] = useState('');
+  const [checkboxes, setCheckboxes] = useState<Record<string, boolean>>({});
+  const [submitted, setSubmitted]   = useState(false);
+
+  const patientCanvasRef = useRef<HTMLCanvasElement>(null);
+  const doctorCanvasRef  = useRef<HTMLCanvasElement>(null);
+
+  const parsedCheckboxes: ConsentCheckbox[] = (() => {
+    try { return JSON.parse(form?.checkboxesJson ?? '[]'); }
+    catch { return []; }
+  })();
+
+  useEffect(() => {
+    if (!form) return;
+    setSignerName(form.patientName || '');
+    const initial: Record<string, boolean> = {};
+    parsedCheckboxes.forEach(cb => { initial[cb.id] = false; });
+    setCheckboxes(initial);
+  }, [form?.checkboxesJson]);
+
+  const clearPatientCanvas = () => {
+    const canvas = patientCanvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    ctx?.clearRect(0, 0, canvas.width, canvas.height);
-    setSignatureDone(false);
+    canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
+  const clearDoctorCanvas = () => {
+    const canvas = doctorCanvasRef.current;
+    if (!canvas) return;
+    canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
   };
 
   const signMutation = useMutation({
-    mutationFn: (data: { signerName: string; signatureDataBase64: string; checkboxAnswersJson: string }) =>
-      consentInstancesApi.sign(token!, data).then(r => r.data),
+    mutationFn: (data: {
+      signerName: string;
+      signatureDataBase64: string;
+      doctorSignatureDataBase64?: string;
+      checkboxAnswersJson: string;
+    }) => consentInstancesApi.sign(token!, data).then(r => r.data),
     onSuccess: (result) => {
       if (result.success) setSubmitted(true);
       else alert(result.message);
@@ -106,22 +161,33 @@ export function ConsentSigningPage() {
   });
 
   const handleSubmit = () => {
-    // Validate required checkboxes
     const missing = parsedCheckboxes.filter(cb => cb.isRequired && !checkboxes[cb.id]);
     if (missing.length > 0) {
       alert('Lütfen zorunlu kutucukları işaretleyin.');
       return;
     }
-    if (!signatureDone) {
-      alert('Lütfen imzanızı çizin.');
+    const patientCanvas = patientCanvasRef.current!;
+    if (isCanvasEmpty(patientCanvas)) {
+      alert('Lütfen hasta imzasını çizin.');
       return;
     }
-    const canvas = canvasRef.current!;
-    const signatureDataBase64 = canvas.toDataURL('image/png');
+    if (form?.requireDoctorSignature) {
+      const doctorCanvas = doctorCanvasRef.current!;
+      if (isCanvasEmpty(doctorCanvas)) {
+        alert('Lütfen doktor imzasını çizin.');
+        return;
+      }
+    }
+
+    const signatureDataBase64 = patientCanvas.toDataURL('image/png');
+    const doctorSignatureDataBase64 = form?.requireDoctorSignature
+      ? doctorCanvasRef.current?.toDataURL('image/png')
+      : undefined;
     const checkboxAnswers = JSON.stringify(
       Object.entries(checkboxes).map(([id, checked]) => ({ id, checked }))
     );
-    signMutation.mutate({ signerName, signatureDataBase64, checkboxAnswersJson: checkboxAnswers });
+
+    signMutation.mutate({ signerName, signatureDataBase64, doctorSignatureDataBase64, checkboxAnswersJson: checkboxAnswers });
   };
 
   if (isLoading) {
@@ -239,35 +305,21 @@ export function ConsentSigningPage() {
           />
         </div>
 
-        {/* İmza alanı */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label>İmza</Label>
-            <button
-              className="text-xs text-muted-foreground hover:text-foreground underline"
-              onClick={clearCanvas}
-            >
-              Temizle
-            </button>
-          </div>
-          <div className="border rounded-lg overflow-hidden bg-white touch-none">
-            <canvas
-              ref={canvasRef}
-              width={600}
-              height={160}
-              className="w-full cursor-crosshair"
-              style={{ touchAction: 'none' }}
-              onMouseDown={startDraw}
-              onMouseMove={draw}
-              onMouseUp={endDraw}
-              onMouseLeave={endDraw}
-              onTouchStart={startDraw}
-              onTouchMove={draw}
-              onTouchEnd={endDraw}
-            />
-          </div>
-          <p className="text-xs text-muted-foreground text-center">Parmağınızla veya fareyle imzalayın</p>
-        </div>
+        {/* Hasta imzası */}
+        <SignatureCanvas
+          label="Hasta / Vasi İmzası"
+          canvasRef={patientCanvasRef}
+          onClear={clearPatientCanvas}
+        />
+
+        {/* Doktor imzası — sadece requireDoctorSignature=true ise */}
+        {form.requireDoctorSignature && (
+          <SignatureCanvas
+            label="Doktor İmzası"
+            canvasRef={doctorCanvasRef}
+            onClear={clearDoctorCanvas}
+          />
+        )}
 
         <Button
           className="w-full"

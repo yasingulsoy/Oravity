@@ -34,7 +34,8 @@ public record ConsentInstanceResponse(
     Guid   PublicId,
     string ConsentCode,
     long   PatientId,
-    long   TreatmentPlanId,
+    long?  TreatmentPlanId,
+    Guid?  TreatmentPlanPublicId,
     Guid   FormTemplatePublicId,
     string FormTemplateName,
     string ItemPublicIdsJson,
@@ -88,11 +89,12 @@ public static class ConsentMappings
         _ => s.ToString()
     };
 
-    public static ConsentInstanceResponse ToResponse(ConsentInstance ci, ConsentFormTemplate tpl) => new(
+    public static ConsentInstanceResponse ToResponse(ConsentInstance ci, ConsentFormTemplate tpl, Guid? planPublicId = null) => new(
         ci.PublicId,
         ci.ConsentCode,
         ci.PatientId,
         ci.TreatmentPlanId,
+        planPublicId,
         tpl.PublicId,
         tpl.Name,
         ci.ItemPublicIdsJson,

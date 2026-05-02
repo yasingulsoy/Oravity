@@ -12,12 +12,15 @@ namespace Oravity.Core.Modules.Consent.Application.Commands;
 // ── Onam örneği oluştur ────────────────────────────────────────────────────────
 
 public record CreateConsentInstanceCommand(
-    Guid   TreatmentPlanPublicId,
+    /// <summary>Null ise tedaviden bağımsız standalone onam formu oluşturulur.</summary>
+    Guid?  TreatmentPlanPublicId,
     Guid   FormTemplatePublicId,
-    /// <summary>Kapsanan tedavi kalemi publicId listesi.</summary>
+    /// <summary>Kapsanan tedavi kalemi publicId listesi. Standalone onam için boş olabilir.</summary>
     List<string> ItemPublicIds,
     /// <summary>qr | sms | both</summary>
-    string DeliveryMethod
+    string DeliveryMethod,
+    /// <summary>Standalone onam için hasta publicId'si (plan yoksa zorunlu).</summary>
+    Guid?  PatientPublicId = null
 ) : IRequest<ConsentInstanceResponse>;
 
 public class CreateConsentInstanceCommandHandler
@@ -36,9 +39,49 @@ public class CreateConsentInstanceCommandHandler
         var companyId = _tenant.CompanyId
             ?? throw new InvalidOperationException("Şirket bağlamı bulunamadı.");
 
-        var plan = await _db.TreatmentPlans.AsNoTracking()
-            .FirstOrDefaultAsync(p => p.PublicId == request.TreatmentPlanPublicId, cancellationToken)
-            ?? throw new NotFoundException("Tedavi planı bulunamadı.");
+        // Plan-bağlı onam veya standalone onam
+        long? planId = null;
+        long  patientId;
+
+        if (request.TreatmentPlanPublicId.HasValue)
+        {
+            var plan = await _db.TreatmentPlans.AsNoTracking()
+                .FirstOrDefaultAsync(p => p.PublicId == request.TreatmentPlanPublicId.Value, cancellationToken)
+                ?? throw new NotFoundException("Tedavi planı bulunamadı.");
+            planId    = plan.Id;
+            patientId = plan.PatientId;
+
+            // İmzalı onam çakışması — plan varsa kontrol yap
+            // Not: ItemPublicIdsJson jsonb kolonu olduğu için LIKE kullanamayız; in-memory kontrol yapıyoruz.
+            if (request.ItemPublicIds.Count > 0)
+            {
+                var signedJsons = await _db.ConsentInstances
+                    .AsNoTracking()
+                    .Where(ci => ci.TreatmentPlanId == planId && ci.Status == ConsentInstanceStatus.Signed)
+                    .Select(ci => ci.ItemPublicIdsJson)
+                    .ToListAsync(cancellationToken);
+
+                foreach (var itemId in request.ItemPublicIds)
+                {
+                    if (signedJsons.Any(json => json.Contains(itemId)))
+                        throw new ConflictException(
+                            $"Bu tedavi kalemi için zaten imzalı bir onam formu bulunmaktadır ({itemId}). " +
+                            "İmzalanmış kalemlere yeni onam formu oluşturulamaz.");
+                }
+            }
+        }
+        else if (request.PatientPublicId.HasValue)
+        {
+            // Standalone: hasta publicId'sinden patientId çöz
+            var patient = await _db.Patients.AsNoTracking()
+                .FirstOrDefaultAsync(p => p.PublicId == request.PatientPublicId.Value, cancellationToken)
+                ?? throw new NotFoundException("Hasta bulunamadı.");
+            patientId = patient.Id;
+        }
+        else
+        {
+            throw new InvalidOperationException("Onam formu için tedavi planı veya hasta belirtilmelidir.");
+        }
 
         var template = await _db.ConsentFormTemplates.AsNoTracking()
             .FirstOrDefaultAsync(t => t.PublicId == request.FormTemplatePublicId, cancellationToken)
@@ -62,8 +105,8 @@ public class CreateConsentInstanceCommandHandler
 
         var instance = ConsentInstance.Create(
             companyId,
-            plan.PatientId,
-            plan.Id,
+            patientId,
+            planId,
             template.Id,
             code,
             itemJson,
@@ -83,6 +126,7 @@ public record SignConsentInstanceCommand(
     string Token,
     string? SignerName,
     string? SignatureDataBase64,
+    string? DoctorSignatureDataBase64,
     string? CheckboxAnswersJson,
     string? SignerIp,
     string? SignerDevice
@@ -123,11 +167,44 @@ public class SignConsentInstanceCommandHandler
         instance.Sign(
             request.SignerName,
             request.SignatureDataBase64,
+            request.DoctorSignatureDataBase64,
             request.CheckboxAnswersJson,
             request.SignerIp,
             request.SignerDevice);
 
         await _db.SaveChangesAsync(cancellationToken);
         return new SignConsentResult(true, "Onam formu başarıyla imzalandı.");
+    }
+}
+
+// ── Onam örneğini iptal et ─────────────────────────────────────────────────────
+
+public record CancelConsentInstanceCommand(Guid InstancePublicId) : IRequest<ConsentInstanceResponse>;
+
+public class CancelConsentInstanceCommandHandler
+    : IRequestHandler<CancelConsentInstanceCommand, ConsentInstanceResponse>
+{
+    private readonly AppDbContext   _db;
+    private readonly ITenantContext _tenant;
+
+    public CancelConsentInstanceCommandHandler(AppDbContext db, ITenantContext tenant)
+        => (_db, _tenant) = (db, tenant);
+
+    public async Task<ConsentInstanceResponse> Handle(
+        CancelConsentInstanceCommand request,
+        CancellationToken cancellationToken)
+    {
+        var instance = await _db.ConsentInstances
+            .Include(ci => ci.FormTemplate)
+            .FirstOrDefaultAsync(ci => ci.PublicId == request.InstancePublicId, cancellationToken)
+            ?? throw new NotFoundException("Onam formu bulunamadı.");
+
+        if (instance.Status == ConsentInstanceStatus.Cancelled)
+            throw new InvalidOperationException("Bu onam formu zaten iptal edilmiş.");
+
+        instance.Cancel();
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return ConsentMappings.ToResponse(instance, instance.FormTemplate!);
     }
 }
