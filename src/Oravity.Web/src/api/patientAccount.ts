@@ -105,6 +105,8 @@ export const patientAccountApi = {
     currency?: string;
     exchangeRate?: number;
     notes?: string;
+    posTerminalId?: string;
+    bankAccountId?: string;
   }) => apiClient.post<CollectPaymentResult>(`/patients/${patientId}/collect-payment`, body),
 
   allocatePayment: (paymentPublicId: string, allocations: { treatmentPlanItemId: number; amount: number }[]) =>
@@ -118,6 +120,8 @@ export const patientAccountApi = {
     currency?: string;
     exchangeRate?: number;
     notes?: string;
+    posTerminalId?: string;
+    bankAccountId?: string;
   }) => apiClient.post<{
     publicId: string;
     id: number;

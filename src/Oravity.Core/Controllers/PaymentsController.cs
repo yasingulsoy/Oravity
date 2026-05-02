@@ -73,7 +73,9 @@ public class PaymentsController : ControllerBase
             request.PaymentDate,
             request.Currency     ?? "TRY",
             request.ExchangeRate,
-            request.Notes));
+            request.Notes,
+            request.PosTerminalId,
+            request.BankAccountId));
 
         return StatusCode(StatusCodes.Status201Created, result);
     }
@@ -97,7 +99,9 @@ public class PaymentsController : ControllerBase
             request.PaymentDate,
             request.Currency ?? "TRY",
             request.ExchangeRate,
-            request.Notes));
+            request.Notes,
+            request.PosTerminalId,
+            request.BankAccountId));
 
         return StatusCode(StatusCodes.Status201Created, result);
     }
@@ -312,9 +316,11 @@ public record CollectPaymentRequest(
     decimal Amount,
     PaymentMethod Method,
     DateOnly PaymentDate,
-    string? Currency     = null,
-    decimal ExchangeRate = 1m,
-    string? Notes        = null
+    string? Currency      = null,
+    decimal ExchangeRate  = 1m,
+    string? Notes         = null,
+    Guid? PosTerminalId   = null,
+    Guid? BankAccountId   = null
 );
 
 public record CreatePaymentRequest(
@@ -324,7 +330,9 @@ public record CreatePaymentRequest(
     DateOnly PaymentDate,
     string? Currency,
     decimal ExchangeRate = 1m,
-    string? Notes = null
+    string? Notes        = null,
+    Guid? PosTerminalId  = null,
+    Guid? BankAccountId  = null
 );
 
 public record AllocationItemRequest(long TreatmentPlanItemId, decimal Amount);

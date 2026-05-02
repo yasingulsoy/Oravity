@@ -14,9 +14,11 @@ public record CreatePaymentCommand(
     decimal Amount,
     PaymentMethod Method,
     DateOnly PaymentDate,
-    string Currency = "TRY",
+    string Currency      = "TRY",
     decimal ExchangeRate = 1m,
-    string? Notes = null
+    string? Notes        = null,
+    Guid? PosTerminalId  = null,
+    Guid? BankAccountId  = null
 ) : IRequest<PaymentResponse>;
 
 public class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentCommand, PaymentResponse>
@@ -53,6 +55,18 @@ public class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentCommand,
         if (request.PaymentDate < today && !_user.HasPermission("payment.backdate"))
             throw new ForbiddenException("Geçmiş tarihli ödeme girmek için yetkiniz yok.");
 
+        long? posTerminalId = null;
+        if (request.PosTerminalId.HasValue)
+            posTerminalId = await _db.PosTerminals.AsNoTracking()
+                .Where(p => p.PublicId == request.PosTerminalId.Value && !p.IsDeleted)
+                .Select(p => (long?)p.Id).FirstOrDefaultAsync(cancellationToken);
+
+        long? bankAccountId = null;
+        if (request.BankAccountId.HasValue)
+            bankAccountId = await _db.BankAccounts.AsNoTracking()
+                .Where(b => b.PublicId == request.BankAccountId.Value && !b.IsDeleted)
+                .Select(b => (long?)b.Id).FirstOrDefaultAsync(cancellationToken);
+
         var payment = Payment.Create(
             patientId:    request.PatientId,
             branchId:     branchId,
@@ -61,7 +75,9 @@ public class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentCommand,
             paymentDate:  request.PaymentDate,
             currency:     request.Currency,
             exchangeRate: request.Currency == "TRY" ? 1m : request.ExchangeRate,
-            notes:        request.Notes);
+            notes:        request.Notes,
+            posTerminalId: posTerminalId,
+            bankAccountId: bankAccountId);
 
         if (_user.IsAuthenticated)
             payment.SetCreatedBy(_user.UserId, _user.TenantId);

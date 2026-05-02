@@ -19,9 +19,11 @@ public record CollectPaymentCommand(
     decimal   Amount,
     PaymentMethod Method,
     DateOnly  PaymentDate,
-    string    Currency     = "TRY",
-    decimal   ExchangeRate = 1m,
-    string?   Notes        = null
+    string    Currency      = "TRY",
+    decimal   ExchangeRate  = 1m,
+    string?   Notes         = null,
+    Guid?     PosTerminalId = null,
+    Guid?     BankAccountId = null
 ) : IRequest<CollectPaymentResult>;
 
 public record CollectPaymentResult(
@@ -74,6 +76,18 @@ public class CollectPaymentCommandHandler
             throw new ForbiddenException("Geçmiş tarihli ödeme girmek için yetkiniz yok.");
 
         // ── 1. Ödemeyi oluştur ────────────────────────────────────────────
+        long? posTerminalId = null;
+        if (request.PosTerminalId.HasValue)
+            posTerminalId = await _db.PosTerminals.AsNoTracking()
+                .Where(p => p.PublicId == request.PosTerminalId.Value && !p.IsDeleted)
+                .Select(p => (long?)p.Id).FirstOrDefaultAsync(ct);
+
+        long? bankAccountId = null;
+        if (request.BankAccountId.HasValue)
+            bankAccountId = await _db.BankAccounts.AsNoTracking()
+                .Where(b => b.PublicId == request.BankAccountId.Value && !b.IsDeleted)
+                .Select(b => (long?)b.Id).FirstOrDefaultAsync(ct);
+
         var payment = Payment.Create(
             patientId:    request.PatientId,
             branchId:     branchId,
@@ -82,7 +96,9 @@ public class CollectPaymentCommandHandler
             paymentDate:  request.PaymentDate,
             currency:     request.Currency,
             exchangeRate: request.Currency == "TRY" ? 1m : request.ExchangeRate,
-            notes:        request.Notes);
+            notes:        request.Notes,
+            posTerminalId: posTerminalId,
+            bankAccountId: bankAccountId);
 
         if (_user.IsAuthenticated)
             payment.SetCreatedBy(_user.UserId, _user.TenantId);
@@ -197,7 +213,13 @@ public class CollectPaymentCommandHandler
                 var itemRemainingTry = item.PatientAmount - alreadyPaid;
                 if (itemRemainingTry <= 0) continue;
 
-                toAllocate    = Math.Min(remainingTry, itemRemainingTry);
+                // Döviz ödemede zorunlu yuvarlama kaynaklı kuruş farkı (≤ ₺1):
+                // klinik üstlenir — ileride kambiyo kârı/zararı olarak muhasebeleştirilecek.
+                bool kurFarkiKapat = isFxPayment
+                    && itemRemainingTry > remainingTry
+                    && (itemRemainingTry - remainingTry) <= 1m;
+
+                toAllocate    = kurFarkiKapat ? itemRemainingTry : Math.Min(remainingTry, itemRemainingTry);
                 remainingTry -= toAllocate;
             }
 

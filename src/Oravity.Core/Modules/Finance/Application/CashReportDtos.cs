@@ -22,18 +22,18 @@ public record DailyCashReportResponse(
 // ─── Kasa raporu detay ────────────────────────────────────────────────────
 
 public record CashPaymentLine(
-    Guid         PublicId,
-    long         Id,
-    DateTime     CreatedAt,
-    string       PatientName,
-    decimal      Amount,
-    string       Currency,
-    decimal      ExchangeRate,
-    decimal      BaseAmount,     // TRY karşılığı
+    Guid          PublicId,
+    long          Id,
+    DateTime      CreatedAt,
+    string        PatientName,
+    decimal       Amount,
+    string        Currency,
+    decimal       ExchangeRate,
+    decimal       BaseAmount,     // TRY karşılığı
     PaymentMethod Method,
-    string       MethodLabel,
-    string?      Notes,
-    string       RecordedByName
+    string        MethodLabel,
+    string?       Notes,
+    string        RecordedByName
 );
 
 public record CashCurrencyTotal(
@@ -44,22 +44,53 @@ public record CashCurrencyTotal(
 );
 
 public record CashMethodTotal(
-    PaymentMethod           Method,
-    string                  MethodLabel,
-    decimal                 TotalTry,
-    int                     Count,
+    PaymentMethod                    Method,
+    string                           MethodLabel,
+    decimal                          TotalTry,
+    int                              Count,
     IReadOnlyList<CashCurrencyTotal> ByCurrency
 );
 
+// POS cihazı bazlı toplam (Kredi Kartı + Taksit)
+public record PosTotalLine(
+    Guid?   PosTerminalPublicId,
+    string  TerminalName,
+    string  BankName,
+    decimal TotalTry,
+    int     Count,
+    IReadOnlyList<CashCurrencyTotal> ByCurrency
+);
+
+// Banka hesabı bazlı toplam (Havale/EFT)
+public record BankTotalLine(
+    Guid?   BankAccountPublicId,
+    string  AccountName,
+    string  BankName,
+    string  AccountCurrency,
+    decimal TotalTry,
+    int     Count,
+    IReadOnlyList<CashCurrencyTotal> ByCurrency
+);
+
+// KASA bölümü
+public record KasaSection(
+    IReadOnlyList<CashCurrencyTotal> OncekiGunDevir,  // önceki gün nakit
+    IReadOnlyList<CashCurrencyTotal> BugunNakit,       // bugünkü nakit (Cash yöntemi)
+    IReadOnlyList<CashCurrencyTotal> ToplamKasa        // devir + bugün
+);
+
 public record DailyCashReportDetailResponse(
-    DateOnly                      Date,
-    long                          BranchId,
-    DailyCashReportResponse?      ReportStatus,      // null = henüz kapatılmamış (Open)
-    IReadOnlyList<CashPaymentLine> Payments,
-    IReadOnlyList<CashMethodTotal> ByMethod,
+    DateOnly                         Date,
+    long                             BranchId,
+    DailyCashReportResponse?         ReportStatus,     // null = henüz kapatılmamış (Open)
+    IReadOnlyList<CashPaymentLine>   Payments,
+    IReadOnlyList<CashMethodTotal>   ByMethod,
     IReadOnlyList<CashCurrencyTotal> ByCurrency,
-    decimal                        TotalTry,
-    int                            TotalCount
+    decimal                          TotalTry,
+    int                              TotalCount,
+    IReadOnlyList<PosTotalLine>      PosTotals,
+    IReadOnlyList<BankTotalLine>     BankTotals,
+    KasaSection                      Kasa
 );
 
 // ─── Mappings ─────────────────────────────────────────────────────────────

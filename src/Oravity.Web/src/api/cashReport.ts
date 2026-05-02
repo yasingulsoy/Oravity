@@ -47,6 +47,31 @@ export interface CashMethodTotal {
   byCurrency: CashCurrencyTotal[];
 }
 
+export interface PosTotalLine {
+  posTerminalPublicId?: string;
+  terminalName: string;
+  bankName: string;
+  totalTry: number;
+  count: number;
+  byCurrency: CashCurrencyTotal[];
+}
+
+export interface BankTotalLine {
+  bankAccountPublicId?: string;
+  accountName: string;
+  bankName: string;
+  accountCurrency: string;
+  totalTry: number;
+  count: number;
+  byCurrency: CashCurrencyTotal[];
+}
+
+export interface KasaSection {
+  oncekiGunDevir: CashCurrencyTotal[];
+  bugunNakit: CashCurrencyTotal[];
+  toplamKasa: CashCurrencyTotal[];
+}
+
 export interface DailyCashReportDetail {
   date: string;
   branchId: number;
@@ -56,6 +81,9 @@ export interface DailyCashReportDetail {
   byCurrency: CashCurrencyTotal[];
   totalTry: number;
   totalCount: number;
+  posTotals: PosTotalLine[];
+  bankTotals: BankTotalLine[];
+  kasa: KasaSection;
 }
 
 export const cashReportApi = {
