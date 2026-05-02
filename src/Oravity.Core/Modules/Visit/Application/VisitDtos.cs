@@ -19,19 +19,21 @@ public record WaitingListItemResponse(
     DateOnly? PatientBirthDate,
     string?  PatientGender,
     bool     IsBeingCalled,
+    string?  BranchName,
     IReadOnlyList<WaitingProtocolItem> Protocols
 );
 
 public record WaitingProtocolItem(
-    Guid    PublicId,
-    string  ProtocolNo,
-    int     ProtocolTypeId,
-    string  TypeName,
-    string  TypeColor,
-    int     Status,
-    string  StatusName,
-    string  DoctorName,
-    string? Diagnosis
+    Guid      PublicId,
+    string    ProtocolNo,
+    int       ProtocolTypeId,
+    string    TypeName,
+    string    TypeColor,
+    int       Status,
+    string    StatusName,
+    string    DoctorName,
+    string?   Diagnosis,
+    DateTime? StartedAt
 );
 
 public record VisitResponse(

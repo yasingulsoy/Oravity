@@ -8,6 +8,7 @@ export interface WaitingProtocolItem {
   statusName: string;
   doctorName: string;
   diagnosis: string | null;
+  startedAt: string | null;
 }
 
 export interface WaitingListItem {
@@ -27,6 +28,7 @@ export interface WaitingListItem {
   patientBirthDate: string | null;
   patientGender: string | null;
   isBeingCalled: boolean;
+  branchName: string | null;
   protocols: WaitingProtocolItem[];
 }
 

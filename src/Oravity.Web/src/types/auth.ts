@@ -1,13 +1,21 @@
+export interface BranchOption {
+  id: number;
+  name: string;
+}
+
 export interface LoginRequest {
   email: string;
   password: string;
+  branchId?: number;
 }
 
 export interface LoginResponse {
-  accessToken: string;
-  refreshToken: string;
+  accessToken?: string;
+  refreshToken?: string;
   expiresIn: number;
   tokenType: string;
+  requiresBranchSelection?: boolean;
+  branches?: BranchOption[];
 }
 
 export interface AuthUser {

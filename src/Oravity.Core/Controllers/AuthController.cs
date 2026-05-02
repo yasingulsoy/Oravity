@@ -2,7 +2,10 @@ using MediatR;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Oravity.Core.Modules.Core.Auth.Application.Commands;
+using Oravity.Infrastructure.Database;
+using Oravity.SharedKernel.Interfaces;
 
 namespace Oravity.Core.Controllers;
 
@@ -12,10 +15,14 @@ namespace Oravity.Core.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly AppDbContext _db;
+    private readonly ITenantContext _tenant;
 
-    public AuthController(IMediator mediator)
+    public AuthController(IMediator mediator, AppDbContext db, ITenantContext tenant)
     {
         _mediator = mediator;
+        _db       = db;
+        _tenant   = tenant;
     }
 
     /// <summary>Kullanıcı girişi — access + refresh token döner</summary>
@@ -26,7 +33,7 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
-        var result = await _mediator.Send(new LoginCommand(request.Email, request.Password, ip));
+        var result = await _mediator.Send(new LoginCommand(request.Email, request.Password, ip, request.BranchId));
         return Ok(result);
     }
 
@@ -79,8 +86,42 @@ public class AuthController : ControllerBase
             .ToList();
         return Ok(new { claims });
     }
+
+    /// <summary>Oturumdaki kullanıcının sahip olduğu tüm izin kodlarını döner.</summary>
+    [HttpGet("my-permissions")]
+    [Authorize]
+    [ProducesResponseType(typeof(IReadOnlyList<string>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> MyPermissions()
+    {
+        if (_tenant.IsPlatformAdmin)
+        {
+            // Platform admin her şeyi yapabilir; tüm izin kodlarını döndür
+            var all = await _db.Permissions.AsNoTracking()
+                .Select(p => p.Code)
+                .ToListAsync();
+            return Ok(all);
+        }
+
+        var permissions = await _db.UserRoleAssignments
+            .Where(a => a.UserId == _tenant.UserId
+                        && a.IsActive
+                        && (a.ExpiresAt == null || a.ExpiresAt > DateTime.UtcNow))
+            .SelectMany(a => a.RoleTemplate.RoleTemplatePermissions)
+            .Select(rtp => rtp.Permission.Code)
+            .Distinct()
+            .ToListAsync();
+
+        // UserPermissionOverrides (bireysel grant)
+        var overrides = await _db.UserPermissionOverrides
+            .Where(o => o.UserId == _tenant.UserId && o.IsGranted)
+            .Select(o => o.Permission.Code)
+            .ToListAsync();
+
+        var merged = permissions.Union(overrides).Distinct().ToList();
+        return Ok(merged);
+    }
 }
 
-public record LoginRequest(string Email, string Password);
+public record LoginRequest(string Email, string Password, long? BranchId = null);
 public record RefreshRequest(string RefreshToken);
 public record LogoutRequest(string RefreshToken);

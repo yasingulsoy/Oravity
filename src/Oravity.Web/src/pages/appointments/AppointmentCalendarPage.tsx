@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { appointmentsApi } from '@/api/appointments';
 import { useCalendarSocket } from '@/hooks/useCalendarSocket';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -63,8 +64,8 @@ function AppointmentJourney({ statusId }: { statusId: number }) {
   const currentStepIndex = JOURNEY_STEPS.findIndex((s) => s.id === statusId);
 
   if (terminal) {
-    // Kaçıncı adıma kadar gelindi — 4 (Left) = 3.adımdan sonra, 6/8 = başlangıçta
-    const lastCompleted = statusId === 4 ? 2 : statusId === 8 ? 0 : -1;
+    // Kaçıncı adıma kadar gelindi — 4 (Ayrıldı) = Odada (index 3) tamamlandı, 8 = sadece Planlandı, 6 = hiçbiri
+    const lastCompleted = statusId === 4 ? 3 : statusId === 8 ? 0 : -1;
     const TerminalIcon = terminal.icon;
     return (
       <div className="space-y-2">
@@ -279,7 +280,17 @@ export function AppointmentCalendarPage() {
     queryClient.invalidateQueries({ queryKey: ['visits', 'waiting'] });
   }, [queryClient]);
 
-  useCalendarSocket(handleCalendarEvent);
+  useCalendarSocket(handleCalendarEvent, ({ patientName, doctorName }) => {
+    toast.info(`${doctorName} — ${patientName} hastasını çağırdı`, {
+      duration: 6000,
+      icon: '🔔',
+    });
+  });
+
+  // Modal her zaman live query data'sından okur — state snapshot'ı değil
+  const liveAppointment = selectedAppointment
+    ? (appointments.find((a) => a.publicId === selectedAppointment.publicId) ?? selectedAppointment)
+    : null;
 
   // --- Handlers ---
 
@@ -324,6 +335,35 @@ export function AppointmentCalendarPage() {
       setCancelConfirm(false);
       setDetailOpen(false);
       setPendingStatusId(null);
+      queryClient.invalidateQueries({ queryKey: ['appointments'] });
+      queryClient.invalidateQueries({ queryKey: ['visits', 'waiting'] });
+    },
+  });
+
+  const resizeMutation = useMutation({
+    mutationFn: ({ apt, newStart, newEnd }: { apt: Appointment; newStart: string; newEnd: string }) =>
+      appointmentsApi.move(apt.publicId, {
+        newStartTime: newStart,
+        newEndTime: newEnd,
+        newDoctorId: apt.doctorId,
+        expectedRowVersion: apt.rowVersion,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['appointments'] });
+    },
+  });
+
+  const moveMutation = useMutation({
+    mutationFn: ({ apt, newDoctorId, newStart, newEnd }: {
+      apt: Appointment; newDoctorId: number; newStart: string; newEnd: string;
+    }) =>
+      appointmentsApi.move(apt.publicId, {
+        newStartTime: newStart,
+        newEndTime: newEnd,
+        newDoctorId,
+        expectedRowVersion: apt.rowVersion,
+      }),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['appointments'] });
       queryClient.invalidateQueries({ queryKey: ['visits', 'waiting'] });
     },
@@ -434,6 +474,12 @@ export function AppointmentCalendarPage() {
               viewDate={currentDate}
               onRangeSelect={handleRangeSelect}
               onAppointmentClick={handleAppointmentClick}
+              onAppointmentResize={(apt, newStart, newEnd) =>
+                resizeMutation.mutate({ apt, newStart, newEnd })
+              }
+              onAppointmentMove={(apt, newDoctorId, _newBranchId, newStart, newEnd) =>
+                moveMutation.mutate({ apt, newDoctorId, newStart, newEnd })
+              }
             />
           )}
         </div>
@@ -460,13 +506,14 @@ export function AppointmentCalendarPage() {
             <DialogTitle>Randevu Detayi</DialogTitle>
           </DialogHeader>
 
-          {selectedAppointment && (() => {
-            const currentStatus = statuses.find(s => s.id === selectedAppointment.statusId);
+          {liveAppointment && (() => {
+            const currentStatus = statuses.find(s => s.id === liveAppointment.statusId);
             const allowedNextIds: number[] = currentStatus
               ? JSON.parse(currentStatus.allowedNextStatusIds ?? '[]')
               : [];
-            const allowedNextStatuses = statuses.filter(s => allowedNextIds.includes(s.id));
-            const activeStatusId = pendingStatusId ?? selectedAppointment.statusId;
+            // InRoom (5) is set only by the system (doctor starts protocol) — hide from manual UI
+            const allowedNextStatuses = statuses.filter(s => allowedNextIds.includes(s.id) && s.id !== 5);
+            const activeStatusId = pendingStatusId ?? liveAppointment.statusId;
             const activeStatus = statuses.find(s => s.id === activeStatusId);
 
             return (
@@ -489,7 +536,7 @@ export function AppointmentCalendarPage() {
                         borderStyle: 'solid',
                       }}
                     >
-                      {activeStatus?.name ?? selectedAppointment.statusLabel}
+                      {activeStatus?.name ?? liveAppointment.statusLabel}
                     </Badge>
                   </div>
 
@@ -524,37 +571,37 @@ export function AppointmentCalendarPage() {
                 <dl className="space-y-3 text-sm">
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Hasta</dt>
-                    <dd className="font-medium">{selectedAppointment.patientName}</dd>
+                    <dd className="font-medium">{liveAppointment.patientName}</dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Doktor</dt>
-                    <dd className="font-medium">{selectedAppointment.doctorName}</dd>
+                    <dd className="font-medium">{liveAppointment.doctorName}</dd>
                   </div>
-                  {selectedAppointment.appointmentTypeName && (
+                  {liveAppointment.appointmentTypeName && (
                     <div className="flex justify-between">
                       <dt className="text-muted-foreground">Randevu Tipi</dt>
-                      <dd className="font-medium">{selectedAppointment.appointmentTypeName}</dd>
+                      <dd className="font-medium">{liveAppointment.appointmentTypeName}</dd>
                     </div>
                   )}
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Tarih</dt>
                     <dd className="font-medium">
-                      {format(new Date(selectedAppointment.startTime), 'dd.MM.yyyy')}
+                      {format(new Date(liveAppointment.startTime), 'dd.MM.yyyy')}
                     </dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Saat</dt>
                     <dd className="font-medium">
-                      {format(new Date(selectedAppointment.startTime), 'HH:mm')} -{' '}
-                      {format(new Date(selectedAppointment.endTime), 'HH:mm')}
+                      {format(new Date(liveAppointment.startTime), 'HH:mm')} -{' '}
+                      {format(new Date(liveAppointment.endTime), 'HH:mm')}
                     </dd>
                   </div>
-                  {selectedAppointment.notes && (
+                  {liveAppointment.notes && (
                     <>
                       <Separator />
                       <div>
                         <dt className="text-muted-foreground mb-1">Notlar</dt>
-                        <dd>{selectedAppointment.notes}</dd>
+                        <dd>{liveAppointment.notes}</dd>
                       </div>
                     </>
                   )}
@@ -565,7 +612,7 @@ export function AppointmentCalendarPage() {
 
           <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
             {/* Sol: iptal butonu — terminal durumda gösterme */}
-            {selectedAppointment && ![4, 6, 7, 8].includes(selectedAppointment.statusId) && (
+            {liveAppointment && ![4, 6, 7, 8].includes(liveAppointment.statusId) && (
               !cancelConfirm ? (
                 <Button
                   variant="ghost"
@@ -582,7 +629,7 @@ export function AppointmentCalendarPage() {
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => cancelMutation.mutate(selectedAppointment.publicId)}
+                    onClick={() => cancelMutation.mutate(liveAppointment.publicId)}
                     disabled={cancelMutation.isPending}
                   >
                     {cancelMutation.isPending ? 'İptal ediliyor...' : 'Evet, İptal Et'}
@@ -602,7 +649,7 @@ export function AppointmentCalendarPage() {
               {pendingStatusId !== null && (
                 <Button
                   onClick={() => statusMutation.mutate({
-                    publicId: selectedAppointment!.publicId,
+                    publicId: liveAppointment!.publicId,
                     statusId: pendingStatusId,
                   })}
                   disabled={statusMutation.isPending}

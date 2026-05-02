@@ -140,6 +140,20 @@ public class ProtocolsController : ControllerBase
         var result = await _mediator.Send(new GetPatientProtocolHistoryQuery(patientPublicId, limit), ct);
         return Ok(result);
     }
+
+    /// <summary>
+    /// e-Nabız / HBYS gönderim paketi: tanılar + tamamlanan işlemler + SUT kodları.
+    /// IsReadyToSubmit = true ise tüm eşleştirmeler tamam, gönderilebilir.
+    /// </summary>
+    [HttpGet("{publicId:guid}/submission-data")]
+    [RequirePermission("protocol:view")]
+    [ProducesResponseType(typeof(ProtocolSubmissionData), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetSubmissionData(Guid publicId, CancellationToken ct)
+    {
+        var result = await _mediator.Send(new GetProtocolSubmissionDataQuery(publicId), ct);
+        return Ok(result);
+    }
 }
 
 // ─── Request DTO ──────────────────────────────────────────────────────────

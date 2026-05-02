@@ -106,8 +106,9 @@ public class GetTreatmentPriceQueryHandler
             : "Referans eşleştirme bulunamadı → referans fiyat çekilemez"));
 
         // Adım 2: Referans fiyatlar
-        var referencePrices = new Dictionary<string, decimal>();
-        string? tdbCurrency = null;
+        var referencePrices  = new Dictionary<string, decimal>();
+        var referenceCurrencies = new Dictionary<string, string>(); // ListCode → Currency
+        string? tdbCurrency  = null;
 
         foreach (var mapping in mappings)
         {
@@ -128,8 +129,10 @@ public class GetTreatmentPriceQueryHandler
 
             if (listCode == null) continue;
 
-            referencePrices[listCode] = item.Price;
-            if (listCode == "TDB") tdbCurrency = item.Currency;
+            referencePrices[listCode]    = item.Price;
+            referenceCurrencies[listCode] = item.Currency;
+            if (listCode.StartsWith("TDB", StringComparison.OrdinalIgnoreCase))
+                tdbCurrency = item.Currency;
 
             trace.Add(new("Referans Fiyat", $"{listCode} → kod \"{mapping.ReferenceCode}\" → {item.Price:N2} {item.Currency}"));
         }
@@ -138,8 +141,13 @@ public class GetTreatmentPriceQueryHandler
                     ?? referencePrices.Keys.FirstOrDefault();
         var tdbPrice = tdbKey != null ? referencePrices[tdbKey] : 0m;
 
+        // Tedavinin para birimi: TDB referans listesinin currency'si, yoksa ilk bulunan
+        var treatmentCurrency = tdbKey != null && referenceCurrencies.TryGetValue(tdbKey, out var tdbCur)
+            ? tdbCur
+            : referenceCurrencies.Values.FirstOrDefault() ?? "TRY";
+
         if (tdbKey != null)
-            trace.Add(new("TDB Fiyat", $"Temel referans: {tdbKey} = {tdbPrice:N2}"));
+            trace.Add(new("TDB Fiyat", $"Temel referans: {tdbKey} = {tdbPrice:N2} {treatmentCurrency}"));
 
         // Şube + MULTI
         var branchId = request.BranchId ?? _tenant.BranchId;
@@ -181,6 +189,7 @@ public class GetTreatmentPriceQueryHandler
                 CategoryId        = treatment.CategoryId,
                 CategoryPublicId  = treatment.Category?.PublicId,
                 TreatmentCode     = treatment.Code,
+                TreatmentCurrency = treatmentCurrency,
                 ReferencePrices   = referencePrices,
                 PricingMultiplier = pricingMultiplier,
                 InstitutionId     = request.InstitutionId,
@@ -203,12 +212,11 @@ public class GetTreatmentPriceQueryHandler
 
         if (tdbPrice > 0)
         {
-            var currency = tdbCurrency ?? "TRY";
-            trace.Add(new("Sonuç", $"Eşleşen kural yok → TDB referans fiyatı kullanılıyor: {tdbPrice:N2} {currency}", "📋 REFERANS"));
+            trace.Add(new("Sonuç", $"Eşleşen kural yok → referans fiyatı kullanılıyor: {tdbPrice:N2} {treatmentCurrency}", "📋 REFERANS"));
             return new TreatmentPriceResponse(
                 UnitPrice      : tdbPrice,
                 ReferencePrice : tdbPrice,
-                Currency       : currency,
+                Currency       : treatmentCurrency,
                 AppliedRuleName: null,
                 Strategy       : "ReferencePrice",
                 Trace          : ToDto(trace));

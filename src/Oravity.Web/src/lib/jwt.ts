@@ -7,6 +7,8 @@ interface JwtPayload {
   public_id: string;
   full_name: string;
   is_platform_admin: string;
+  branch_id?: string;
+  company_id?: string;
   exp: number;
 }
 
@@ -36,5 +38,6 @@ export function extractUser(accessToken: string): AuthUser | null {
     name: payload.full_name,
     publicId: payload.public_id,
     isPlatformAdmin: payload.is_platform_admin === 'true',
+    branchId: payload.branch_id ? parseInt(payload.branch_id, 10) : undefined,
   };
 }

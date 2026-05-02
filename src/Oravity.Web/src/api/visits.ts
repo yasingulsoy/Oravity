@@ -21,6 +21,9 @@ export const visitsApi = {
       '/visits/request-call',
       { appointmentPublicId },
     ),
+
+  reassignDoctor: (visitPublicId: string, newDoctorId: number) =>
+    apiClient.patch(`/visits/${visitPublicId}/reassign-doctor`, { newDoctorId }),
 };
 
 export interface ProtocolTypeSetting {

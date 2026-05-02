@@ -47,6 +47,11 @@ export const appointmentsApi = {
   updateStatus: (publicId: string, statusId: number) =>
     apiClient.put<Appointment>(`/appointments/${publicId}/status`, { statusId }),
 
+  move: (
+    publicId: string,
+    data: { newStartTime: string; newEndTime: string; newDoctorId?: number | null; expectedRowVersion: number },
+  ) => apiClient.put<Appointment>(`/appointments/${publicId}/move`, data),
+
   cancel: (publicId: string, reason?: string) =>
     apiClient.delete(`/appointments/${publicId}`, { params: { reason } }),
 

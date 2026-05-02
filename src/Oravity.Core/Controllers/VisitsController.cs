@@ -61,6 +61,16 @@ public class VisitsController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Randevunun hekimini değiştirir. Aktif protokol varsa engeller.</summary>
+    [HttpPatch("{publicId:guid}/reassign-doctor")]
+    [RequirePermission("visit:update")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> ReassignDoctor(Guid publicId, [FromBody] ReassignDoctorRequest req, CancellationToken ct)
+    {
+        await _mediator.Send(new ReassignAppointmentDoctorCommand(publicId, req.NewDoctorId), ct);
+        return NoContent();
+    }
+
     /// <summary>Güncel bekleme listesi (bugün, aktif viziteler).</summary>
     [HttpGet("waiting")]
     [RequirePermission("visit:view")]
@@ -77,3 +87,4 @@ public class VisitsController : ControllerBase
 public record CheckInPatientRequest(Guid AppointmentPublicId, string? Notes);
 public record CheckInWalkInRequest(long PatientId, string? Notes);
 public record RequestCallRequest(Guid AppointmentPublicId);
+public record ReassignDoctorRequest(long NewDoctorId);

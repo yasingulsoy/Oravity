@@ -107,6 +107,12 @@ export const pricingApi = {
   deleteReferenceItem: (listId: number, code: string) =>
     apiClient.delete(`/pricing/reference-lists/${listId}/items/${code}`),
 
+  setReferenceListActive: (listId: number, isActive: boolean) =>
+    apiClient.patch(`/pricing/reference-lists/${listId}/active`, { isActive }),
+
+  deleteReferenceList: (listId: number) =>
+    apiClient.delete(`/pricing/reference-lists/${listId}`),
+
   bulkUpsertReferenceItems: (listId: number, items: { code: string; name: string; price: number; priceKdv?: number; currency?: string }[]) =>
     apiClient.post<{ count: number }>(`/pricing/reference-lists/${listId}/items/bulk`, { items }),
 

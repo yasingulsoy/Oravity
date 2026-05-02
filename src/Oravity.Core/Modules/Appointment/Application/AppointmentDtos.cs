@@ -24,7 +24,8 @@ public record AppointmentResponse(
     string? AppointmentTypeName = null,
     DateOnly? PatientBirthDate = null,
     string? PatientGender = null,
-    bool HasOpenProtocol = false
+    bool HasOpenProtocol = false,
+    bool IsBeingCalled = false
 );
 
 /// <summary>SignalR broadcast için hafif DTO</summary>
@@ -121,6 +122,12 @@ public interface ICalendarBroadcastService
         long branchId,
         ProtocolBroadcastDto protocol,
         CalendarEventType eventType,
+        CancellationToken ct = default);
+
+    Task BroadcastPatientCalledAsync(
+        long branchId,
+        string patientName,
+        string doctorName,
         CancellationToken ct = default);
 }
 

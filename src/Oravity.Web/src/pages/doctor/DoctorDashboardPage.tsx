@@ -72,6 +72,24 @@ function DoctorSelector({ doctors, value, onChange, isLoading }: DoctorSelectorP
   }
 
   const selected = doctors.find((d) => d.doctorId === value);
+
+  // Tek hekim varsa (kendi ekranı) dropdown yerine label göster
+  if (doctors.length === 1) {
+    const d = doctors[0];
+    const label = d.title ? `${d.title} ${d.fullName}` : d.fullName;
+    return (
+      <span className="flex items-center gap-1.5 text-sm font-medium">
+        {d.calendarColor && (
+          <span
+            className="inline-block h-2 w-2 rounded-full shrink-0"
+            style={{ background: d.calendarColor }}
+          />
+        )}
+        {label}
+      </span>
+    );
+  }
+
   const triggerLabel = selected
     ? (selected.title ? `${selected.title} ${selected.fullName}` : selected.fullName)
     : 'Hekim seç...';
@@ -124,8 +142,8 @@ function AppointmentCard({ apt, isActive, onCall, isCallingApt }: AppointmentCar
   const age = calcAge(apt.patientBirthDate);
   const gender = genderLabel(apt.patientGender);
 
-  // Arrived=3 ve henüz odaya alınmamış → Çağır butonu göster
-  const canCall = apt.statusId === 3 && !isActive;
+  // Arrived=3, odaya alınmamış ve açık protokol yok → Çağır butonu göster
+  const canCall = apt.statusId === 3 && !isActive && !apt.hasOpenProtocol;
 
   return (
     <div
@@ -167,16 +185,22 @@ function AppointmentCard({ apt, isActive, onCall, isCallingApt }: AppointmentCar
       </div>
 
       {canCall && onCall && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 w-full text-xs gap-1"
-          disabled={isCallingApt}
-          onClick={() => onCall(apt)}
-        >
-          <BellRing className="h-3.5 w-3.5" />
-          {isCallingApt ? 'Çağrılıyor...' : 'Çağır'}
-        </Button>
+        <div className="relative overflow-hidden rounded-md">
+          {/* Pulsing ring — clipped by overflow-hidden, no layout side-effects */}
+          {!isCallingApt && (
+            <span className="absolute inset-0 bg-emerald-400/30 animate-ping pointer-events-none" />
+          )}
+          <Button
+            size="sm"
+            variant="default"
+            className="relative h-7 w-full text-xs gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white border-0 shadow-sm"
+            disabled={isCallingApt}
+            onClick={() => onCall(apt)}
+          >
+            <BellRing className={cn('h-3.5 w-3.5', !isCallingApt && 'animate-bounce')} />
+            {isCallingApt ? 'Çağrılıyor...' : 'Hastayı Çağır'}
+          </Button>
+        </div>
       )}
     </div>
   );
@@ -413,12 +437,18 @@ export function DoctorDashboardPage() {
     queryFn: () => appointmentsApi.getCalendarDoctors({ date: today }).then((r) => r.data),
   });
 
+  const myId = user?.id ? Number(user.id) : null;
+  // Giriş yapan kullanıcı takvimde bir hekim olarak varsa yalnızca kendisini göster
+  const isOwnDoctor = myId !== null && calendarDoctors.some((d) => d.doctorId === myId);
+  const visibleDoctors = isOwnDoctor
+    ? calendarDoctors.filter((d) => d.doctorId === myId)
+    : calendarDoctors;
+
   useEffect(() => {
     if (calendarDoctors.length === 0 || selectedDoctorId !== null) return;
-    const myId = user?.id ? Number(user.id) : null;
     const mine = myId ? calendarDoctors.find((d) => d.doctorId === myId) : null;
     setSelectedDoctorId(mine ? mine.doctorId : calendarDoctors[0].doctorId);
-  }, [calendarDoctors, user?.id, selectedDoctorId]);
+  }, [calendarDoctors, myId, selectedDoctorId]);
 
   const { data: appointments = [], isLoading: aptsLoading } = useQuery({
     queryKey: ['doctor-appointments', today, selectedDoctorId],
@@ -480,11 +510,13 @@ export function DoctorDashboardPage() {
       if (protocolStarted) {
         toast.success(`${patientName} odaya çağrıldı.`);
         qc.invalidateQueries({ queryKey: ['doctor-protocols'] });
-        qc.invalidateQueries({ queryKey: ['doctor-appointments'] });
       } else {
         toast.info(`Resepsiyona bildirim gönderildi — ${patientName} için protokol açılması istendi.`);
-        qc.invalidateQueries({ queryKey: ['doctor-appointments'] });
       }
+      // Her iki tarafı da hemen güncelle (SignalR'a ek olarak)
+      qc.invalidateQueries({ queryKey: ['doctor-appointments'] });
+      qc.invalidateQueries({ queryKey: ['appointments'] });
+      qc.invalidateQueries({ queryKey: ['visits', 'waiting'] });
       setCallingAptId(null);
     },
     onError: () => {
@@ -518,11 +550,8 @@ export function DoctorDashboardPage() {
   const waitingProtocols = protocols.filter((p) => p.status === 1 && !p.startedAt);
   const completedProtocols = protocols.filter((p) => p.status === 2);
 
-  // Patient IDs currently in room — used to highlight matching appointments
-  const inRoomPatientIds = new Set(inRoomProtocols.map((p) => p.patientId));
-
-  // Yalnızca fiziksel olarak klinikte olan hastalar: Geldi(3), Odada(5), Ayrıldı(4), Tamamlandı(7)
-  const PRESENT_STATUSES = new Set([3, 4, 5, 7]);
+  // Klinikte aktif olan hastalar: Geldi(3), Odada(5)
+  const PRESENT_STATUSES = new Set([3, 5]);
 
   const sortedAppointments = appointments
     .filter((a) => PRESENT_STATUSES.has(a.statusId))
@@ -535,7 +564,7 @@ export function DoctorDashboardPage() {
       <div className="flex items-center gap-3">
         <span className="text-xs text-muted-foreground shrink-0">Hekim:</span>
         <DoctorSelector
-          doctors={calendarDoctors}
+          doctors={visibleDoctors}
           value={selectedDoctorId}
           onChange={(id) => setSelectedDoctorId(id)}
           isLoading={doctorsLoading}
@@ -574,7 +603,7 @@ export function DoctorDashboardPage() {
                 <AppointmentCard
                   key={apt.publicId}
                   apt={apt}
-                  isActive={apt.patientId !== null && inRoomPatientIds.has(apt.patientId)}
+                  isActive={apt.statusId === 5}
                   onCall={handleAptCall}
                   isCallingApt={callingAptId === apt.publicId}
                 />

@@ -18,6 +18,7 @@ export interface Appointment {
   patientBirthDate?: string | null;
   patientGender?: string | null;
   hasOpenProtocol?: boolean;
+  isBeingCalled?: boolean;
 }
 
 export interface CreateAppointmentRequest {

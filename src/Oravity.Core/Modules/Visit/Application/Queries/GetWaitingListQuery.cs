@@ -55,6 +55,7 @@ public class GetWaitingListQueryHandler : IRequestHandler<GetWaitingListQuery, I
                 v.CheckInAt,
                 v.IsWalkIn,
                 v.Status,
+                BranchName = v.Branch != null ? v.Branch.Name : null,
                 AppointmentStart            = v.Appointment != null ? (DateTime?)v.Appointment.StartTime : null,
                 HasOpenProtocol             = v.Protocols.Any(p => (int)p.Status == (int)ProtocolStatus.Open && !p.IsDeleted),
                 AppointmentDoctorId         = v.Appointment != null ? (long?)v.Appointment.DoctorId : null,
@@ -70,6 +71,7 @@ public class GetWaitingListQueryHandler : IRequestHandler<GetWaitingListQuery, I
                         p.ProtocolType,
                         p.Status,
                         p.Diagnosis,
+                        p.StartedAt,
                         DoctorName = p.Doctor != null ? p.Doctor.FullName : "",
                     })
                     .ToList(),
@@ -95,7 +97,8 @@ public class GetWaitingListQueryHandler : IRequestHandler<GetWaitingListQuery, I
             v.AppointmentSpecializationId,
             v.PatientBirthDate,
             v.PatientGender,
-            IsBeingCalled: v.CalledAt.HasValue && (now - v.CalledAt.Value).TotalMinutes < 3,
+            IsBeingCalled: v.CalledAt.HasValue && v.Status == VisitStatus.Waiting,
+            BranchName: v.BranchName,
             v.Protocols.Select(p =>
             {
                 var typeId = (int)p.ProtocolType;
@@ -109,7 +112,8 @@ public class GetWaitingListQueryHandler : IRequestHandler<GetWaitingListQuery, I
                     (int)p.Status,
                     VisitLabels.ProtocolStatus((int)p.Status),
                     p.DoctorName,
-                    p.Diagnosis);
+                    p.Diagnosis,
+                    p.StartedAt);
             }).ToList()
         )).ToList();
     }

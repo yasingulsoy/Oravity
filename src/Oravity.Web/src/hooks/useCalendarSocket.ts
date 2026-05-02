@@ -9,6 +9,11 @@ interface CalendarEvent {
   appointmentId: string;
 }
 
+export interface PatientCalledEvent {
+  patientName: string;
+  doctorName: string;
+}
+
 async function getFreshToken(): Promise<string> {
   const { accessToken, refreshToken, setTokens, logout } = useAuthStore.getState();
 
@@ -35,29 +40,32 @@ async function getFreshToken(): Promise<string> {
   }
 }
 
-export function useCalendarSocket(onEvent: (event: CalendarEvent) => void) {
+export function useCalendarSocket(
+  onEvent: (event: CalendarEvent) => void,
+  onPatientCalled?: (event: PatientCalledEvent) => void,
+) {
   const connectionRef = useRef<signalR.HubConnection | null>(null);
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
+  const onPatientCalledRef = useRef(onPatientCalled);
+  onPatientCalledRef.current = onPatientCalled;
 
   useEffect(() => {
-    const { accessToken } = useAuthStore.getState();
+    const { accessToken, user } = useAuthStore.getState();
     if (!accessToken) return;
 
+    const branchId = user?.branchId ?? null;
     let active = true;
 
     const connection = new signalR.HubConnectionBuilder()
       .withUrl('/hubs/calendar', { accessTokenFactory: getFreshToken })
       .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
-      // Suppress SignalR's own console output — we handle errors ourselves
       .configureLogging(signalR.LogLevel.None)
       .build();
 
-    // Backend sends "CalendarUpdated" (appointment created/moved/status-changed/cancelled)
     connection.on('CalendarUpdated', (event: CalendarEvent) => {
       onEventRef.current(event);
     });
-    // Legacy alias — kept for backwards compatibility
     connection.on('AppointmentChanged', (event: CalendarEvent) => {
       onEventRef.current(event);
     });
@@ -67,20 +75,26 @@ export function useCalendarSocket(onEvent: (event: CalendarEvent) => void) {
     connection.on('ProtocolUpdated', () => {
       onEventRef.current({ type: 'updated', appointmentId: '' });
     });
+    connection.on('PatientCalled', (event: PatientCalledEvent) => {
+      onEventRef.current({ type: 'updated', appointmentId: '' });
+      onPatientCalledRef.current?.(event);
+    });
 
     connectionRef.current = connection;
 
-    // Async start: if React StrictMode unmounts before start() completes,
-    // we let start() finish naturally then stop — avoiding "stopped during negotiation".
     const connect = async () => {
       try {
         await connection.start();
         if (!active) {
-          // Effect was cleaned up while we were connecting — stop cleanly now
           await connection.stop();
+          return;
+        }
+        // Branch grubuna katıl — olmasaydı hiçbir broadcast gelmezdi
+        if (branchId) {
+          await connection.invoke('JoinCalendar', branchId);
         }
       } catch {
-        // Either connect failed or was stopped during negotiation — ignore
+        // Connect failed or stopped during negotiation — ignore
       }
     };
 
@@ -89,8 +103,10 @@ export function useCalendarSocket(onEvent: (event: CalendarEvent) => void) {
     return () => {
       active = false;
       connectionRef.current = null;
-      // Only stop if fully connected; if still Connecting, connect() handles it above
       if (connection.state === signalR.HubConnectionState.Connected) {
+        if (branchId) {
+          connection.invoke('LeaveCalendar', branchId).catch(() => null);
+        }
         connection.stop();
       }
     };

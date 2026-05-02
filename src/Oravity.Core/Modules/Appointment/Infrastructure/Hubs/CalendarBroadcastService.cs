@@ -63,4 +63,20 @@ public class CalendarBroadcastService : ICalendarBroadcastService
                 Timestamp = DateTime.UtcNow
             }, ct);
     }
+
+    public async Task BroadcastPatientCalledAsync(
+        long branchId,
+        string patientName,
+        string doctorName,
+        CancellationToken ct = default)
+    {
+        await _hub.Clients
+            .Group($"calendar_{branchId}")
+            .SendAsync("PatientCalled", new
+            {
+                PatientName = patientName,
+                DoctorName  = doctorName,
+                Timestamp   = DateTime.UtcNow
+            }, ct);
+    }
 }

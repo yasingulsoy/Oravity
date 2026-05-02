@@ -58,6 +58,8 @@ interface CalendarGridProps {
   viewDate: Date;
   onRangeSelect: (doctorId: number, branchId: number, startTime: string, endTime: string) => void;
   onAppointmentClick: (appointment: Appointment) => void;
+  onAppointmentResize?: (apt: Appointment, newStartISO: string, newEndISO: string) => void;
+  onAppointmentMove?: (apt: Appointment, newDoctorId: number, newBranchId: number, newStartISO: string, newEndISO: string) => void;
 }
 
 function timeToMinutes(time: string): number {
@@ -104,6 +106,35 @@ interface DragState {
   currentMinutes: number;
 }
 
+interface ResizeState {
+  appointment: Appointment;
+  edge: 'top' | 'bottom';
+  startMouseY: number;
+  deltaMinutes: number;
+}
+
+interface MoveState {
+  appointment: Appointment;
+  startMouseY: number;
+  deltaMinutes: number;
+  targetDoctorId: number;
+  targetBranchId: number;
+}
+
+const SNAP_MINUTES = 5;
+const MIN_DURATION_MINUTES = 5;
+
+function snapToGrid(minutes: number): number {
+  return Math.round(minutes / SNAP_MINUTES) * SNAP_MINUTES;
+}
+
+/** Local minutes → UTC ISO string using a reference Date to preserve the date. */
+function localMinutesToISO(ref: Date, localMinutes: number): string {
+  const d = new Date(ref);
+  d.setHours(Math.floor(localMinutes / 60), localMinutes % 60, 0, 0);
+  return d.toISOString();
+}
+
 export function CalendarGrid({
   doctors,
   appointments,
@@ -114,6 +145,8 @@ export function CalendarGrid({
   viewDate,
   onRangeSelect,
   onAppointmentClick,
+  onAppointmentResize,
+  onAppointmentMove,
 }: CalendarGridProps) {
   const dayStart = dayStartHour * 60;
   const dayEnd = dayEndHour * 60;
@@ -121,6 +154,30 @@ export function CalendarGrid({
 
   const [dragState, setDragState] = useState<DragState | null>(null);
   const isDragging = dragState !== null;
+
+  const [resizeState, setResizeState] = useState<ResizeState | null>(null);
+  const resizeRef = useRef<ResizeState | null>(null);
+  resizeRef.current = resizeState;
+  const isResizing = resizeState !== null;
+
+  const [moveState, setMoveState] = useState<MoveState | null>(null);
+  const moveRef = useRef<MoveState | null>(null);
+  moveRef.current = moveState;
+  const isMoving = moveState !== null;
+
+  // Tracks whether mouse actually moved during the current drag session.
+  // Reset by a native mousedown listener on the container (fires regardless of
+  // React stopPropagation), set to true in mousemove handlers.
+  const dragMovedRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onDown = () => { dragMovedRef.current = false; };
+    el.addEventListener('mousedown', onDown);
+    return () => el.removeEventListener('mousedown', onDown);
+  }, []);
 
   // Current time line
   const [nowMinutes, setNowMinutes] = useState(getCurrentMinutes);
@@ -163,6 +220,124 @@ export function CalendarGrid({
     return () => document.removeEventListener('mouseup', handleMouseUp);
   }, [isDragging, slotIntervalMinutes, onRangeSelect]);
 
+  // Resize drag handlers
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      dragMovedRef.current = true;
+      const state = resizeRef.current;
+      if (!state) return;
+      const rawDeltaMin = (e.clientY - state.startMouseY) / PX_PER_MINUTE;
+      const delta = snapToGrid(rawDeltaMin);
+
+      const origStart = new Date(state.appointment.startTime);
+      const origEnd   = new Date(state.appointment.endTime);
+      const origStartMin = origStart.getHours() * 60 + origStart.getMinutes();
+      const origEndMin   = origEnd.getHours()   * 60 + origEnd.getMinutes();
+
+      let newDelta: number;
+      if (state.edge === 'bottom') {
+        const clamped = Math.min(Math.max(origEndMin + delta, origStartMin + MIN_DURATION_MINUTES), dayEnd);
+        newDelta = clamped - origEndMin;
+      } else {
+        const clamped = Math.max(Math.min(origStartMin + delta, origEndMin - MIN_DURATION_MINUTES), dayStart);
+        newDelta = clamped - origStartMin;
+      }
+
+      setResizeState((prev) => prev ? { ...prev, deltaMinutes: newDelta } : null);
+    };
+
+    const handleMouseUp = () => {
+      const state = resizeRef.current;
+      if (!state || state.deltaMinutes === 0) { setResizeState(null); return; }
+
+      const origStart = new Date(state.appointment.startTime);
+      const origEnd   = new Date(state.appointment.endTime);
+      const origStartMin = origStart.getHours() * 60 + origStart.getMinutes();
+      const origEndMin   = origEnd.getHours()   * 60 + origEnd.getMinutes();
+
+      // localMinutesToISO handles timezone correctly: setHours (local) → toISOString (UTC)
+      onAppointmentResize?.(
+        state.appointment,
+        state.edge === 'top'
+          ? localMinutesToISO(origStart, origStartMin + state.deltaMinutes)
+          : origStart.toISOString(),
+        state.edge === 'bottom'
+          ? localMinutesToISO(origEnd, origEndMin + state.deltaMinutes)
+          : origEnd.toISOString(),
+      );
+
+      setResizeState(null);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, dayStart, dayEnd, onAppointmentResize]);
+
+  // Move drag handlers (sürükle → başka hekim / saat)
+  useEffect(() => {
+    if (!isMoving) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      dragMovedRef.current = true;
+      const state = moveRef.current;
+      if (!state) return;
+      const rawDeltaMin = (e.clientY - state.startMouseY) / PX_PER_MINUTE;
+      const delta = snapToGrid(rawDeltaMin);
+
+      const origStart = new Date(state.appointment.startTime);
+      const origEnd   = new Date(state.appointment.endTime);
+      const durationMin = (origEnd.getTime() - origStart.getTime()) / 60000;
+      const origStartMin = origStart.getHours() * 60 + origStart.getMinutes();
+
+      const clampedStart = Math.min(Math.max(origStartMin + delta, dayStart), dayEnd - durationMin);
+      const clampedDelta = clampedStart - origStartMin;
+
+      setMoveState((prev) => prev ? { ...prev, deltaMinutes: clampedDelta } : null);
+    };
+
+    const handleMouseUp = () => {
+      const state = moveRef.current;
+      if (!state) { setMoveState(null); return; }
+
+      if (state.deltaMinutes === 0 && state.targetDoctorId === state.appointment.doctorId && state.targetBranchId === state.appointment.branchId) {
+        setMoveState(null);
+        return;
+      }
+
+      const origStart = new Date(state.appointment.startTime);
+      const origEnd   = new Date(state.appointment.endTime);
+      const origStartMin = origStart.getHours() * 60 + origStart.getMinutes();
+      const origEndMin   = origEnd.getHours()   * 60 + origEnd.getMinutes();
+      const durationMin  = origEndMin - origStartMin;
+
+      const newStartMin = origStartMin + state.deltaMinutes;
+      const newEndMin   = newStartMin + durationMin;
+
+      onAppointmentMove?.(
+        state.appointment,
+        state.targetDoctorId,
+        state.targetBranchId,
+        localMinutesToISO(origStart, newStartMin),
+        localMinutesToISO(origStart, newEndMin),
+      );
+
+      setMoveState(null);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isMoving, dayStart, dayEnd, onAppointmentMove]);
+
   const timeSlots = useMemo(() => {
     const slots: number[] = [];
     for (let m = dayStart; m < dayEnd; m += slotIntervalMinutes) {
@@ -203,8 +378,12 @@ export function CalendarGrid({
 
   return (
     <div
+      ref={containerRef}
       className="overflow-x-auto border rounded-lg"
-      style={{ userSelect: isDragging ? 'none' : undefined }}
+      style={{
+        userSelect: isDragging || isResizing || isMoving ? 'none' : undefined,
+        cursor: isResizing ? 'ns-resize' : isMoving ? 'grabbing' : undefined,
+      }}
     >
       <div className="inline-flex min-w-full relative">
         {/* Time column */}
@@ -250,6 +429,13 @@ export function CalendarGrid({
             <div
               key={`${doctor.doctorId}-${doctor.branchId}`}
               className={cn('flex-1 border-r last:border-r-0', colWidth)}
+              onMouseEnter={() => {
+                if (isMoving) {
+                  setMoveState((prev) => prev
+                    ? { ...prev, targetDoctorId: doctor.doctorId, targetBranchId: doctor.branchId }
+                    : null);
+                }
+              }}
             >
               {/* Doctor header */}
               <div
@@ -375,6 +561,50 @@ export function CalendarGrid({
                   const lanes = assignLanes(doctorApts);
                   return doctorApts.map((apt) => {
                     const laneInfo = lanes.get(apt.publicId) ?? { lane: 0, totalLanes: 1 };
+
+                    // Compute preview overrides during resize or move
+                    let overrideStart: string | undefined;
+                    let overrideEnd: string | undefined;
+
+                    if (resizeState?.appointment.publicId === apt.publicId && resizeState.deltaMinutes !== 0) {
+                      const origStart = new Date(apt.startTime);
+                      const origEnd   = new Date(apt.endTime);
+                      const origStartMin = origStart.getHours() * 60 + origStart.getMinutes();
+                      const origEndMin   = origEnd.getHours()   * 60 + origEnd.getMinutes();
+                      // Use localMinutesToISO for preview too (consistent with API call)
+                      if (resizeState.edge === 'bottom') {
+                        overrideEnd = localMinutesToISO(origEnd, origEndMin + resizeState.deltaMinutes);
+                      } else {
+                        overrideStart = localMinutesToISO(origStart, origStartMin + resizeState.deltaMinutes);
+                      }
+                    }
+
+                    if (moveState?.appointment.publicId === apt.publicId && moveState.deltaMinutes !== 0) {
+                      const origStart = new Date(apt.startTime);
+                      const origEnd   = new Date(apt.endTime);
+                      const origStartMin = origStart.getHours() * 60 + origStart.getMinutes();
+                      const origEndMin   = origEnd.getHours()   * 60 + origEnd.getMinutes();
+                      const dur = origEndMin - origStartMin;
+                      overrideStart = localMinutesToISO(origStart, origStartMin + moveState.deltaMinutes);
+                      overrideEnd   = localMinutesToISO(origStart, origStartMin + moveState.deltaMinutes + dur);
+                    }
+
+                    // Hide from original column when dragged to a different doctor
+                    const isBeingMovedElsewhere =
+                      moveState?.appointment.publicId === apt.publicId &&
+                      (moveState.targetDoctorId !== doctor.doctorId || moveState.targetBranchId !== doctor.branchId);
+
+                    if (isBeingMovedElsewhere) return null;
+
+                    // Full-width during same-doctor move
+                    const isMovingHere =
+                      moveState !== null &&
+                      moveState.targetDoctorId === doctor.doctorId &&
+                      moveState.targetBranchId === doctor.branchId &&
+                      moveState.appointment.publicId === apt.publicId;
+
+                    const isBusy = isResizing || isMoving;
+
                     return (
                       <AppointmentBlock
                         key={apt.publicId}
@@ -383,13 +613,56 @@ export function CalendarGrid({
                         slotHeight={slotHeight}
                         slotMinutes={slotIntervalMinutes}
                         dayStart={dayStart}
-                        lane={laneInfo.lane}
-                        totalLanes={laneInfo.totalLanes}
-                        onClick={onAppointmentClick}
+                        lane={isMovingHere ? 0 : laneInfo.lane}
+                        totalLanes={isMovingHere ? 1 : laneInfo.totalLanes}
+                        onClick={(a) => { if (!dragMovedRef.current) onAppointmentClick(a); }}
+                        overrideStartTime={overrideStart}
+                        overrideEndTime={overrideEnd}
+                        onResizeStart={onAppointmentResize ? (edge, a, e) => {
+                          setResizeState({ appointment: a, edge, startMouseY: e.clientY, deltaMinutes: 0 });
+                        } : undefined}
+                        onMoveStart={onAppointmentMove && [1, 2, 3].includes(apt.statusId) && !apt.isBeingCalled && !(apt.statusId === 3 && apt.hasOpenProtocol) ? (a, e) => {
+                          setMoveState({
+                            appointment: a,
+                            startMouseY: e.clientY,
+                            deltaMinutes: 0,
+                            targetDoctorId: doctor.doctorId,
+                            targetBranchId: doctor.branchId,
+                          });
+                        } : undefined}
                       />
                     );
                   });
                 })()}
+
+                {/* Ghost block when this column is the drag-move target for a different doctor's appointment */}
+                {moveState !== null &&
+                  moveState.targetDoctorId === doctor.doctorId &&
+                  moveState.targetBranchId === doctor.branchId &&
+                  (moveState.appointment.doctorId !== doctor.doctorId || moveState.appointment.branchId !== doctor.branchId) &&
+                  (() => {
+                    const apt = moveState.appointment;
+                    const origStart    = new Date(apt.startTime);
+                    const origEnd      = new Date(apt.endTime);
+                    const origStartMin = origStart.getHours() * 60 + origStart.getMinutes();
+                    const dur          = (origEnd.getTime() - origStart.getTime()) / 60000;
+                    const ghostStartMin = origStartMin + moveState.deltaMinutes;
+                    return (
+                      <AppointmentBlock
+                        appointment={apt}
+                        statuses={statuses}
+                        slotHeight={slotHeight}
+                        slotMinutes={slotIntervalMinutes}
+                        dayStart={dayStart}
+                        lane={0}
+                        totalLanes={1}
+                        onClick={() => {}}
+                        overrideStartTime={localMinutesToISO(origStart, ghostStartMin)}
+                        overrideEndTime={localMinutesToISO(origStart, ghostStartMin + dur)}
+                      />
+                    );
+                  })()
+                }
               </div>
             </div>
           );

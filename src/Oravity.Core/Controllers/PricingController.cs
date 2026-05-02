@@ -1,10 +1,13 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Oravity.Core.Filters;
 using Oravity.Core.Modules.Core.Pricing.Application;
 using Oravity.Core.Modules.Core.Pricing.Application.Commands;
 using Oravity.Core.Modules.Core.Pricing.Application.Queries;
+using Oravity.Infrastructure.Database;
+using Oravity.SharedKernel.Exceptions;
 using System.Linq;
 
 namespace Oravity.Core.Controllers;
@@ -18,10 +21,12 @@ namespace Oravity.Core.Controllers;
 public class PricingController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly AppDbContext _db;
 
-    public PricingController(IMediator mediator)
+    public PricingController(IMediator mediator, AppDbContext db)
     {
         _mediator = mediator;
+        _db = db;
     }
 
     /// <summary>Şirkete ait şubelerin fiyat ayarlarını listeler.</summary>
@@ -146,6 +151,36 @@ public class PricingController : ControllerBase
     {
         var result = await _mediator.Send(new GetReferencePriceListsQuery());
         return Ok(result);
+    }
+
+    /// <summary>Referans fiyat listesini aktif/pasif yapar.</summary>
+    [HttpPatch("api/pricing/reference-lists/{listId:long}/active")]
+    [RequirePermission("pricing:edit")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> SetReferenceListActive(long listId, [FromBody] SetActiveRequest request)
+    {
+        var list = await _db.ReferencePriceLists.FindAsync(listId)
+            ?? throw new NotFoundException($"Liste bulunamadı: {listId}");
+        list.SetActive(request.IsActive);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    /// <summary>Referans fiyat listesini siler (tüm kalemleriyle birlikte).</summary>
+    [HttpDelete("api/pricing/reference-lists/{listId:long}")]
+    [RequirePermission("pricing:edit")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteReferenceList(long listId)
+    {
+        var list = await _db.ReferencePriceLists
+            .Include(l => l.Items)
+            .FirstOrDefaultAsync(l => l.Id == listId)
+            ?? throw new NotFoundException($"Liste bulunamadı: {listId}");
+        _db.ReferencePriceLists.Remove(list);
+        await _db.SaveChangesAsync();
+        return NoContent();
     }
 
     /// <summary>Referans fiyat listesinin kalemlerini döner (sayfalı).</summary>
@@ -308,3 +343,5 @@ public record BulkUpsertItemRequest(
 public record BulkUpsertRequest(BulkUpsertItemRequest[] Items);
 
 public record BulkUpsertResultResponse(int Count);
+
+public record SetActiveRequest(bool IsActive);

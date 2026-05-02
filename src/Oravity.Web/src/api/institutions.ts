@@ -1,5 +1,8 @@
 import apiClient from './client';
 
+/** Backend JsonStringEnumConverter ile string döner */
+export type InstitutionPaymentModel = 'Discount' | 'Provision';
+
 export interface InstitutionItem {
   id: number;
   publicId: string;
@@ -7,6 +10,7 @@ export interface InstitutionItem {
   code: string | null;
   type: string | null;
   marketSegment: 'domestic' | 'international' | null;
+  paymentModel: InstitutionPaymentModel;
   phone: string | null;
   email: string | null;
   website: string | null;
@@ -24,12 +28,19 @@ export interface InstitutionItem {
   notes: string | null;
   isGlobal: boolean;
   isActive: boolean;
+  // E-Fatura & Tevkifat
+  isEInvoiceTaxpayer: boolean;
+  withholdingApplies: boolean;
+  withholdingCode: string | null;
+  withholdingNumerator: number;
+  withholdingDenominator: number;
 }
 
 export interface CreateInstitutionRequest {
   name: string;
   code?: string;
   type?: string;
+  paymentModel: InstitutionPaymentModel;
   marketSegment?: 'domestic' | 'international';
   phone?: string;
   email?: string;
@@ -46,6 +57,11 @@ export interface CreateInstitutionRequest {
   paymentDays?: number;
   paymentTerms?: string;
   notes?: string;
+  isEInvoiceTaxpayer?: boolean;
+  withholdingApplies?: boolean;
+  withholdingCode?: string;
+  withholdingNumerator?: number;
+  withholdingDenominator?: number;
 }
 
 export interface UpdateInstitutionRequest extends CreateInstitutionRequest {

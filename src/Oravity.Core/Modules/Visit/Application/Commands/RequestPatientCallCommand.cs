@@ -6,6 +6,7 @@ using Oravity.Core.Modules.Notification.Infrastructure.Services;
 using Oravity.Infrastructure.Database;
 using Oravity.SharedKernel.Entities;
 using NotifEntity = Oravity.SharedKernel.Entities.Notification;
+using AppointmentEntity = Oravity.SharedKernel.Entities.Appointment;
 using Oravity.SharedKernel.Exceptions;
 using Oravity.SharedKernel.Interfaces;
 
@@ -68,6 +69,10 @@ public class RequestPatientCallCommandHandler
 
         if (visit != null)
         {
+            // Hasta zaten odada (protokol açık) — tekrar çağırmaya izin verme
+            if (visit.Status == VisitStatus.ProtocolOpened)
+                throw new ConflictException("Hasta zaten odada bulunmaktadır.");
+
             var openProtocol = visit.Protocols
                 .FirstOrDefault(p =>
                     (int)p.Status == (int)ProtocolStatus.Open
@@ -78,8 +83,24 @@ public class RequestPatientCallCommandHandler
             {
                 openProtocol.Start();
                 visit.MarkCalled();
+
+                // Randevuyu "Odaya Alındı" (InRoom) yap — anında takvim güncellemesi için
+                appointment.SetStatus(AppointmentStatus.WellKnownIds.InRoom);
+
                 await _db.SaveChangesAsync(ct);
+
                 await BroadcastVisitCalledAsync(visit, patientName, ct);
+
+                // Randevu durumu değişimini takvime yayınla (gecikmeyi ortadan kaldırır)
+                await _calendarBroadcast.BroadcastAsync(
+                    appointment.BranchId,
+                    AppointmentMappings.ToBroadcast(appointment),
+                    CalendarEventType.PatientInRoom,
+                    ct);
+
+                await _calendarBroadcast.BroadcastPatientCalledAsync(
+                    appointment.BranchId, patientName, doctorName, ct);
+
                 return new RequestPatientCallResult(true, patientName);
             }
 
@@ -121,6 +142,9 @@ public class RequestPatientCallCommandHandler
         // Waiting list'te isBeingCalled göstermek için VisitUpdated yayınla
         if (visit != null)
             await BroadcastVisitCalledAsync(visit, patientName, ct);
+
+        await _calendarBroadcast.BroadcastPatientCalledAsync(
+            appointment.BranchId, patientName, doctorName, ct);
 
         return new RequestPatientCallResult(false, patientName);
     }

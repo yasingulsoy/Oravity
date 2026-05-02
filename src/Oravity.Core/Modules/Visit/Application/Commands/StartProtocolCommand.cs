@@ -38,10 +38,11 @@ public class StartProtocolCommandHandler : IRequestHandler<StartProtocolCommand,
         protocol.Start();
 
         // Bağlı randevuyu "Odaya Alındı" yap
+        Oravity.SharedKernel.Entities.Appointment? updatedApt = null;
         if (protocol.Visit.AppointmentId.HasValue)
         {
-            var apt = await _db.Appointments.FindAsync([protocol.Visit.AppointmentId.Value], ct);
-            apt?.SetStatus(AppointmentStatus.WellKnownIds.InRoom);
+            updatedApt = await _db.Appointments.FindAsync([protocol.Visit.AppointmentId.Value], ct);
+            updatedApt?.SetStatus(AppointmentStatus.WellKnownIds.InRoom);
         }
 
         await _db.SaveChangesAsync(ct);
@@ -57,6 +58,16 @@ public class StartProtocolCommandHandler : IRequestHandler<StartProtocolCommand,
                 protocol.DoctorId, protocol.Doctor.FullName,
                 protocol.ProtocolNo, (int)protocol.ProtocolType, (int)protocol.Status),
             CalendarEventType.ProtocolUpdated, ct);
+
+        // Randevu durumu (InRoom) değişimini calendar'a bildir
+        if (updatedApt is not null)
+        {
+            await _broadcast.BroadcastAsync(
+                protocol.BranchId,
+                AppointmentMappings.ToBroadcast(updatedApt),
+                CalendarEventType.StatusChanged,
+                ct);
+        }
 
         return await new GetProtocolDetailQueryHandler(_db)
             .Handle(new GetProtocolDetailQuery(request.ProtocolPublicId), ct);

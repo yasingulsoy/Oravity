@@ -2,7 +2,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod/v4';
 import { Navigate } from 'react-router-dom';
-import { Moon, Sun } from 'lucide-react';
+import { ArrowLeft, Building2, Moon, Sun } from 'lucide-react';
 import { useLogin } from '@/hooks/useAuth';
 import { useResolvedDark } from '@/hooks/useResolvedDark';
 import { useAuthStore } from '@/store/authStore';
@@ -22,7 +22,7 @@ type LoginForm = z.infer<typeof loginSchema>;
 
 export function LoginPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const loginMutation = useLogin();
+  const { mutation: loginMutation, pendingBranches, submitCredentials, selectBranch, clearBranchSelection } = useLogin();
   const { setTheme } = useUiStore();
   const isDark = useResolvedDark();
 
@@ -39,12 +39,12 @@ export function LoginPage() {
   }
 
   const onSubmit = (data: LoginForm) => {
-    loginMutation.mutate(data);
+    submitCredentials(data);
   };
 
   return (
     <div className="relative min-h-[100dvh] overflow-hidden bg-muted/30 dark:bg-black">
-      {/* Nokta dokusu + radial geçişler */}
+      {/* Nokta dokusu + radial gecisler */}
       <div
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(oklch(0.55_0_0/0.09)_1px,transparent_1px)] bg-[length:24px_24px] dark:bg-[radial-gradient(oklch(1_0_0/0.05)_1px,transparent_1px)]"
         aria-hidden
@@ -127,63 +127,112 @@ export function LoginPage() {
                 <div className="mt-4 h-px w-10 rounded-full bg-border dark:bg-white/15" />
               </div>
 
-              <h2 className="mb-6 text-left text-lg font-semibold tracking-tight text-foreground">
-                Giriş yap
-              </h2>
-
-              <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="text-sm font-medium">
-                    E-posta
-                  </Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    autoComplete="username"
-                    placeholder="ornek@oravity.com"
-                    className="h-12 rounded-xl border-border/70 bg-background px-4 text-[15px] shadow-sm transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 dark:border-white/10 dark:bg-black/60"
-                    {...register('email')}
-                  />
-                  {errors.email && (
-                    <p className="text-sm text-destructive">{errors.email.message}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="password" className="text-sm font-medium">
-                    Şifre
-                  </Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    autoComplete="current-password"
-                    placeholder="••••••••"
-                    className="h-12 rounded-xl border-border/70 bg-background px-4 text-[15px] shadow-sm transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 dark:border-white/10 dark:bg-black/60"
-                    {...register('password')}
-                  />
-                  {errors.password && (
-                    <p className="text-sm text-destructive">{errors.password.message}</p>
-                  )}
-                </div>
-
-                {loginMutation.isError && (
-                  <p className="rounded-xl border border-destructive/25 bg-destructive/10 px-3.5 py-2.5 text-sm text-destructive">
-                    {getApiErrorMessage(
-                      loginMutation.error,
-                      'Giriş başarısız. Lütfen bilgilerinizi kontrol edin.',
-                    )}
+              {pendingBranches ? (
+                /* Sube secim asamasi */
+                <div>
+                  <h2 className="mb-2 text-left text-lg font-semibold tracking-tight text-foreground">
+                    Hangi klinikte çalışıyorsunuz?
+                  </h2>
+                  <p className="mb-5 text-sm text-muted-foreground">
+                    Hesabınız birden fazla kliniğe bağlı. Bugün çalışacağınız kliniği seçin.
                   </p>
-                )}
 
-                <Button
-                  type="submit"
-                  size="lg"
-                  className="mt-1 h-12 w-full rounded-xl text-[15px] font-semibold shadow-md transition-transform active:scale-[0.99]"
-                  disabled={loginMutation.isPending}
-                >
-                  {loginMutation.isPending ? 'Giriş yapılıyor...' : 'Giriş Yap'}
-                </Button>
-              </form>
+                  <div className="space-y-2">
+                    {pendingBranches.map((branch) => (
+                      <button
+                        key={branch.id}
+                        type="button"
+                        onClick={() => selectBranch(branch.id)}
+                        className="flex w-full items-center gap-3 rounded-xl border border-border/70 bg-background px-4 py-3 text-left transition-colors hover:border-primary/30 hover:bg-accent disabled:pointer-events-none disabled:opacity-50 dark:border-white/10 dark:bg-black/60 dark:hover:border-primary/30 dark:hover:bg-white/5"
+                        disabled={loginMutation.isPending}
+                      >
+                        <Building2 className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="font-medium">{branch.name}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {loginMutation.isError && (
+                    <p className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3.5 py-2.5 text-sm text-destructive">
+                      {getApiErrorMessage(
+                        loginMutation.error,
+                        'Giriş başarısız. Lütfen tekrar deneyin.',
+                      )}
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={clearBranchSelection}
+                    className="mt-4 flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                    disabled={loginMutation.isPending}
+                  >
+                    <ArrowLeft className="size-3.5" />
+                    Geri dön
+                  </button>
+                </div>
+              ) : (
+                /* Email/Password formu */
+                <>
+                  <h2 className="mb-6 text-left text-lg font-semibold tracking-tight text-foreground">
+                    Giriş yap
+                  </h2>
+
+                  <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+                    <div className="space-y-2">
+                      <Label htmlFor="email" className="text-sm font-medium">
+                        E-posta
+                      </Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        autoComplete="username"
+                        placeholder="ornek@oravity.com"
+                        className="h-12 rounded-xl border-border/70 bg-background px-4 text-[15px] shadow-sm transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 dark:border-white/10 dark:bg-black/60"
+                        {...register('email')}
+                      />
+                      {errors.email && (
+                        <p className="text-sm text-destructive">{errors.email.message}</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="password" className="text-sm font-medium">
+                        Şifre
+                      </Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        autoComplete="current-password"
+                        placeholder="••••••••"
+                        className="h-12 rounded-xl border-border/70 bg-background px-4 text-[15px] shadow-sm transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 dark:border-white/10 dark:bg-black/60"
+                        {...register('password')}
+                      />
+                      {errors.password && (
+                        <p className="text-sm text-destructive">{errors.password.message}</p>
+                      )}
+                    </div>
+
+                    {loginMutation.isError && (
+                      <p className="rounded-xl border border-destructive/25 bg-destructive/10 px-3.5 py-2.5 text-sm text-destructive">
+                        {getApiErrorMessage(
+                          loginMutation.error,
+                          'Giriş başarısız. Lütfen bilgilerinizi kontrol edin.',
+                        )}
+                      </p>
+                    )}
+
+                    <Button
+                      type="submit"
+                      size="lg"
+                      className="mt-1 h-12 w-full rounded-xl text-[15px] font-semibold shadow-md transition-transform active:scale-[0.99]"
+                      disabled={loginMutation.isPending}
+                    >
+                      {loginMutation.isPending ? 'Giriş yapılıyor...' : 'Giriş Yap'}
+                    </Button>
+                  </form>
+                </>
+              )}
             </div>
           </div>
         </div>

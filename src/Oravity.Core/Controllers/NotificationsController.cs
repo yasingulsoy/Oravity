@@ -5,6 +5,7 @@ using Oravity.Core.Modules.Notification.Application;
 using Oravity.Core.Modules.Notification.Application.Commands;
 using Oravity.Core.Modules.Notification.Application.Queries;
 using Oravity.SharedKernel.Entities;
+using Oravity.SharedKernel.Interfaces;
 
 namespace Oravity.Core.Controllers;
 
@@ -18,11 +19,13 @@ namespace Oravity.Core.Controllers;
 [Produces("application/json")]
 public class NotificationsController : ControllerBase
 {
-    private readonly IMediator _mediator;
+    private readonly IMediator      _mediator;
+    private readonly ITenantContext _tenant;
 
-    public NotificationsController(IMediator mediator)
+    public NotificationsController(IMediator mediator, ITenantContext tenant)
     {
         _mediator = mediator;
+        _tenant   = tenant;
     }
 
     // ── Bildirimler ────────────────────────────────────────────────────────
@@ -54,6 +57,35 @@ public class NotificationsController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Hekimin resepsiyona manuel mesaj göndermesi (protokol kapama sonrası vb.).
+    /// Şubedeki tüm resepsiyonistlere (ToRole=1) iletilir.
+    /// </summary>
+    [HttpPost("doctor-message")]
+    [ProducesResponseType(typeof(NotificationResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> SendDoctorMessage([FromBody] SendDoctorMessageRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Message))
+            return BadRequest(new { error = "Mesaj boş olamaz." });
+
+        var branchId = _tenant.BranchId
+            ?? throw new InvalidOperationException("Şube bilgisi bulunamadı.");
+
+        var result = await _mediator.Send(new SendInAppNotificationCommand(
+            BranchId:          branchId,
+            Type:              NotificationType.DoctorMessage,
+            Title:             request.Title ?? "Hekim Mesajı",
+            Message:           request.Message.Trim(),
+            ToUserId:          null,
+            ToRole:            1,   // Reception
+            IsUrgent:          request.IsUrgent,
+            RelatedEntityType: request.RelatedEntityType,
+            RelatedEntityId:   request.RelatedEntityId));
+
+        return StatusCode(StatusCodes.Status201Created, result);
+    }
+
     // ── SMS ────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -75,6 +107,14 @@ public class NotificationsController : ControllerBase
 }
 
 // ─── Request DTO'lar ───────────────────────────────────────────────────────
+
+public record SendDoctorMessageRequest(
+    string  Message,
+    string? Title             = null,
+    bool    IsUrgent          = false,
+    string? RelatedEntityType = null,
+    long?   RelatedEntityId   = null
+);
 
 public record QueueSmsRequest(
     string ToPhone,

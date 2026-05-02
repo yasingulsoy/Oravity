@@ -34,6 +34,8 @@ public class CreateProtocolCommandHandler : IRequestHandler<CreateProtocolComman
         var visit = await _db.Visits
             .Include(v => v.Patient)
             .Include(v => v.Branch)
+            .Include(v => v.Protocols)
+            .Include(v => v.Appointment)
             .FirstOrDefaultAsync(v => v.PublicId == request.VisitPublicId && !v.IsDeleted, ct)
             ?? throw new NotFoundException("Vizite bulunamadı.");
 
@@ -44,8 +46,16 @@ public class CreateProtocolCommandHandler : IRequestHandler<CreateProtocolComman
         if (visit.Status == VisitStatus.Completed || visit.Status == VisitStatus.Cancelled)
             throw new InvalidOperationException("Tamamlanmış veya iptal edilmiş viziteye protokol eklenemez.");
 
+        // 1 ziyaret = 1 protokol kuralı
+        var hasActiveProtocol = visit.Protocols.Any(p => p.Status != ProtocolStatus.Cancelled && !p.IsDeleted);
+        if (hasActiveProtocol)
+            throw new InvalidOperationException("Bu ziyaret için zaten bir protokol açılmış.");
+
+        // Randevulu hastalarda hekim randevunun hekiminden belirlenir; walk-in'de istek parametresi kullanılır
+        var resolvedDoctorId = visit.Appointment?.DoctorId ?? request.DoctorId;
+
         var doctor = await _db.Users
-            .FirstOrDefaultAsync(u => u.Id == request.DoctorId && u.IsActive, ct)
+            .FirstOrDefaultAsync(u => u.Id == resolvedDoctorId && u.IsActive, ct)
             ?? throw new NotFoundException("Hekim bulunamadı.");
 
         var companyId = visit.Branch?.CompanyId ?? _tenant.CompanyId
@@ -71,7 +81,7 @@ public class CreateProtocolCommandHandler : IRequestHandler<CreateProtocolComman
             branchId:  visit.BranchId,
             companyId: companyId,
             patientId: visit.PatientId,
-            doctorId:  request.DoctorId,
+            doctorId:  resolvedDoctorId,
             type:      (ProtocolType)request.ProtocolType,
             year:      year,
             seq:       nextSeq,
@@ -91,7 +101,7 @@ public class CreateProtocolCommandHandler : IRequestHandler<CreateProtocolComman
                 visit.Id,
                 visit.PatientId,
                 patientName,
-                request.DoctorId,
+                resolvedDoctorId,
                 doctor.FullName,
                 protocol.ProtocolNo,
                 (int)protocol.ProtocolType,

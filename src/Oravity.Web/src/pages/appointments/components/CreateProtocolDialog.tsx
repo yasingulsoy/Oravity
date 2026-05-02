@@ -128,6 +128,16 @@ export function CreateProtocolDialog({
     doctorId ??
     (filteredDoctors.find((d) => d.doctorId === (defaultDoctorId ?? currentUserId))?.doctorId ?? null);
 
+  // Randevulu hasta: hekim randevudan gelir, seçim gösterilmez
+  const isAppointmentPatient = !!defaultDoctorId;
+
+  const appointmentDoctorName = useMemo(() => {
+    if (!defaultDoctorId) return null;
+    const doc = doctors.find((d) => d.doctorId === defaultDoctorId);
+    if (!doc) return null;
+    return `${doc.title ? `${doc.title} ` : ''}${doc.fullName}`;
+  }, [doctors, defaultDoctorId]);
+
   const mutation = useMutation({
     mutationFn: () => protocolsApi.create(visitPublicId, effectiveDoctorId!, effectiveTypeId!),
     onSuccess: () => {
@@ -188,54 +198,66 @@ export function CreateProtocolDialog({
             </div>
           </div>
 
-          {/* Uzmanlık — dropdown */}
-          {specializations.length > 1 && (
+          {/* Hekim — randevulu hasta: sabit gösterim; walk-in: seçim */}
+          {isAppointmentPatient ? (
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Uzmanlık</label>
-              <select
-                value={selectedSpecId}
-                onChange={(e) => {
-                  setSelectedSpecId(e.target.value ? Number(e.target.value) : '');
-                  setDoctorId(null);
-                }}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                <option value="">Tüm uzmanlıklar</option>
-                {specializations.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+              <label className="text-sm font-medium">Hekim</label>
+              <div className="rounded-md border border-input bg-muted px-3 py-2 text-sm text-muted-foreground">
+                {appointmentDoctorName ?? (doctorsLoading ? 'Yükleniyor...' : 'Randevu hekimi')}
+              </div>
             </div>
+          ) : (
+            <>
+              {/* Uzmanlık — dropdown, sadece walk-in */}
+              {specializations.length > 1 && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Uzmanlık</label>
+                  <select
+                    value={selectedSpecId}
+                    onChange={(e) => {
+                      setSelectedSpecId(e.target.value ? Number(e.target.value) : '');
+                      setDoctorId(null);
+                    }}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    <option value="">Tüm uzmanlıklar</option>
+                    {specializations.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Hekim</label>
+                {doctorsLoading ? (
+                  <p className="text-xs text-muted-foreground">Yükleniyor...</p>
+                ) : filteredDoctors.length === 0 ? (
+                  <p className="text-xs text-destructive">Bu uzmanlıkta bugün çalışan hekim yok.</p>
+                ) : (
+                  <select
+                    value={effectiveDoctorId ?? ''}
+                    onChange={(e) => setDoctorId(e.target.value ? Number(e.target.value) : null)}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    <option value="">— Hekim seçin —</option>
+                    {filteredDoctors.map((d) => (
+                      <option key={d.doctorId} value={d.doctorId}>
+                        {d.title ? `${d.title} ` : ''}{d.fullName}
+                        {d.workStart && d.workEnd
+                          ? ` (${d.workStart.slice(0, 5)}–${d.workEnd.slice(0, 5)})`
+                          : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </>
           )}
 
-          {/* Hekim */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Hekim</label>
-            {doctorsLoading ? (
-              <p className="text-xs text-muted-foreground">Yükleniyor...</p>
-            ) : filteredDoctors.length === 0 ? (
-              <p className="text-xs text-destructive">Bu uzmanlıkta bugün çalışan hekim yok.</p>
-            ) : (
-              <select
-                value={effectiveDoctorId ?? ''}
-                onChange={(e) => setDoctorId(e.target.value ? Number(e.target.value) : null)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                <option value="">— Hekim seçin —</option>
-                {filteredDoctors.map((d) => (
-                  <option key={d.doctorId} value={d.doctorId}>
-                    {d.title ? `${d.title} ` : ''}{d.fullName}
-                    {d.workStart && d.workEnd
-                      ? ` (${d.workStart.slice(0, 5)}–${d.workEnd.slice(0, 5)})`
-                      : ''}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
           {mutation.isError && (
-            <p className="text-xs text-destructive">Protokol açılamadı. Tekrar deneyin.</p>
+            <p className="text-xs text-destructive">
+              {(mutation.error as Error)?.message ?? 'Protokol açılamadı. Tekrar deneyin.'}
+            </p>
           )}
 
           <DialogFooter>

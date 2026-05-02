@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Search, Plus, Pencil, Check, X, ChevronLeft, ChevronRight, ChevronDown,
+  Search, Plus, Pencil, Check, X, ChevronRight, ChevronDown,
   Tag, Zap, ListChecks, AlertCircle, Building2, Copy, Loader2,
-  Trash2, Upload, FlaskConical, Link2, Megaphone, Calendar,
+  Trash2, Upload, FlaskConical, Link2, Megaphone, Calendar, Eye, EyeOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { pricingApi, type PricingRule, type ReferencePriceList, type BranchPricing, type TreatmentPriceResponse } from '@/api/pricing';
@@ -60,9 +61,10 @@ function AddItemDialog({ open, onClose, list }: { open: boolean; onClose: () => 
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [priceKdv, setPriceKdv] = useState('');
+  const [currency, setCurrency] = useState('TRY');
 
   useEffect(() => {
-    if (open) { setCode(''); setName(''); setPrice(''); setPriceKdv(''); }
+    if (open) { setCode(''); setName(''); setPrice(''); setPriceKdv(''); setCurrency('TRY'); }
   }, [open]);
 
   const mutation = useMutation({
@@ -70,6 +72,7 @@ function AddItemDialog({ open, onClose, list }: { open: boolean; onClose: () => 
       treatmentName: name.trim(),
       price: parseFloat(price) || 0,
       priceKdv: parseFloat(priceKdv) || 0,
+      currency,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pricing', 'reference-items'] });
@@ -101,14 +104,27 @@ function AddItemDialog({ open, onClose, list }: { open: boolean; onClose: () => 
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Fiyat (₺)</Label>
-              <Input
-                type="number"
-                placeholder="0.00"
-                value={price}
-                onChange={e => setPrice(e.target.value)}
-              />
+              <Label>Para Birimi</Label>
+              <Select value={currency} onValueChange={setCurrency}>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="TRY">TRY — Türk Lirası</SelectItem>
+                  <SelectItem value="EUR">EUR — Euro</SelectItem>
+                  <SelectItem value="USD">USD — Dolar</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Fiyat</Label>
+            <Input
+              type="number"
+              placeholder="0.00"
+              value={price}
+              onChange={e => setPrice(e.target.value)}
+            />
           </div>
           <div className="space-y-1.5">
             <Label>Tedavi Adı</Label>
@@ -532,16 +548,15 @@ function ReferencePricesTab() {
   const qc = useQueryClient();
   const [selectedList, setSelectedList] = useState<ReferencePriceList | null>(null);
   const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editPrice, setEditPrice] = useState('');
   const [editKdv, setEditKdv] = useState('');
+  const [editCurrency, setEditCurrency] = useState('TRY');
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [seedOpen, setSeedOpen] = useState(false);
   const [csvImportOpen, setCsvImportOpen] = useState(false);
   const [deletingItem, setDeletingItem] = useState<{ code: string } | null>(null);
-
-  const PAGE_SIZE = 50;
+  const [deletingList, setDeletingList] = useState<ReferencePriceList | null>(null);
 
   const { data: lists, isLoading: listsLoading } = useQuery({
     queryKey: ['pricing', 'reference-lists'],
@@ -556,15 +571,15 @@ function ReferencePricesTab() {
   }, [lists, selectedList]);
 
   const { data: itemsPage, isLoading: itemsLoading } = useQuery({
-    queryKey: ['pricing', 'reference-items', selectedList?.id, search, page],
-    queryFn: () => pricingApi.getReferenceItems(selectedList!.id, { search, page, pageSize: PAGE_SIZE }).then(r => r.data),
+    queryKey: ['pricing', 'reference-items', selectedList?.id, search],
+    queryFn: () => pricingApi.getReferenceItems(selectedList!.id, { search, page: 1, pageSize: 9999 }).then(r => r.data),
     enabled: !!selectedList,
   });
 
   const upsertMutation = useMutation({
-    mutationFn: ({ code, name, price, priceKdv }: {
-      code: string; name: string; price: number; priceKdv: number;
-    }) => pricingApi.upsertReferenceItem(selectedList!.id, code, { treatmentName: name, price, priceKdv }),
+    mutationFn: ({ code, name, price, priceKdv, currency }: {
+      code: string; name: string; price: number; priceKdv: number; currency: string;
+    }) => pricingApi.upsertReferenceItem(selectedList!.id, code, { treatmentName: name, price, priceKdv, currency }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pricing', 'reference-items'] });
       qc.invalidateQueries({ queryKey: ['pricing', 'reference-lists'] });
@@ -585,21 +600,41 @@ function ReferencePricesTab() {
     onError: () => toast.error('Kalem silinemedi'),
   });
 
+  const toggleListActiveMutation = useMutation({
+    mutationFn: (list: ReferencePriceList) => pricingApi.setReferenceListActive(list.id, !list.isActive),
+    onSuccess: (_data, list) => {
+      qc.invalidateQueries({ queryKey: ['pricing', 'reference-lists'] });
+      toast.success(list.isActive ? 'Liste pasife alındı' : 'Liste aktif edildi');
+    },
+    onError: () => toast.error('Durum güncellenemedi'),
+  });
+
+  const deleteListMutation = useMutation({
+    mutationFn: (list: ReferencePriceList) => pricingApi.deleteReferenceList(list.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pricing', 'reference-lists'] });
+      if (selectedList?.id === deletingList?.id) setSelectedList(null);
+      setDeletingList(null);
+      toast.success('Liste silindi');
+    },
+    onError: () => toast.error('Liste silinemedi'),
+  });
+
   const items = itemsPage?.items ?? [];
   const total = itemsPage?.total ?? 0;
-  const totalPages = Math.ceil(total / PAGE_SIZE);
 
-  function startEdit(item: { id: number; price: number; priceKdv: number }) {
+  function startEdit(item: { id: number; price: number; priceKdv: number; currency: string }) {
     setEditingId(item.id);
     setEditPrice(String(item.price));
     setEditKdv(String(item.priceKdv));
+    setEditCurrency(item.currency || 'TRY');
   }
 
   function saveEdit(item: { id: number; treatmentCode: string; treatmentName: string }) {
     const price = parseFloat(editPrice);
     const priceKdv = parseFloat(editKdv) || 0;
     if (isNaN(price)) return;
-    upsertMutation.mutate({ code: item.treatmentCode, name: item.treatmentName, price, priceKdv });
+    upsertMutation.mutate({ code: item.treatmentCode, name: item.treatmentName, price, priceKdv, currency: editCurrency });
   }
 
   return (
@@ -610,19 +645,42 @@ function ReferencePricesTab() {
         {listsLoading
           ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)
           : lists?.map(list => (
-            <button
+            <div
               key={list.id}
-              onClick={() => { setSelectedList(list); setPage(1); setSearch(''); }}
-              className={`w-full text-left rounded-md px-3 py-2 text-sm transition-colors ${
+              className={`group relative w-full rounded-md px-3 py-2 text-sm transition-colors cursor-pointer ${
                 selectedList?.id === list.id
                   ? 'bg-accent text-accent-foreground font-medium'
                   : 'hover:bg-accent/50 text-muted-foreground'
-              }`}
+              } ${!list.isActive ? 'opacity-50' : ''}`}
+              onClick={() => { setSelectedList(list); setSearch(''); }}
             >
-              <div className="font-medium">{list.code}</div>
-              <div className="text-xs opacity-70">{list.name}</div>
-              <div className="text-xs opacity-50 mt-0.5">{list.itemCount} kalem</div>
-            </button>
+              <div className="flex items-start justify-between gap-1">
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{list.code}</div>
+                  <div className="text-xs opacity-70 truncate">{list.name}</div>
+                  <div className="text-xs opacity-50 mt-0.5">{list.itemCount} kalem{!list.isActive && ' · Pasif'}</div>
+                </div>
+                <div className="shrink-0 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                  <button
+                    className="p-1 rounded hover:bg-background/60"
+                    title={list.isActive ? 'Pasife al' : 'Aktife al'}
+                    onClick={() => toggleListActiveMutation.mutate(list)}
+                  >
+                    {list.isActive
+                      ? <EyeOff className="size-3 text-muted-foreground" />
+                      : <Eye className="size-3 text-green-600" />
+                    }
+                  </button>
+                  <button
+                    className="p-1 rounded hover:bg-background/60"
+                    title="Listeyi sil"
+                    onClick={() => setDeletingList(list)}
+                  >
+                    <Trash2 className="size-3 text-destructive" />
+                  </button>
+                </div>
+              </div>
+            </div>
           ))}
       </div>
 
@@ -636,7 +694,7 @@ function ReferencePricesTab() {
                 <Input
                   placeholder="Kod veya isim ara..."
                   value={search}
-                  onChange={e => { setSearch(e.target.value); setPage(1); }}
+                  onChange={e => { setSearch(e.target.value); }}
                   className="pl-8"
                 />
               </div>
@@ -663,8 +721,9 @@ function ReferencePricesTab() {
                   <TableRow>
                     <TableHead className="w-28">Kod</TableHead>
                     <TableHead>Tedavi Adı</TableHead>
-                    <TableHead className="w-32 text-right">Fiyat (₺)</TableHead>
-                    <TableHead className="w-32 text-right">KDV'li (₺)</TableHead>
+                    <TableHead className="w-24 text-right">Fiyat</TableHead>
+                    <TableHead className="w-24 text-right">KDV'li</TableHead>
+                    <TableHead className="w-20 text-center">Birim</TableHead>
                     <TableHead className="w-20"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -708,6 +767,21 @@ function ReferencePricesTab() {
                                 }}
                               />
                             : <span className="tabular-nums">{item.priceKdv.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</span>
+                          }
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {editingId === item.id
+                            ? <Select value={editCurrency} onValueChange={setEditCurrency}>
+                                <SelectTrigger className="h-7 w-16 text-xs font-mono mx-auto">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="TRY">TRY</SelectItem>
+                                  <SelectItem value="EUR">EUR</SelectItem>
+                                  <SelectItem value="USD">USD</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            : <span className={`text-xs font-mono font-medium ${item.currency !== 'TRY' ? 'text-blue-600' : 'text-muted-foreground'}`}>{item.currency}</span>
                           }
                         </TableCell>
                         <TableCell>
@@ -761,20 +835,6 @@ function ReferencePricesTab() {
               </Table>
             </div>
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between text-sm text-muted-foreground">
-                <span>Sayfa {page} / {totalPages}</span>
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPage(p => p - 1)} disabled={page === 1}>
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPage(p => p + 1)} disabled={page === totalPages}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
           </>
         )}
       </div>
@@ -795,6 +855,15 @@ function ReferencePricesTab() {
         loading={deleteItemMutation.isPending}
         onConfirm={() => deletingItem && deleteItemMutation.mutate(deletingItem.code)}
         onCancel={() => setDeletingItem(null)}
+      />
+
+      <ConfirmDialog
+        open={!!deletingList}
+        title="Listeyi Sil"
+        message={`"${deletingList?.code}" listesini ve içindeki tüm kalemleri kalıcı olarak silmek istediğinizden emin misiniz?`}
+        loading={deleteListMutation.isPending}
+        onConfirm={() => deletingList && deleteListMutation.mutate(deletingList)}
+        onCancel={() => setDeletingList(null)}
       />
     </div>
   );
@@ -832,6 +901,7 @@ function buildFilterJson(opts: {
   campaignCode: string;
   categoryPublicIds: string[];
   treatmentPublicIds: string[];
+  currencies: string[];
 }): string | null {
   const obj: Record<string, unknown> = {};
   if (opts.institutionIds.length > 0)      obj['institutionIds']      = opts.institutionIds;
@@ -839,6 +909,7 @@ function buildFilterJson(opts: {
   if (opts.campaignCode.trim())            obj['campaignCodes']       = [opts.campaignCode.trim()];
   if (opts.categoryPublicIds.length > 0)   obj['categoryPublicIds']   = opts.categoryPublicIds;
   if (opts.treatmentPublicIds.length > 0)  obj['treatmentPublicIds']  = opts.treatmentPublicIds;
+  if (opts.currencies.length > 0)          obj['currencies']          = opts.currencies;
   return Object.keys(obj).length > 0 ? JSON.stringify(obj) : null;
 }
 
@@ -848,9 +919,10 @@ interface ParsedFilters {
   campaignCode: string;
   categoryPublicIds: string[];
   treatmentPublicIds: string[];
+  currencies: string[];
 }
 
-const emptyFilters: ParsedFilters = { institutionIds: [], ossOnly: false, campaignCode: '', categoryPublicIds: [], treatmentPublicIds: [] };
+const emptyFilters: ParsedFilters = { institutionIds: [], ossOnly: false, campaignCode: '', categoryPublicIds: [], treatmentPublicIds: [], currencies: [] };
 
 function parseFilterJson(json: string | null): ParsedFilters {
   if (!json) return { ...emptyFilters };
@@ -862,6 +934,7 @@ function parseFilterJson(json: string | null): ParsedFilters {
       campaignCode:        Array.isArray(obj.campaignCodes) ? (obj.campaignCodes[0] ?? '') : '',
       categoryPublicIds:   Array.isArray(obj.categoryPublicIds) ? (obj.categoryPublicIds as string[]) : [],
       treatmentPublicIds:  Array.isArray(obj.treatmentPublicIds) ? (obj.treatmentPublicIds as string[]) : [],
+      currencies:          Array.isArray(obj.currencies) ? (obj.currencies as string[]) : [],
     };
   } catch { return { ...emptyFilters }; }
 }
@@ -995,6 +1068,7 @@ function RuleDialog({ open, onClose, editing, institutions }: RuleDialogProps) {
   const [campaignCode, setCampaignCode] = useState('');
   const [categoryPublicIds, setCategoryPublicIds] = useState<string[]>([]);
   const [treatmentPublicIds, setTreatmentPublicIds] = useState<string[]>([]);
+  const [currencies, setCurrencies] = useState<string[]>([]);
   // Exclude koşulları
   const [showExclude, setShowExclude] = useState(false);
   const [exInstitutionIds, setExInstitutionIds] = useState<number[]>([]);
@@ -1040,6 +1114,7 @@ function RuleDialog({ open, onClose, editing, institutions }: RuleDialogProps) {
       setCampaignCode(inc.campaignCode);
       setCategoryPublicIds(inc.categoryPublicIds);
       setTreatmentPublicIds(inc.treatmentPublicIds);
+      setCurrencies(inc.currencies);
       const exc = parseFilterJson(editing.excludeFilters);
       setExInstitutionIds(exc.institutionIds);
       setExCategoryPublicIds(exc.categoryPublicIds);
@@ -1049,17 +1124,17 @@ function RuleDialog({ open, onClose, editing, institutions }: RuleDialogProps) {
       setFormula(''); setOutputCurrency('TRY'); setStopProcessing(true); setIsActive(true);
       setValidFrom(''); setValidUntil(''); setBranchId(null);
       setInstitutionIds([]); setOssOnly(false); setCampaignCode('');
-      setCategoryPublicIds([]); setTreatmentPublicIds([]);
+      setCategoryPublicIds([]); setTreatmentPublicIds([]); setCurrencies([]);
       setShowExclude(false); setExInstitutionIds([]); setExCategoryPublicIds([]);
       setTreatmentSearch('');
     }
   }, [editing, open]);
 
   function getIncludeFilters() {
-    return buildFilterJson({ institutionIds, ossOnly, campaignCode, categoryPublicIds, treatmentPublicIds });
+    return buildFilterJson({ institutionIds, ossOnly, campaignCode, categoryPublicIds, treatmentPublicIds, currencies });
   }
   function getExcludeFilters() {
-    return buildFilterJson({ institutionIds: exInstitutionIds, ossOnly: false, campaignCode: '', categoryPublicIds: exCategoryPublicIds, treatmentPublicIds: [] });
+    return buildFilterJson({ institutionIds: exInstitutionIds, ossOnly: false, campaignCode: '', categoryPublicIds: exCategoryPublicIds, treatmentPublicIds: [], currencies: [] });
   }
 
   function buildPayload() {
@@ -1365,7 +1440,28 @@ function RuleDialog({ open, onClose, editing, institutions }: RuleDialogProps) {
                 </div>
               </div>
 
-              {(institutionIds.length > 0 || ossOnly || campaignCode.trim() || categoryPublicIds.length > 0 || treatmentPublicIds.length > 0) && (
+              {/* Para Birimi Filtresi */}
+              <div className="flex items-center gap-3">
+                <Label className="text-sm whitespace-nowrap shrink-0">Para Birimi:</Label>
+                <div className="flex items-center gap-3">
+                  {(['TRY', 'EUR', 'USD'] as const).map(cur => (
+                    <label key={cur} className="flex items-center gap-1.5 cursor-pointer select-none">
+                      <Checkbox
+                        checked={currencies.includes(cur)}
+                        onCheckedChange={checked => setCurrencies(prev =>
+                          checked ? [...prev, cur] : prev.filter(c => c !== cur)
+                        )}
+                      />
+                      <span className="text-sm font-mono">{cur}</span>
+                    </label>
+                  ))}
+                  {currencies.length === 0 && (
+                    <span className="text-xs text-muted-foreground">(tüm para birimlerine uygulanır)</span>
+                  )}
+                </div>
+              </div>
+
+              {(institutionIds.length > 0 || ossOnly || campaignCode.trim() || categoryPublicIds.length > 0 || treatmentPublicIds.length > 0 || currencies.length > 0) && (
                 <p className="text-xs text-amber-600">
                   Bu kural yalnızca:{' '}
                   {[
@@ -1374,6 +1470,7 @@ function RuleDialog({ open, onClose, editing, institutions }: RuleDialogProps) {
                     campaignCode.trim() && `"${campaignCode.trim()}" kampanyası aktifken`,
                     categoryPublicIds.length > 0 && `seçili ${categoryPublicIds.length} kategori`,
                     treatmentPublicIds.length > 0 && `seçili ${treatmentPublicIds.length} tedavi`,
+                    currencies.length > 0 && `${currencies.join('/')} fiyatlı tedavilere`,
                   ].filter(Boolean).join(' + ')}
                   {' '}uygulanır.
                 </p>
@@ -1458,6 +1555,25 @@ function PricingRulesTab() {
       toast.success('Kural silindi');
     },
     onError: () => toast.error('Kural silinemedi'),
+  });
+
+  const toggleActiveMutation = useMutation({
+    mutationFn: (rule: PricingRule) => pricingApi.updateRule(rule.publicId, {
+      name: rule.name, description: rule.description ?? null,
+      ruleType: rule.ruleType, priority: rule.priority,
+      formula: rule.formula ?? null, outputCurrency: rule.outputCurrency,
+      stopProcessing: rule.stopProcessing,
+      branchId: rule.branchId ?? null,
+      includeFilters: rule.includeFilters ?? null,
+      excludeFilters: rule.excludeFilters ?? null,
+      validFrom: rule.validFrom ?? null,
+      validUntil: rule.validUntil ?? null,
+      isActive: !rule.isActive,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pricing', 'rules'] });
+    },
+    onError: () => toast.error('Durum güncellenemedi'),
   });
 
   const { data: rules, isLoading } = useQuery({
@@ -1552,9 +1668,18 @@ function PricingRulesTab() {
                         </TableCell>
                         <TableCell className="text-xs">{rule.outputCurrency}</TableCell>
                         <TableCell>
-                          <Badge variant={rule.isActive ? 'default' : 'secondary'} className="text-xs">
-                            {rule.isActive ? 'Aktif' : 'Pasif'}
-                          </Badge>
+                          <button
+                            onClick={() => toggleActiveMutation.mutate(rule)}
+                            disabled={toggleActiveMutation.isPending}
+                            title={rule.isActive ? 'Pasife al' : 'Aktife al'}
+                          >
+                            <Badge
+                              variant={rule.isActive ? 'default' : 'secondary'}
+                              className="text-xs cursor-pointer hover:opacity-80 transition-opacity"
+                            >
+                              {rule.isActive ? 'Aktif' : 'Pasif'}
+                            </Badge>
+                          </button>
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-1">
@@ -2519,6 +2644,8 @@ function PriceTestTab() {
 
 export function PricingPage() {
   const [newListOpen, setNewListOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') ?? 'prices';
 
   return (
     <div className="space-y-4">
@@ -2531,7 +2658,7 @@ export function PricingPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="prices">
+      <Tabs value={activeTab} onValueChange={tab => setSearchParams({ tab })}>
         <div className="flex items-center justify-between">
           <TabsList>
             <TabsTrigger value="prices">Referans Fiyatlar</TabsTrigger>

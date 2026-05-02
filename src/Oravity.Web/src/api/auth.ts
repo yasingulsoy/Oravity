@@ -10,4 +10,7 @@ export const authApi = {
 
   me: () =>
     apiClient.get<LoginResponse['user']>('/auth/me'),
+
+  myPermissions: () =>
+    apiClient.get<string[]>('/auth/my-permissions'),
 };

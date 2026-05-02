@@ -7,9 +7,17 @@ using Oravity.SharedKernel.Interfaces;
 
 namespace Oravity.Core.Modules.Core.Auth.Application.Commands;
 
-public record LoginCommand(string Email, string Password, string? IpAddress) : IRequest<LoginResponse>;
+public record LoginCommand(string Email, string Password, string? IpAddress, long? BranchId = null) : IRequest<LoginResponse>;
 
-public record LoginResponse(string AccessToken, string RefreshToken, int ExpiresIn, string TokenType = "Bearer");
+public record LoginResponse(
+    string? AccessToken = null,
+    string? RefreshToken = null,
+    int ExpiresIn = 0,
+    string TokenType = "Bearer",
+    bool RequiresBranchSelection = false,
+    List<BranchSelectionOption>? Branches = null);
+
+public record BranchSelectionOption(long Id, string Name);
 
 public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponse>
 {
@@ -50,11 +58,70 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponse>
         if (!user.IsActive)
             throw new UnauthorizedException("Hesabınız aktif değil.");
 
+        // Kullanıcının tüm aktif, süresi dolmamış şube atamalarını çek
+        var activeAssignments = await _db.UserRoleAssignments
+            .AsNoTracking()
+            .Where(a => a.UserId == user.Id
+                        && a.IsActive
+                        && (a.ExpiresAt == null || a.ExpiresAt > DateTime.UtcNow))
+            .ToListAsync(cancellationToken);
+
+        // Şube ataması olan (BranchId != null) olanları filtrele
+        var branchAssignments = activeAssignments
+            .Where(a => a.BranchId.HasValue)
+            .ToList();
+
+        // Benzersiz şube ID'leri
+        var distinctBranchIds = branchAssignments
+            .Select(a => a.BranchId!.Value)
+            .Distinct()
+            .ToList();
+
+        // 2+ şube ataması varsa ve BranchId sağlanmamışsa → şube seçimi iste
+        if (distinctBranchIds.Count >= 2 && request.BranchId == null)
+        {
+            var branchOptions = await _db.Branches
+                .AsNoTracking()
+                .Where(b => distinctBranchIds.Contains(b.Id))
+                .OrderBy(b => b.Name)
+                .Select(b => new BranchSelectionOption(b.Id, b.Name))
+                .ToListAsync(cancellationToken);
+
+            return new LoginResponse(
+                RequiresBranchSelection: true,
+                Branches: branchOptions);
+        }
+
+        // BranchId sağlandıysa: kullanıcının bu şubeye ataması var mı kontrol et
+        UserRoleAssignment? primaryAssignment = null;
+
+        if (request.BranchId.HasValue)
+        {
+            primaryAssignment = branchAssignments
+                .FirstOrDefault(a => a.BranchId == request.BranchId.Value);
+
+            if (primaryAssignment == null)
+                throw new UnauthorizedException("Bu şubeye erişim yetkiniz yok.");
+        }
+        else if (distinctBranchIds.Count == 1)
+        {
+            // Tek şube ataması varsa → onu kullan
+            primaryAssignment = branchAssignments.First();
+        }
+        else if (activeAssignments.Count > 0)
+        {
+            // Şube ataması yok ama başka atamalar var (company admin, platform admin)
+            primaryAssignment = activeAssignments
+                .OrderByDescending(a => a.CreatedAt)
+                .First();
+        }
+
+        // Context'i çözümle
+        var (primaryBranchId, primaryCompanyId, primaryRoleLevel) =
+            await ResolveUserContext(user, primaryAssignment, cancellationToken);
+
         // Başarılı giriş
         _db.LoginAttempts.Add(LoginAttempt.Create(email, request.IpAddress, true));
-
-        var (primaryBranchId, primaryCompanyId, primaryRoleLevel) =
-            await ResolveUserContext(user, cancellationToken);
 
         var accessToken = _jwtService.GenerateAccessToken(user, primaryBranchId, primaryCompanyId, primaryRoleLevel);
         var refreshToken = _jwtService.GenerateRefreshToken();
@@ -70,17 +137,11 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResponse>
     }
 
     private async Task<(long? BranchId, long? CompanyId, int? RoleLevel)> ResolveUserContext(
-        User user, CancellationToken ct)
+        User user, UserRoleAssignment? assignment, CancellationToken ct)
     {
         long? branchId = null;
         long? companyId = null;
         int? roleLevel = null;
-
-        var assignment = await _db.UserRoleAssignments
-            .AsNoTracking()
-            .Where(a => a.UserId == user.Id && a.IsActive)
-            .OrderByDescending(a => a.CreatedAt)
-            .FirstOrDefaultAsync(ct);
 
         if (assignment is not null)
         {

@@ -9,4 +9,12 @@ export const notificationsApi = {
 
   markRead: (id: string) =>
     apiClient.put<NotificationItem>(`/notifications/${id}/read`),
+
+  sendDoctorMessage: (data: {
+    message: string;
+    title?: string;
+    isUrgent?: boolean;
+    relatedEntityType?: string;
+    relatedEntityId?: number;
+  }) => apiClient.post('/notifications/doctor-message', data),
 };

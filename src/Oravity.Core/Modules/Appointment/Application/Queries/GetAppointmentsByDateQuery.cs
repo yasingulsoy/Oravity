@@ -58,6 +58,10 @@ public class GetAppointmentsByDateQueryHandler
                 HasOpenProtocol = _db.Visits
                     .Any(v => v.AppointmentId == a.Id && !v.IsDeleted &&
                               v.Protocols.Any(p => p.Status == SharedKernel.Entities.ProtocolStatus.Open && !p.IsDeleted)),
+                IsBeingCalled = _db.Visits
+                    .Any(v => v.AppointmentId == a.Id && !v.IsDeleted &&
+                              v.CalledAt.HasValue &&
+                              v.Status == SharedKernel.Entities.VisitStatus.Waiting),
             })
             .ToListAsync(cancellationToken);
 
@@ -68,7 +72,7 @@ public class GetAppointmentsByDateQueryHandler
             AppointmentMappings.StatusLabel(a.StatusId),
             a.Notes, a.IsUrgent, a.IsEarlierRequest, a.RowVersion, a.CreatedAt,
             a.AppointmentTypeName,
-            a.PatientBirthDate, a.PatientGender, a.HasOpenProtocol
+            a.PatientBirthDate, a.PatientGender, a.HasOpenProtocol, a.IsBeingCalled
         )).ToList();
     }
 

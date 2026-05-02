@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { toast } from 'sonner';
 import { useAuthStore } from '@/store/authStore';
 
 const apiClient = axios.create({
@@ -42,6 +43,17 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+
+    if (error.response?.status === 403) {
+      const data = error.response.data as Record<string, unknown>;
+      const message =
+        typeof data?.detail === 'string' ? data.detail :
+        typeof data?.title  === 'string' ? data.title  :
+        'Bu işlem için yetkiniz bulunmuyor.';
+      toast.error(message);
+      (error as any)._403handled = true;
+      return Promise.reject(error);
+    }
 
     if (error.response?.status !== 401 || originalRequest._retry) {
       return Promise.reject(error);
