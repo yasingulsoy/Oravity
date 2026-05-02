@@ -37,7 +37,7 @@ public class ApproveTreatmentPlanCommandHandler
         EnsureTenantAccess(plan);
 
         // Domain içinde durum geçişi ve item güncellemeleri yapılır
-        plan.Approve();
+        plan.Approve(_tenant.UserId);
 
         await _db.SaveChangesAsync(cancellationToken);
 

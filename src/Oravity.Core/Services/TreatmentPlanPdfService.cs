@@ -53,9 +53,13 @@ public class TreatmentPlanPdfService
         // ── Görüntüleme kalemleri ──────────────────────────────────────────
         var lines = plan.Items.Select(item =>
         {
-            var origCur   = item.PriceCurrency;
-            var tryList   = ToTry(item.UnitPrice,   origCur, fxRates);
-            var tryFinal  = ToTry(item.FinalPrice,  origCur, fxRates);
+            var origCur     = item.PriceCurrency;
+            // Liste fiyatı: referans listedeki ham fiyat (kampanya/kural öncesi, KDV dahil).
+            // Yoksa (eski kalem) UnitPrice'a düş — PDF'de fark gösterilmez.
+            var rawList     = item.ListPrice ?? item.UnitPrice;
+            var tryList     = ToTry(rawList,          origCur, fxRates);
+            // TotalAmount = KDV dahil, hastanın ödediği tutar
+            var tryFinal    = ToTry(item.TotalAmount, origCur, fxRates);
 
             string displayCur;
             decimal displayList, displayFinal;
@@ -64,8 +68,8 @@ public class TreatmentPlanPdfService
             {
                 // Orijinal para biriminde göster
                 displayCur   = origCur;
-                displayList  = item.UnitPrice;
-                displayFinal = item.FinalPrice;
+                displayList  = rawList;
+                displayFinal = item.TotalAmount;
             }
             else
             {
@@ -117,6 +121,8 @@ public class TreatmentPlanPdfService
                     col.Item().Element(c => PatientInfo(c, plan, fxRates));
                     col.Item().Element(c => DentalChart(c, treatedTeeth, toothSymbols));
                     col.Item().Element(c => TreatmentTable(c, lines, fxRates, targetCurrency));
+                    if (lines.Any(l => l.ListPrice > l.FinalPrice))
+                        col.Item().Element(c => PriceSummaryBox(c, lines, fxRates));
                 });
                 page.Footer().Element(c => Footer(c));
             });
@@ -130,7 +136,7 @@ public class TreatmentPlanPdfService
     static decimal ToTry(decimal amount, string fromCurrency, Dictionary<string, decimal> fxRates)
     {
         if (fromCurrency == "TRY") return amount;
-        return fxRates.TryGetValue(fromCurrency, out var r) ? Math.Round(amount * r, 4) : amount;
+        return fxRates.TryGetValue(fromCurrency, out var r) ? Math.Round(amount * r, 2) : amount;
     }
 
     static decimal FromTry(decimal tryAmount, string toCurrency, Dictionary<string, decimal> fxRates)
@@ -139,6 +145,26 @@ public class TreatmentPlanPdfService
         return fxRates.TryGetValue(toCurrency, out var r) && r > 0
             ? Math.Round(tryAmount / r, 2)
             : tryAmount;
+    }
+
+    static readonly System.Globalization.CultureInfo TR = new("tr-TR");
+    static readonly System.Globalization.CultureInfo EN = System.Globalization.CultureInfo.InvariantCulture;
+
+    static string Fmt(decimal amount, string currency, bool noSymbol = false)
+    {
+        var n = currency == "TRY"
+            ? amount.ToString("N2", TR)
+            : amount.ToString("N2", EN);
+        if (noSymbol) return n;
+        return currency switch
+        {
+            "TRY" => $"₺{n}",
+            "EUR" => $"€{n}",
+            "USD" => $"${n}",
+            "GBP" => $"£{n}",
+            "CHF" => $"Fr {n}",
+            _     => $"{n} {currency}",
+        };
     }
 
     // ── Header ─────────────────────────────────────────────────────────────
@@ -188,18 +214,33 @@ public class TreatmentPlanPdfService
                 col.Item().Row(r => { r.ConstantItem(80).Text("Tarih :").SemiBold();     r.RelativeItem().Text(plan.CreatedAt.ToString("dd.MM.yyyy")); });
             });
 
-            // Döviz kurları: 1 yabancı = X TRY formatında göster
-            row.ConstantItem(90).Column(col =>
+            // Döviz kurları: 1 EUR = ₺X
+            var relevantCurrencies = plan.Items
+                .Select(i => i.PriceCurrency)
+                .Where(c => c != "TRY")
+                .Distinct()
+                .OrderBy(c => c)
+                .ToList();
+            if (relevantCurrencies.Count > 0)
             {
-                foreach (var (code, tryPerOne) in fxRates.OrderBy(x => x.Key))
+                row.ConstantItem(100).Column(col =>
                 {
-                    col.Item().Row(r =>
+                    col.Item().Text("Güncel Kur").FontSize(7).FontColor("#6b7280").SemiBold();
+                    foreach (var code in relevantCurrencies)
                     {
-                        r.ConstantItem(32).Text($"{code} :").SemiBold();
-                        r.RelativeItem().AlignRight().Text(tryPerOne.ToString("N4")).FontFamily("Courier New");
-                    });
-                }
-            });
+                        if (!fxRates.TryGetValue(code, out var tryPerOne) || tryPerOne == 0) continue;
+                        col.Item().Row(r =>
+                        {
+                            r.RelativeItem().Text($"1 {code} =").FontSize(7);
+                            r.ConstantItem(52).AlignRight().Text(Fmt(tryPerOne, "TRY")).FontFamily("Courier New").FontSize(7);
+                        });
+                    }
+                });
+            }
+            else
+            {
+                row.ConstantItem(100);
+            }
         });
     }
 
@@ -410,20 +451,23 @@ public class TreatmentPlanPdfService
 
     static void TreatmentTable(IContainer container, List<PdfLineItem> lines, Dictionary<string, decimal> fxRates, string? targetCurrency)
     {
-        // "Türk Lirası" sütunu yalnızca karma/yabancı dövizde göster
-        var allTry = lines.All(l => l.Currency == "TRY");
-        var showTryCol = !allTry || targetCurrency is not null && targetCurrency != "TRY";
+        // TL karşılığı sütunu: herhangi bir yabancı para birimi varsa göster
+        var allTry     = lines.All(l => l.Currency == "TRY");
+        var showTryCol = !allTry;
+        // Liste Fiyatı sütunu: en az bir kalemde gerçek fark varsa göster
+        var showListCol = lines.Any(l => l.ListPrice > l.FinalPrice);
 
         container.Table(table =>
         {
+            // Diş | İşlem | [Liste Fiyatı] | [İndirim%] | Tedavi Fiyatı [| TL Karşılığı]
             table.ColumnsDefinition(cols =>
             {
-                cols.ConstantColumn(24);
-                cols.RelativeColumn(4);
-                cols.RelativeColumn(2);
-                cols.ConstantColumn(50);
-                cols.RelativeColumn(2);
-                if (showTryCol) cols.RelativeColumn(2);
+                cols.ConstantColumn(22);   // Diş
+                cols.RelativeColumn(4);    // İşlem
+                if (showListCol) cols.RelativeColumn(2); // Liste Fiyatı
+                if (showListCol) cols.ConstantColumn(46); // İndirim%
+                cols.RelativeColumn(2);    // Tedavi Fiyatı
+                if (showTryCol) cols.RelativeColumn(2);  // TL Karşılığı
             });
 
             static IContainer HdrCell(IContainer c) =>
@@ -433,11 +477,14 @@ public class TreatmentPlanPdfService
             {
                 h.Cell().Element(HdrCell).Text(t => t.Span("Diş").FontSize(7.5f).Bold().FontColor("#ffffff"));
                 h.Cell().Element(HdrCell).Text(t => t.Span("İşlem").FontSize(7.5f).Bold().FontColor("#ffffff"));
-                h.Cell().Element(HdrCell).Text(t => t.Span("Liste Fiyatı").FontSize(7.5f).Bold().FontColor("#ffffff"));
-                h.Cell().Element(HdrCell).Text(t => t.Span("İndirim\nYüzdesi").FontSize(7.5f).Bold().FontColor("#ffffff"));
+                if (showListCol)
+                {
+                    h.Cell().Element(HdrCell).Text(t => t.Span("Liste Fiyatı").FontSize(7.5f).Bold().FontColor("#ffffff"));
+                    h.Cell().Element(HdrCell).Text(t => t.Span("İndirim %").FontSize(7.5f).Bold().FontColor("#ffffff"));
+                }
                 h.Cell().Element(HdrCell).Text(t => t.Span("Tedavi Fiyatı").FontSize(7.5f).Bold().FontColor("#ffffff"));
                 if (showTryCol)
-                    h.Cell().Element(HdrCell).Text(t => t.Span("Türk Lirası").FontSize(7.5f).Bold().FontColor("#ffffff"));
+                    h.Cell().Element(HdrCell).Text(t => t.Span("TL Karşılığı").FontSize(7.5f).Bold().FontColor("#ffffff"));
             });
 
             bool even = false;
@@ -449,42 +496,160 @@ public class TreatmentPlanPdfService
 
                 table.Cell().Element(DC).AlignCenter().Text(line.ToothNumber ?? "—").FontSize(7.5f);
                 table.Cell().Element(DC).Text(line.TreatmentName).FontSize(7.5f);
-                table.Cell().Element(DC).AlignRight().Text(Fmt(line.ListPrice, line.Currency)).FontFamily("Courier New").FontSize(7.5f);
-                table.Cell().Element(DC).AlignCenter().Text(line.DiscountRate > 0 ? $"%{line.DiscountRate:0}" : "—").FontSize(7.5f);
+                if (showListCol)
+                {
+                    var hasDiscount = line.ListPrice > line.FinalPrice;
+                    // Gerçek fark yoksa (eski kalem, listPrice kaydedilmemiş) — göster
+                    table.Cell().Element(DC).AlignRight().Text(t =>
+                    {
+                        if (hasDiscount)
+                            t.Span(Fmt(line.ListPrice, line.Currency))
+                             .FontFamily("Courier New").FontSize(7.5f)
+                             .Strikethrough().FontColor("#9ca3af");
+                        else
+                            t.Span("—").FontSize(7.5f).FontColor("#9ca3af");
+                    });
+                    table.Cell().Element(DC).AlignCenter()
+                        .Text(hasDiscount && line.DiscountRate > 0 ? $"%{line.DiscountRate:0}" : "—")
+                        .FontSize(7.5f).FontColor(hasDiscount && line.DiscountRate > 0 ? "#111827" : "#9ca3af");
+                }
                 table.Cell().Element(DC).AlignRight().Text(Fmt(line.FinalPrice, line.Currency)).FontFamily("Courier New").FontSize(7.5f);
                 if (showTryCol)
-                    table.Cell().Element(DC).AlignRight().Text(Fmt(line.TryEquivalent, "TRY", noCode: true)).FontFamily("Courier New").FontSize(7.5f);
+                    table.Cell().Element(DC).AlignRight()
+                        .Text(line.Currency == "TRY" ? "—" : Fmt(line.TryEquivalent, "TRY"))
+                        .FontFamily("Courier New").FontSize(7.5f)
+                        .FontColor(line.Currency == "TRY" ? "#9ca3af" : "#111827");
             }
 
-            // Toplamlar — para birimine göre grupla
+            // ── Para birimi bazında ara toplamlar ──────────────────────────
             var groups = lines
                 .GroupBy(l => l.Currency)
-                .OrderBy(g => g.Key == "TRY" ? 1 : 0);
+                .OrderBy(g => g.Key == "TRY" ? 1 : 0)
+                .ToList();
 
             foreach (var group in groups)
             {
                 var cur        = group.Key;
-                var listTotal  = group.Sum(l => l.ListPrice);
+                // Sadece gerçek indirimli kalemler liste toplamına dahil, diğerleri finalPrice ile
+                var listTotal  = group.Sum(l => l.ListPrice > l.FinalPrice ? l.ListPrice : l.FinalPrice);
                 var finalTotal = group.Sum(l => l.FinalPrice);
                 var tryTotal   = group.Sum(l => l.TryEquivalent);
-                var avgPct     = listTotal > 0 ? Math.Round((1 - finalTotal / listTotal) * 100) : 0;
+                var savedTotal = listTotal - finalTotal;
+                var avgPct     = listTotal > 0 && savedTotal > 0 ? Math.Round(savedTotal / listTotal * 100) : 0;
+                var isForeign  = cur != "TRY";
 
                 IContainer TC(IContainer c) => c.Background("#e0e7ff").Padding(4);
 
-                var colSpan = showTryCol ? 2u : 2u;
-                table.Cell().ColumnSpan(colSpan).Element(TC).AlignRight()
-                    .Text($"TOPLAM {cur}").FontSize(8).Bold().FontColor("#1e3a8a");
-                table.Cell().Element(TC).AlignRight()
-                    .Text(Fmt(listTotal, cur)).FontFamily("Courier New").FontSize(8).Bold().FontColor("#1e3a8a");
-                table.Cell().Element(TC).AlignCenter()
-                    .Text($"%{avgPct}").FontSize(8).Bold().FontColor("#1e3a8a");
+                table.Cell().ColumnSpan(2u).Element(TC).AlignRight()
+                    .Text($"Toplam ({cur})").FontSize(8).Bold().FontColor("#1e3a8a");
+                if (showListCol)
+                {
+                    table.Cell().Element(TC).AlignRight().Text(t =>
+                    {
+                        if (savedTotal > 0)
+                            t.Span(Fmt(listTotal, cur)).FontFamily("Courier New").FontSize(8).Bold()
+                             .Strikethrough().FontColor("#6b7280");
+                        else
+                            t.Span("—").FontSize(8).FontColor("#9ca3af");
+                    });
+                    table.Cell().Element(TC).AlignCenter()
+                        .Text(avgPct > 0 ? $"%{avgPct}" : "—").FontSize(8).Bold()
+                        .FontColor(avgPct > 0 ? "#1e3a8a" : "#9ca3af");
+                }
                 table.Cell().Element(TC).AlignRight()
                     .Text(Fmt(finalTotal, cur)).FontFamily("Courier New").FontSize(8).Bold().FontColor("#1e3a8a");
                 if (showTryCol)
                     table.Cell().Element(TC).AlignRight()
-                        .Text(Fmt(tryTotal, "TRY", noCode: true)).FontFamily("Courier New").FontSize(8).Bold().FontColor("#1e3a8a");
+                        .Text(isForeign ? Fmt(tryTotal, "TRY") : "—")
+                        .FontFamily("Courier New").FontSize(8).Bold()
+                        .FontColor(isForeign ? "#1e3a8a" : "#9ca3af");
+            }
+
+            // ── Genel TRY toplamı (birden fazla para birimi varsa) ─────────
+            if (groups.Count > 1 || (groups.Count == 1 && groups[0].Key != "TRY"))
+            {
+                var grandTryTotal = lines.Sum(l => l.TryEquivalent);
+                var grandList     = lines.Sum(l => l.TryEquivalent > 0
+                    ? ToTry(l.ListPrice, l.Currency, fxRates) : l.ListPrice);
+                var grandPct      = grandList > 0
+                    ? Math.Round((1 - grandTryTotal / grandList) * 100) : 0;
+
+                uint colCount = (showListCol ? 2u : 0u) + (showTryCol ? 1u : 0u) + 3u; // Diş+İşlem+Tedavi + opsiyoneller
+                IContainer GC(IContainer c) => c.Background("#1e40af").Padding(4);
+
+                table.Cell().ColumnSpan(colCount - 1u).Element(GC).AlignRight()
+                    .Text("GENEL TOPLAM (TL)").FontSize(8.5f).Bold().FontColor("#ffffff");
+                table.Cell().Element(GC).AlignRight()
+                    .Text(Fmt(grandTryTotal, "TRY")).FontFamily("Courier New").FontSize(8.5f).Bold().FontColor("#ffffff");
             }
         });
+    }
+
+    // ── Fiyat özeti kutusu ─────────────────────────────────────────────────
+
+    static void PriceSummaryBox(IContainer container, List<PdfLineItem> lines, Dictionary<string, decimal> fxRates)
+    {
+        var groups = lines
+            .Where(l => l.ListPrice > l.FinalPrice)
+            .GroupBy(l => l.Currency)
+            .ToList();
+
+        // RelativeItem inside AutoItem → DocumentLayoutException.
+        // Çözüm: sabit genişlik (Width) + iç satırlar için Table kullan.
+        container.AlignRight()
+            .Width(260)
+            .Border(1).BorderColor("#1e40af")
+            .Background("#f0f4ff").Padding(10)
+            .Column(col =>
+            {
+                col.Spacing(5);
+                col.Item().Text("Fiyat Özeti").FontSize(8.5f).Bold().FontColor("#1e3a8a");
+
+                foreach (var g in groups)
+                {
+                    var cur        = g.Key;
+                    var listTotal  = g.Sum(l => l.ListPrice);
+                    var finalTotal = g.Sum(l => l.FinalPrice);
+                    var saved      = listTotal - finalTotal;
+
+                    // 3:2 kolonlu tablo — sol etiket, sağ rakam
+                    col.Item().Table(tbl =>
+                    {
+                        tbl.ColumnsDefinition(c => { c.RelativeColumn(3); c.RelativeColumn(2); });
+
+                        tbl.Cell().Text($"Liste fiyatı ({cur})").FontSize(7.5f).FontColor("#6b7280");
+                        tbl.Cell().AlignRight().Text(t =>
+                            t.Span(Fmt(listTotal, cur))
+                             .FontFamily("Courier New").FontSize(7.5f)
+                             .Strikethrough().FontColor("#9ca3af"));
+
+                        tbl.Cell().Text($"Tasarruf ({cur})").FontSize(7.5f).FontColor("#059669");
+                        tbl.Cell().AlignRight()
+                            .Text($"−{Fmt(saved, cur)}")
+                            .FontFamily("Courier New").FontSize(7.5f).FontColor("#059669");
+
+                        tbl.Cell().PaddingTop(3).BorderTop(1).BorderColor("#c7d2fe")
+                            .Text($"Planın tutarı ({cur})").FontSize(8).Bold().FontColor("#1e3a8a");
+                        tbl.Cell().PaddingTop(3).BorderTop(1).BorderColor("#c7d2fe").AlignRight()
+                            .Text(Fmt(finalTotal, cur))
+                            .FontFamily("Courier New").FontSize(8).Bold().FontColor("#1e3a8a");
+                    });
+                }
+
+                // Birden fazla para birimi varsa TRY genel toplamı
+                if (groups.Count > 1 || (groups.Count == 1 && groups[0].Key != "TRY"))
+                {
+                    var grandFinal = lines.Sum(l => l.TryEquivalent);
+                    col.Item().Background("#1e40af").Padding(4).Table(tbl =>
+                    {
+                        tbl.ColumnsDefinition(c => { c.RelativeColumn(3); c.RelativeColumn(2); });
+                        tbl.Cell().Text("Genel Toplam (TL)").FontSize(8).Bold().FontColor("#ffffff");
+                        tbl.Cell().AlignRight()
+                            .Text(Fmt(grandFinal, "TRY"))
+                            .FontFamily("Courier New").FontSize(8).Bold().FontColor("#ffffff");
+                    });
+                }
+            });
     }
 
     // ── Footer ─────────────────────────────────────────────────────────────
@@ -495,14 +660,6 @@ public class TreatmentPlanPdfService
             .Text("Yukarıdaki tabloda belirtilen tedavi planlaması ve/veya ücretlendirmeler bilgi niteliğindedir. " +
                   "Tedavinizi yaptırmaya karar verdiğinizde, güncel tedavi ve ücretler geçerli olacaktır.")
             .FontSize(7).FontColor("#6b7280").Italic();
-    }
-
-    // ── Yardımcılar ────────────────────────────────────────────────────────
-
-    static string Fmt(decimal amount, string currency, bool noCode = false)
-    {
-        var n = amount.ToString("N2");
-        return noCode ? n : $"{n} {currency}";
     }
 
     async Task<Dictionary<string, decimal>> FetchFxRatesAsync(CancellationToken ct)

@@ -65,13 +65,19 @@ public class TreatmentPlansController : ControllerBase
     /// <summary>Tedavi planını PDF olarak indirir. currency parametresi ile döviz seçilebilir (TRY, USD, EUR, CHF, GBP).</summary>
     [HttpGet("api/treatment-plans/{id:guid}/pdf")]
     [RequirePermission("treatment_plan:view")]
-    [Produces("application/pdf")]
     [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DownloadPdf(Guid id, [FromQuery] string? currency = null)
     {
-        var bytes = await _pdfService.GenerateAsync(id, currency);
-        return File(bytes, "application/pdf", $"tedavi-plani-{id:N}.pdf");
+        try
+        {
+            var bytes = await _pdfService.GenerateAsync(id, currency);
+            return File(bytes, "application/pdf", $"tedavi-plani-{id:N}.pdf");
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.GetType().Name, message = ex.Message, inner = ex.InnerException?.Message });
+        }
     }
 
     // ── Plan Komutları ────────────────────────────────────────────────────
@@ -128,12 +134,27 @@ public class TreatmentPlansController : ControllerBase
             }
         }
 
+        // Kurum: istekte geliyorsa onu kullan; yoksa hastanın anlaşmalı kurumunu otomatik ata
+        long? institutionId = null;
+        if (request.InstitutionPublicId.HasValue)
+        {
+            var inst = await _db.Institutions.AsNoTracking()
+                .FirstOrDefaultAsync(i => i.PublicId == request.InstitutionPublicId.Value)
+                ?? throw new NotFoundException("Kurum bulunamadı.");
+            institutionId = inst.Id;
+        }
+        else if (patient.AgreementInstitutionId.HasValue)
+        {
+            institutionId = patient.AgreementInstitutionId;
+        }
+
         var result = await _mediator.Send(new CreateTreatmentPlanCommand(
             patient.Id,
             branchId,
             doctor.Id,
             request.Name,
-            request.Notes));
+            request.Notes,
+            institutionId));
 
         return StatusCode(StatusCodes.Status201Created, result);
     }
@@ -183,7 +204,10 @@ public class TreatmentPlansController : ControllerBase
             null,
             null,
             null,
-            request.Notes));
+            request.Notes,
+            request.PriceCurrency,
+            request.PriceExchangeRate,
+            request.ListPrice));
 
         return StatusCode(StatusCodes.Status201Created, result);
     }
@@ -196,6 +220,35 @@ public class TreatmentPlansController : ControllerBase
     public async Task<IActionResult> CompleteItem(Guid id, Guid itemId)
     {
         var result = await _mediator.Send(new CompleteTreatmentPlanItemCommand(itemId));
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Onaylanmış tedavi kalemini 'Planlandı' durumuna geri alır.
+    /// Kural: İmzalı onam yoksa serbest. İzin: treatment_plan.edit
+    /// </summary>
+    [HttpPut("api/treatment-plans/{id:guid}/items/{itemId:guid}/revert-to-planned")]
+    [RequirePermission("treatment_plan.edit")]
+    [ProducesResponseType(typeof(TreatmentPlanItemResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> RevertToPlanned(Guid id, Guid itemId)
+    {
+        var result = await _mediator.Send(new RevertApprovedTreatmentPlanItemCommand(itemId));
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Tamamlanmış tedavi kalemini 'Onaylandı' durumuna geri alır.
+    /// Kural: Ödeme tahsisi yoksa ve izin varsa geri alınabilir. Reason zorunlu.
+    /// </summary>
+    [HttpPut("api/treatment-plans/{id:guid}/items/{itemId:guid}/revert")]
+    [RequirePermission("treatment_plan.revert_completed")]
+    [ProducesResponseType(typeof(TreatmentPlanItemResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> RevertItem(Guid id, Guid itemId, [FromBody] RevertItemRequest request)
+    {
+        var result = await _mediator.Send(new RevertTreatmentPlanItemCommand(itemId, request.Reason));
         return Ok(result);
     }
 
@@ -217,7 +270,16 @@ public class TreatmentPlansController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateTreatmentPlanRequest request)
     {
-        var result = await _mediator.Send(new UpdateTreatmentPlanCommand(id, request.Name, request.Notes));
+        long? institutionId = null;
+        if (request.InstitutionPublicId.HasValue)
+        {
+            var inst = await _db.Institutions.AsNoTracking()
+                .FirstOrDefaultAsync(i => i.PublicId == request.InstitutionPublicId.Value)
+                ?? throw new NotFoundException("Kurum bulunamadı.");
+            institutionId = inst.Id;
+        }
+
+        var result = await _mediator.Send(new UpdateTreatmentPlanCommand(id, request.Name, request.Notes, institutionId));
         return Ok(result);
     }
 
@@ -242,6 +304,17 @@ public class TreatmentPlansController : ControllerBase
         var result = await _mediator.Send(new UpdateTreatmentPlanItemCommand(itemId, request.UnitPrice, request.DiscountRate, request.ToothNumber));
         return Ok(result);
     }
+
+    /// <summary>Resepsiyonun TZH'den aldığı onaya göre kurum katkı tutarını girer.</summary>
+    [HttpPut("api/treatment-plans/{id:guid}/items/{itemId:guid}/contribution")]
+    [RequirePermission("treatment_plan:edit")]
+    [ProducesResponseType(typeof(TreatmentPlanItemResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> SetContribution(Guid id, Guid itemId, [FromBody] SetInstitutionContributionRequest request)
+    {
+        var result = await _mediator.Send(new SetInstitutionContributionCommand(itemId, request.ContributionAmount, request.InstitutionId));
+        return Ok(result);
+    }
 }
 
 // ─── Request DTO'lar ───────────────────────────────────────────────────────
@@ -251,20 +324,25 @@ public record CreateTreatmentPlanRequest(
     Guid    DoctorPublicId,
     string  Name,
     string? Notes,
-    Guid?   BranchPublicId = null
+    Guid?   BranchPublicId      = null,
+    Guid?   InstitutionPublicId = null
 );
 
 public record AddTreatmentPlanItemRequest(
-    Guid    TreatmentPublicId,
-    decimal UnitPrice,
-    decimal DiscountRate,
-    string? ToothNumber,
-    string? Notes
+    Guid     TreatmentPublicId,
+    decimal  UnitPrice,
+    decimal  DiscountRate,
+    string?  ToothNumber,
+    string?  Notes,
+    string   PriceCurrency     = "TRY",
+    decimal  PriceExchangeRate = 1m,
+    decimal? ListPrice         = null
 );
 
 public record UpdateTreatmentPlanRequest(
     string  Name,
-    string? Notes
+    string? Notes,
+    Guid?   InstitutionPublicId = null
 );
 
 public record UpdateTreatmentPlanItemRequest(
@@ -274,3 +352,7 @@ public record UpdateTreatmentPlanItemRequest(
 );
 
 public record ApproveItemsRequest(List<Guid> ItemPublicIds);
+
+public record RevertItemRequest(string Reason);
+
+public record SetInstitutionContributionRequest(decimal? ContributionAmount, long? InstitutionId = null);

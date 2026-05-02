@@ -28,8 +28,15 @@ public class GetTreatmentPlanByIdQueryHandler
     {
         var query = _db.TreatmentPlans
             .AsNoTracking()
+            .Include(p => p.Branch)
+            .Include(p => p.Institution)
+            .Include(p => p.Doctor)
             .Include(p => p.Items.Where(i => !i.IsDeleted))
                 .ThenInclude(i => i.Treatment)
+            .Include(p => p.Items.Where(i => !i.IsDeleted))
+                .ThenInclude(i => i.Doctor)
+            .Include(p => p.Items.Where(i => !i.IsDeleted))
+                .ThenInclude(i => i.ApprovedBy)
             .Where(p => p.PublicId == request.PublicId);
 
         query = ApplyTenantFilter(query);

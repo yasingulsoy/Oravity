@@ -130,7 +130,7 @@ export const treatmentPlansApi = {
   getByPatient: (patientPublicId: string) =>
     apiClient.get<TreatmentPlan[]>(`/patients/${patientPublicId}/treatment-plans`),
 
-  create: (data: { patientPublicId: string; doctorPublicId: string; name: string; notes?: string }) =>
+  create: (data: { patientPublicId: string; doctorPublicId: string; name: string; notes?: string; institutionId?: number }) =>
     apiClient.post<TreatmentPlan>('/treatment-plans', data),
 
   approve: (planPublicId: string) =>
@@ -145,6 +145,9 @@ export const treatmentPlansApi = {
     discountRate: number;
     toothNumber?: string;
     notes?: string;
+    priceCurrency?: string;
+    priceExchangeRate?: number;
+    listPrice?: number;
   }) =>
     apiClient.post<TreatmentPlanItem>(`/treatment-plans/${planPublicId}/items`, data),
 
@@ -153,6 +156,12 @@ export const treatmentPlansApi = {
 
   completeItem: (planPublicId: string, itemPublicId: string) =>
     apiClient.put<TreatmentPlanItem>(`/treatment-plans/${planPublicId}/items/${itemPublicId}/complete`),
+
+  revertItem: (planPublicId: string, itemPublicId: string, reason: string) =>
+    apiClient.put<TreatmentPlanItem>(`/treatment-plans/${planPublicId}/items/${itemPublicId}/revert`, { reason }),
+
+  revertToPlanned: (planPublicId: string, itemPublicId: string) =>
+    apiClient.put<TreatmentPlanItem>(`/treatment-plans/${planPublicId}/items/${itemPublicId}/revert-to-planned`),
 
   update: (planPublicId: string, data: { name: string; notes?: string | null }) =>
     apiClient.put<TreatmentPlan>(`/treatment-plans/${planPublicId}`, data),
@@ -166,6 +175,12 @@ export const treatmentPlansApi = {
     toothNumber?: string | null;
   }) =>
     apiClient.put<TreatmentPlanItem>(`/treatment-plans/${planPublicId}/items/${itemPublicId}`, data),
+
+  setContribution: (planPublicId: string, itemPublicId: string, contributionAmount: number | null) =>
+    apiClient.put<TreatmentPlanItem>(
+      `/treatment-plans/${planPublicId}/items/${itemPublicId}/contribution`,
+      { contributionAmount },
+    ),
 
   downloadPdf: (planPublicId: string, currency?: string) =>
     apiClient.get(`/treatment-plans/${planPublicId}/pdf`, {

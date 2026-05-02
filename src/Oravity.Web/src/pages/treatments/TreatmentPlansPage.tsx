@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import {
-  ClipboardList, Search, Info, Pencil, Trash2, X, Check, RotateCcw, User,
+  ClipboardList, Search, Info, Pencil, Trash2, X, Check, RotateCcw, User, Building2,
 } from 'lucide-react';
 import { PdfDownloadButton } from '@/components/PdfDownloadButton';
 import { treatmentPlansApi } from '@/api/treatments';
@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { usePermissions } from '@/hooks/usePermissions';
 import type { TreatmentPlan, TreatmentPlanItem } from '@/types/treatment';
 import type { Patient } from '@/types/patient';
 
@@ -51,8 +52,8 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   Cancelled: { label: 'İptal',      className: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' },
 };
 
-function fmt(n: number) {
-  return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 2 }).format(n);
+function fmt(n: number, currency = 'TRY') {
+  return new Intl.NumberFormat('tr-TR', { style: 'currency', currency, maximumFractionDigits: 2 }).format(n);
 }
 
 // ── Hasta arama kutusu ────────────────────────────────────────────────────────
@@ -187,6 +188,64 @@ function PatientPicker({ selected, onSelect, onClear }: PatientPickerProps) {
   );
 }
 
+// ── Kurum katkısı inline input ────────────────────────────────────────────────
+
+interface ContribInputProps {
+  initialValue: number | null;
+  refValue: number;
+  isPending: boolean;
+  onSave: (amount: number | null) => void;
+}
+
+function ContribInput({ initialValue, refValue, onSave, isPending }: ContribInputProps) {
+  const [raw, setRaw]       = useState(initialValue != null ? String(initialValue) : '');
+  const [editing, setEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const commit = () => {
+    const n = raw === '' ? null : Number(raw);
+    if (n !== null && (isNaN(n) || n < 0)) { setRaw(initialValue != null ? String(initialValue) : ''); setEditing(false); return; }
+    onSave(n);
+    setEditing(false);
+  };
+  const revert = () => { setRaw(initialValue != null ? String(initialValue) : ''); setEditing(false); };
+
+  const isOverRef = raw !== '' && Number(raw) > refValue;
+
+  if (!editing) {
+    return (
+      <button
+        className="min-w-[60px] text-right text-xs tabular-nums px-2 py-1 rounded hover:bg-muted/60 transition-colors"
+        onClick={() => { setEditing(true); setTimeout(() => inputRef.current?.select(), 0); }}
+        disabled={isPending}
+      >
+        {initialValue != null && initialValue > 0
+          ? <span className="font-medium text-foreground">{initialValue.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</span>
+          : <span className="text-muted-foreground">—</span>}
+      </button>
+    );
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      autoFocus
+      type="number"
+      min={0}
+      step="0.01"
+      value={raw}
+      onChange={(e) => setRaw(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } if (e.key === 'Escape') revert(); }}
+      className={cn(
+        'w-24 text-right text-xs tabular-nums px-2 py-1 rounded border bg-background outline-none',
+        isOverRef ? 'border-amber-400 text-amber-600' : 'border-border focus:border-primary',
+      )}
+      placeholder="0.00"
+    />
+  );
+}
+
 // ── Fiyat tooltip ─────────────────────────────────────────────────────────────
 
 function PriceTooltip({ item }: { item: TreatmentPlanItem }) {
@@ -194,16 +253,20 @@ function PriceTooltip({ item }: { item: TreatmentPlanItem }) {
   const hasDiscount = item.discountRate > 0;
   const hasKdv = item.kdvRate > 0;
 
+  const hasContribution = item.institutionContributionAmount != null && item.institutionContributionAmount > 0;
+
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Fiyat hesaplama detayı"
-        >
-          <Info className="size-3.5" />
-        </button>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            className="inline-flex shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Fiyat hesaplama detayı"
+          />
+        }
+      >
+        <Info className="size-3.5" />
       </TooltipTrigger>
       <TooltipContent side="top" align="end" className="w-56 p-0 overflow-hidden">
         <div className="bg-popover text-popover-foreground text-xs">
@@ -242,6 +305,18 @@ function PriceTooltip({ item }: { item: TreatmentPlanItem }) {
             {!hasDiscount && !hasKdv && (
               <p className="text-muted-foreground text-[11px]">İndirim veya KDV uygulanmadı.</p>
             )}
+            {hasContribution && (
+              <>
+                <div className="flex justify-between border-t pt-1.5 text-blue-600 dark:text-blue-400">
+                  <span>Kurum Katkısı</span>
+                  <span className="tabular-nums">−{fmt(item.institutionContributionAmount!)}</span>
+                </div>
+                <div className="flex justify-between font-semibold text-emerald-600 dark:text-emerald-400">
+                  <span>Hasta Payı</span>
+                  <span className="tabular-nums">{fmt(item.patientAmount)}</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </TooltipContent>
@@ -273,7 +348,19 @@ function ItemRow({ plan, item, onItemUpdated }: ItemRowProps) {
     onError: () => toast.error('Kalem güncellenemedi.'),
   });
 
+  const contribMutation = useMutation({
+    mutationFn: (amount: number | null) =>
+      treatmentPlansApi.setContribution(plan.publicId, item.publicId, amount),
+    onSuccess: () => { onItemUpdated(); },
+    onError: () => toast.error('Kurum katkısı kaydedilemedi.'),
+  });
+
   const canEdit = plan.statusLabel === 'Draft' || plan.statusLabel === 'Approved';
+  // Katkı girilebilir durumlar: Onaylandı veya Tamamlandı; sadece provizyon veya bilinmeyen kurum tipi
+  const canSetContrib = (item.status === 'Approved' || item.status === 'Completed') && plan.institutionPaymentModel !== 1;
+  const hasContrib = item.institutionContributionAmount != null && item.institutionContributionAmount > 0;
+  const isForeign  = item.priceCurrency !== 'TRY';
+  const contribRef = isForeign ? item.priceBaseAmount : item.totalAmount;
 
   if (editing) {
     return (
@@ -310,7 +397,8 @@ function ItemRow({ plan, item, onItemUpdated }: ItemRowProps) {
   }
 
   return (
-    <div className={cn('flex items-center justify-between rounded-md px-3 py-2 text-sm group', item.completedAt ? 'bg-muted/30' : 'bg-muted/50')}>
+    <div className={cn('flex items-center gap-2 rounded-md px-3 py-2 text-sm group', item.completedAt ? 'bg-muted/30' : 'bg-muted/50')}>
+      {/* Sol: isim + etiketler */}
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
         <span className={cn('truncate', item.completedAt && 'line-through text-muted-foreground')}>
           {item.treatmentName}
@@ -318,12 +406,40 @@ function ItemRow({ plan, item, onItemUpdated }: ItemRowProps) {
         {item.toothNumber && (
           <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0">Diş {item.toothNumber}</Badge>
         )}
-        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary tabular-nums">
-          {fmt(item.finalPrice)}
+        <span className="shrink-0 flex flex-col items-end leading-tight">
+          {item.listPrice != null && item.listPrice > item.totalAmount && (
+            <span className="line-through text-[10px] text-muted-foreground tabular-nums">
+              {fmt(item.listPrice, item.priceCurrency)}
+            </span>
+          )}
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary tabular-nums">
+            {fmt(item.totalAmount, item.priceCurrency)}
+          </span>
         </span>
         <PriceTooltip item={item} />
+        {hasContrib && (
+          <span className="shrink-0 rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300 tabular-nums">
+            Hasta: {fmt(item.patientAmount)}
+          </span>
+        )}
       </div>
-      <div className="ml-3 flex items-center gap-2 shrink-0">
+
+      {/* Kurum Payı inline — sadece provizyon/bilinmeyen ve katkı girilebilir durumda */}
+      {canSetContrib && (
+        <div className="shrink-0 flex items-center gap-1 text-xs text-muted-foreground">
+          <span className="hidden sm:inline">Kurum:</span>
+          <ContribInput
+            key={`${item.publicId}:${item.institutionContributionAmount}`}
+            initialValue={item.institutionContributionAmount}
+            refValue={contribRef}
+            isPending={contribMutation.isPending}
+            onSave={(amount) => contribMutation.mutate(amount)}
+          />
+        </div>
+      )}
+
+      {/* Sağ: toplam + düzenle */}
+      <div className="ml-1 flex items-center gap-1.5 shrink-0">
         <div className="text-right">
           <div className="font-semibold tabular-nums">{fmt(item.totalAmount)}</div>
           {item.kdvRate > 0 && <div className="text-[10px] text-muted-foreground">KDV dahil</div>}
@@ -346,6 +462,7 @@ function ItemRow({ plan, item, onItemUpdated }: ItemRowProps) {
 
 export function TreatmentPlansPage() {
   const qc = useQueryClient();
+  const { hasPermission } = usePermissions();
 
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [editingPlan, setEditingPlan]         = useState<TreatmentPlan | null>(null);
@@ -369,7 +486,7 @@ export function TreatmentPlansPage() {
     mutationFn: ({ id, name, notes }: { id: string; name: string; notes: string | null }) =>
       treatmentPlansApi.update(id, { name, notes }),
     onSuccess: () => { toast.success('Plan güncellendi.'); setEditingPlan(null); invalidate(); },
-    onError: () => toast.error('Plan güncellenemedi.'),
+    onError: (e: any) => { if (!e._403handled) toast.error('Plan güncellenemedi.'); },
   });
 
   const deletePlanMutation = useMutation({
@@ -379,7 +496,7 @@ export function TreatmentPlansPage() {
       setDeletingPlan(null);
       invalidate();
     },
-    onError: () => toast.error('Plan silinemedi.'),
+    onError: (e: any) => { if (!e._403handled) toast.error('Plan silinemedi.'); },
   });
 
   return (
@@ -429,11 +546,18 @@ export function TreatmentPlansPage() {
 
         {/* Plan listesi */}
         {plans.map((plan) => {
-          const cfg       = statusConfig[plan.statusLabel] ?? statusConfig.Draft;
-          const completed = plan.items.filter((i) => i.completedAt).length;
-          const planTotal = plan.items.reduce((s, i) => s + i.totalAmount, 0);
-          const canEdit   = plan.statusLabel === 'Draft' || plan.statusLabel === 'Approved';
-          const canDelete = plan.statusLabel !== 'Completed';
+          const cfg            = statusConfig[plan.statusLabel] ?? statusConfig.Draft;
+          const completed      = plan.items.filter((i) => i.completedAt).length;
+          const planTotal      = plan.items.reduce((s, i) => s + i.totalAmount, 0);
+          const canEdit        = (plan.statusLabel === 'Draft' || plan.statusLabel === 'Approved') && hasPermission('treatment_plan:edit');
+          const canDelete      = plan.statusLabel !== 'Completed' && hasPermission('treatment_plan:delete');
+          const hasListDisc    = plan.items.some(i => i.listPrice != null && i.listPrice > i.totalAmount);
+          const catalogTotal   = hasListDisc
+            ? plan.items.reduce((s, i) => s + (i.listPrice != null && i.listPrice > i.totalAmount ? i.listPrice : i.totalAmount), 0)
+            : 0;
+          const savedAmount    = hasListDisc
+            ? plan.items.reduce((s, i) => s + ((i.listPrice ?? i.totalAmount) - i.totalAmount), 0)
+            : 0;
 
           return (
             <Card key={plan.publicId}>
@@ -464,9 +588,23 @@ export function TreatmentPlansPage() {
                     <PdfDownloadButton planPublicId={plan.publicId} />
                   </div>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {format(new Date(plan.createdAt), 'dd.MM.yyyy')}
-                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm text-muted-foreground">
+                    {format(new Date(plan.createdAt), 'dd.MM.yyyy')}
+                  </p>
+                  {plan.institutionName && (
+                    <span className={cn(
+                      'inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-medium',
+                      plan.institutionPaymentModel === 2
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                        : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+                    )}>
+                      <Building2 className="size-3" />
+                      {plan.institutionName}
+                      {plan.institutionPaymentModel === 2 ? ' · Provizyon' : ' · İndirim'}
+                    </span>
+                  )}
+                </div>
               </CardHeader>
 
               <CardContent className="space-y-4">
@@ -488,6 +626,22 @@ export function TreatmentPlansPage() {
                         <ItemRow key={item.publicId} plan={plan} item={item} onItemUpdated={invalidate} />
                       ))}
                     </div>
+                    {hasListDisc && (
+                      <div className="flex items-center justify-end gap-5 rounded-md border border-dashed border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/30 px-4 py-2.5 text-sm">
+                        <div className="text-right text-muted-foreground">
+                          <div className="text-[10px] uppercase tracking-wide">Liste Fiyatı</div>
+                          <div className="line-through tabular-nums">{fmt(catalogTotal)}</div>
+                        </div>
+                        <div className="text-right text-emerald-600 dark:text-emerald-400">
+                          <div className="text-[10px] uppercase tracking-wide">Tasarruf</div>
+                          <div className="font-medium tabular-nums">−{fmt(savedAmount)}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Planın Tutarı</div>
+                          <div className="font-bold tabular-nums">{fmt(planTotal)}</div>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
                 {plan.notes && (

@@ -42,6 +42,8 @@ public class DeletePlannedTreatmentCommandHandler : IRequestHandler<DeletePlanne
             throw new InvalidOperationException(
                 "Yalnızca planlanmış (status=1) tedavi kalemleri silinebilir.");
 
+        await TreatmentItemFinancialGuard.AssertCanBeDeletedAsync(item.Id, _db, cancellationToken);
+
         item.SoftDelete();
         await _db.SaveChangesAsync(cancellationToken);
     }

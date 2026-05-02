@@ -14,7 +14,8 @@ public record CreateTreatmentPlanCommand(
     long BranchId,
     long DoctorId,
     string Name,
-    string? Notes
+    string? Notes,
+    long? InstitutionId = null
 ) : IRequest<TreatmentPlanResponse>;
 
 public class CreateTreatmentPlanCommandHandler
@@ -39,11 +40,12 @@ public class CreateTreatmentPlanCommandHandler
         CancellationToken cancellationToken)
     {
         var plan = PlanEntity.Create(
-            patientId: request.PatientId,
-            branchId:  request.BranchId,
-            doctorId:  request.DoctorId,
-            name:      request.Name,
-            notes:     request.Notes);
+            patientId:     request.PatientId,
+            branchId:      request.BranchId,
+            doctorId:      request.DoctorId,
+            name:          request.Name,
+            notes:         request.Notes,
+            institutionId: request.InstitutionId);
 
         if (_user.IsAuthenticated)
             plan.SetCreatedBy(_user.UserId, _user.TenantId);

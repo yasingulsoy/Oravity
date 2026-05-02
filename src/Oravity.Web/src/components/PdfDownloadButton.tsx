@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { FileDown, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { treatmentPlansApi } from '@/api/treatments';
-import { cn } from '@/lib/utils';
 
 const CURRENCIES = [
   { code: null,  label: 'Orijinal para birimi' },
@@ -21,16 +21,28 @@ interface Props {
 export function PdfDownloadButton({ planPublicId, className }: Props) {
   const [open, setOpen]       = useState(false);
   const [loading, setLoading] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos]         = useState<{ top: number; right: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
 
-  // Dışarı tıklayınca kapat
+  const toggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
+    setOpen(v => !v);
+  };
+
+  /* Close on outside click */
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    const close = (e: PointerEvent) => {
+      if (btnRef.current && btnRef.current.contains(e.target as Node)) return;
+      setOpen(false);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
   }, [open]);
 
   const download = async (currencyCode: string | null) => {
@@ -52,27 +64,35 @@ export function PdfDownloadButton({ planPublicId, className }: Props) {
   };
 
   return (
-    <div ref={ref} className={cn('relative', className)}>
+    <>
       <button
+        ref={btnRef}
+        type="button"
         disabled={loading}
         title="PDF İndir"
-        className="flex items-center gap-0.5 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-        onClick={() => setOpen(v => !v)}
+        onClick={toggle}
+        className={`flex items-center gap-0.5 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 ${className ?? ''}`}
       >
         <FileDown className="size-4" />
         <ChevronDown className="size-3" />
       </button>
 
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 w-52 rounded-lg border bg-popover shadow-md py-1 text-sm">
-          <p className="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+      {open && pos && createPortal(
+        <div
+          style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999 }}
+          className="w-52 bg-popover border rounded-md shadow-md py-1"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <p className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
             Para birimi seç
           </p>
+          <div className="border-t mb-1" />
           {CURRENCIES.map(({ code, label }) => (
             <button
               key={code ?? 'orig'}
+              type="button"
               onClick={() => download(code)}
-              className="w-full text-left px-3 py-1.5 hover:bg-muted/50 transition-colors flex items-center gap-2"
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-accent transition-colors"
             >
               {code
                 ? <span className="font-mono text-xs w-8 text-primary">{code}</span>
@@ -80,8 +100,9 @@ export function PdfDownloadButton({ planPublicId, className }: Props) {
               <span className="text-xs text-muted-foreground">{label}</span>
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }

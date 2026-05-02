@@ -17,7 +17,10 @@ public record AddTreatmentPlanItemCommand(
     string? ToothSurfaces,
     string? BodyRegionCode,
     long? DoctorId,
-    string? Notes
+    string? Notes,
+    string PriceCurrency = "TRY",
+    decimal PriceExchangeRate = 1m,
+    decimal? ListPrice = null
 ) : IRequest<TreatmentPlanItemResponse>;
 
 public class AddTreatmentPlanItemCommandHandler
@@ -37,6 +40,7 @@ public class AddTreatmentPlanItemCommandHandler
         CancellationToken cancellationToken)
     {
         var plan = await _db.TreatmentPlans
+            .Include(p => p.Patient)
             .FirstOrDefaultAsync(p => p.PublicId == request.PlanPublicId, cancellationToken)
             ?? throw new NotFoundException($"Tedavi planı bulunamadı: {request.PlanPublicId}");
 
@@ -53,17 +57,25 @@ public class AddTreatmentPlanItemCommandHandler
             .FirstOrDefaultAsync(t => t.Id == request.TreatmentId, cancellationToken)
             ?? throw new NotFoundException("Tedavi bulunamadı.");
 
+        // Kurum: hastanın o anki AgreementInstitutionId — plan oluşturulurken değil,
+        // kalem eklenirken snapshot alınır; kurum değişse eski plan doğru kalır.
+        var institutionId = plan.Patient?.AgreementInstitutionId;
+
         var item = TreatmentPlanItem.Create(
-            planId:         plan.Id,
-            treatmentId:    request.TreatmentId,
-            unitPrice:      request.UnitPrice,
-            kdvRate:        treatment.KdvRate,
-            discountRate:   request.DiscountRate,
-            toothNumber:    request.ToothNumber,
-            toothSurfaces:  request.ToothSurfaces,
-            bodyRegionCode: request.BodyRegionCode,
-            doctorId:       request.DoctorId,
-            notes:          request.Notes);
+            planId:            plan.Id,
+            treatmentId:       request.TreatmentId,
+            unitPrice:         request.UnitPrice,
+            kdvRate:           treatment.KdvRate,
+            discountRate:      request.DiscountRate,
+            toothNumber:       request.ToothNumber,
+            toothSurfaces:     request.ToothSurfaces,
+            bodyRegionCode:    request.BodyRegionCode,
+            doctorId:          request.DoctorId ?? plan.DoctorId,
+            notes:             request.Notes,
+            priceCurrency:     request.PriceCurrency,
+            priceExchangeRate: request.PriceExchangeRate,
+            listPrice:         request.ListPrice,
+            institutionId:     institutionId);
 
         _db.TreatmentPlanItems.Add(item);
         await _db.SaveChangesAsync(cancellationToken);
@@ -72,6 +84,8 @@ public class AddTreatmentPlanItemCommandHandler
         var loaded = await _db.TreatmentPlanItems
             .AsNoTracking()
             .Include(i => i.Treatment)
+            .Include(i => i.Doctor)
+            .Include(i => i.Plan).ThenInclude(p => p.Doctor)
             .FirstAsync(i => i.Id == item.Id, cancellationToken);
 
         return TreatmentPlanMappings.ToResponse(loaded);

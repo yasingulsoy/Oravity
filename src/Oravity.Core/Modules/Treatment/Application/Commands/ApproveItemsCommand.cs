@@ -48,7 +48,7 @@ public class ApproveItemsCommandHandler
             throw new NotFoundException("Belirtilen kalemler bulunamadı.");
 
         foreach (var item in targets)
-            item.Approve();
+            item.Approve(_tenant.UserId);
 
         await _db.SaveChangesAsync(cancellationToken);
 
