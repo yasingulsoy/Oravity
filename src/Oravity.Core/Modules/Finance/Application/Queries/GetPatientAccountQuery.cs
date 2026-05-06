@@ -39,6 +39,7 @@ public record PatientAccountItemResponse(
     Guid PlanPublicId,                        // ContribInput için plan endpoint'i
     int? InstitutionPaymentModel,             // null=kurum yok, 1=indirim, 2=provizyon
     decimal? InstitutionContributionAmount,   // mevcut kurum payı (null=girilmemiş)
+    string? InstitutionName,                  // bağlı kurum adı (null=kurumsu)
     IReadOnlyList<ItemAllocationDetail> AllocationDetails  // kalem bazında ödeme geçmişi
 );
 
@@ -130,6 +131,7 @@ public class GetPatientAccountQueryHandler
                              PlanPublicId                    = i.Plan.PublicId,
                              InstitutionPaymentModel         = i.Plan.InstitutionId != null ? (int?)i.Plan.Institution!.PaymentModel : null,
                              i.InstitutionContributionAmount,
+                             InstitutionName                 = i.Plan.Institution!.Name,
                          }).ToListAsync(ct);
 
         var doctorIds = raw.Select(x => x.DoctorId).Distinct().ToList();
@@ -156,6 +158,7 @@ public class GetPatientAccountQueryHandler
             x.PlanPublicId,
             x.InstitutionPaymentModel,
             x.InstitutionContributionAmount,
+            x.InstitutionName,
         }).ToList();
 
         var itemIds = items.Select(x => x.Id).ToList();
@@ -242,6 +245,7 @@ public class GetPatientAccountQueryHandler
                 x.PlanPublicId,
                 x.InstitutionPaymentModel,
                 x.InstitutionContributionAmount,
+                x.InstitutionName,
                 details);
         }).ToList();
 

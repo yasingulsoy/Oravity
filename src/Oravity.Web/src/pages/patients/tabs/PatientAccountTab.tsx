@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -60,12 +61,13 @@ function fmt(n: number) {
 }
 
 function ContribInput({
-  initialValue, refValue, onSave, isPending,
+  initialValue, refValue, onSave, isPending, disabled,
 }: {
   initialValue: number | null;
   refValue: number;
   onSave: (amount: number | null) => void;
   isPending?: boolean;
+  disabled?: boolean;
 }) {
   const [val, setVal] = useState(initialValue != null ? String(initialValue) : '');
 
@@ -78,6 +80,7 @@ function ContribInput({
   const isOverRef = parsed !== null && !isNaN(parsed) && parsed > refValue;
 
   const commit = () => {
+    if (disabled) return;
     const trimmed = val.trim();
     if (trimmed === '') { onSave(null); return; }
     const n = parseFloat(trimmed.replace(',', '.'));
@@ -85,24 +88,27 @@ function ContribInput({
     onSave(n);
   };
 
-  const borderClass = isInvalid
-    ? 'border-destructive text-destructive'
-    : isOverRef
-      ? 'border-amber-400 text-amber-700'
-      : parsed !== null && parsed > 0
-        ? 'border-blue-300 text-blue-700'
-        : 'text-muted-foreground';
+  const borderClass = disabled
+    ? 'border-dashed border-muted-foreground/30 text-muted-foreground/50 cursor-not-allowed bg-muted/30'
+    : isInvalid
+      ? 'border-destructive text-destructive'
+      : isOverRef
+        ? 'border-amber-400 text-amber-700'
+        : parsed !== null && parsed > 0
+          ? 'border-blue-300 text-blue-700'
+          : 'text-muted-foreground';
 
   return (
     <input
       type="number"
       min={0}
       step="0.01"
+      disabled={disabled}
       className={`w-[72px] text-right text-xs border rounded px-1.5 py-0.5 bg-background tabular-nums
         focus:outline-none focus:ring-1 focus:ring-blue-400
         ${isPending ? 'opacity-50' : ''} ${borderClass}`}
       value={val}
-      onChange={e => setVal(e.target.value)}
+      onChange={e => !disabled && setVal(e.target.value)}
       onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } }}
       onClick={e => e.stopPropagation()}
@@ -318,6 +324,7 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                 {hasProvisionRows && <TableHead className="text-right">Hasta Payı</TableHead>}
                 <TableHead className="text-right">Ödenen</TableHead>
                 <TableHead className="text-right">Kalan</TableHead>
+                <TableHead className="w-6" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -403,10 +410,17 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                       {/* Tutar */}
                       <TableCell className="text-right font-medium">
                         {i.priceCurrency !== 'TRY' ? (
-                          <span>
-                            {i.totalAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {i.priceCurrency}
-                            <span className="text-xs text-muted-foreground ml-1">≈ {fmt(i.totalAmountTry)}</span>
-                          </span>
+                          <div className="space-y-0.5">
+                            <div>{fmt(i.totalAmountTry)}</div>
+                            <div className="text-xs text-muted-foreground tabular-nums">
+                              {i.totalAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {i.priceCurrency}
+                            </div>
+                            {i.totalAmountTry > 0 && i.totalAmount > 0 && (
+                              <div className="text-[10px] text-muted-foreground tabular-nums">
+                                kur {(i.totalAmountTry / i.totalAmount).toLocaleString('tr-TR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ₺/{i.priceCurrency}
+                              </div>
+                            )}
+                          </div>
                         ) : fmt(i.totalAmount)}
                       </TableCell>
                       {/* Kurum payı — sadece provizyon planı olan hastalarda sütun görünür */}
@@ -426,19 +440,35 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                                 ? <div className="text-[10px] text-purple-600">Faturalı</div>
                                 : null;
 
+                            const hasAllocations = i.allocatedAmount > 0;
+                            const inputEl = (
+                              <ContribInput
+                                key={`${i.itemPublicId}:${i.institutionContributionAmount}`}
+                                initialValue={i.institutionContributionAmount}
+                                refValue={i.totalAmountTry}
+                                isPending={contribMutation.isPending}
+                                disabled={hasAllocations}
+                                onSave={(amount) => contribMutation.mutate({
+                                  planId: i.planPublicId,
+                                  itemId: i.itemPublicId,
+                                  amount,
+                                })}
+                              />
+                            );
                             return (
                               <div className="space-y-0.5 flex flex-col items-end">
-                                <ContribInput
-                                  key={`${i.itemPublicId}:${i.institutionContributionAmount}`}
-                                  initialValue={i.institutionContributionAmount}
-                                  refValue={i.totalAmountTry}
-                                  isPending={contribMutation.isPending}
-                                  onSave={(amount) => contribMutation.mutate({
-                                    planId: i.planPublicId,
-                                    itemId: i.itemPublicId,
-                                    amount,
-                                  })}
-                                />
+                                {hasAllocations ? (
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span>{inputEl}</span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="left" className="text-xs max-w-[180px] text-center">
+                                        Ödeme tahsisi yapılmış, değiştirilemez
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                ) : inputEl}
                                 {statusBadge}
                               </div>
                             );
@@ -463,6 +493,23 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                           <span className="text-green-600 text-sm">✓</span>
                         )}
                       </TableCell>
+                      {/* Kurum ikonu */}
+                      <TableCell className="w-6 px-1">
+                        {i.institutionPaymentModel !== null && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex cursor-default">
+                                  <Building2 className="size-3.5 text-purple-500" />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="left" className="text-xs">
+                                {i.institutionName ?? '—'}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </TableCell>
                     </TableRow>,
 
                     /* ── Allocation detay sub-row ── */
@@ -470,7 +517,7 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                       const hasFx = i.allocationDetails.some(a => a.paymentCurrency !== 'TRY');
                       return (
                         <TableRow key={`alloc-${i.treatmentPlanItemId}`} className="bg-muted/20 hover:bg-muted/20">
-                          <TableCell colSpan={hasProvisionRows ? 10 : 8} className="py-0 pl-8 pr-4">
+                          <TableCell colSpan={hasProvisionRows ? 11 : 9} className="py-0 pl-8 pr-4">
                             <table className="w-full text-xs my-2">
                               <thead>
                                 <tr className="text-muted-foreground border-b border-border/50">

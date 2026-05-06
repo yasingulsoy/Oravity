@@ -30,6 +30,7 @@ export interface PatientAccountItem {
   planPublicId: string;
   institutionPaymentModel: 1 | 2 | null;
   institutionContributionAmount: number | null;
+  institutionName: string | null;
   allocationDetails: AllocationDetail[];
 }
 
