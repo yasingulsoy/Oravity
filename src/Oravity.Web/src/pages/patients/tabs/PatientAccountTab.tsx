@@ -58,7 +58,7 @@ function fmt(n: number) {
   return `₺${n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export function PatientAccountTab({ patientId }: { patientId: number }) {
+export function PatientAccountTab({ patientId, hasPassportNo = false }: { patientId: number; hasPassportNo?: boolean }) {
   const qc = useQueryClient();
   const [collectOpen,    setCollectOpen]    = useState(false);
   const [allocateTarget, setAllocateTarget] = useState<PatientAccountPayment | null>(null);
@@ -760,6 +760,7 @@ export function PatientAccountTab({ patientId }: { patientId: number }) {
         <CreatePatientInvoiceDialog
           patientId={patientId}
           completedItems={completedItems}
+          hasPassportNo={hasPassportNo}
           onClose={() => setPatientInvoiceOpen(false)}
           onSuccess={() => { setPatientInvoiceOpen(false); onRefresh(); }}
         />
@@ -1931,10 +1932,11 @@ function PatientInvoiceList({ patientId }: { patientId: number }) {
 // ── Hastaya Fatura Kes Dialog ─────────────────────────────────────────────────
 
 function CreatePatientInvoiceDialog({
-  patientId, completedItems, onClose, onSuccess,
+  patientId, completedItems, hasPassportNo = false, onClose, onSuccess,
 }: {
   patientId: number;
   completedItems: PatientAccountItem[];
+  hasPassportNo?: boolean;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -1951,7 +1953,8 @@ function CreatePatientInvoiceDialog({
     const d = new Date(); d.setDate(d.getDate() + 30);
     return d.toISOString().slice(0, 10);
   });
-  const [kdvRate, setKdvRate] = useState('10');
+  // Pasaport numarası kayıtlı yabancı uyruklu hastalara sıfır KDV uygulanır
+  const [kdvRate, setKdvRate] = useState(hasPassportNo ? '0' : '10');
   const [notes,   setNotes]   = useState('');
 
   const billableItems = completedItems.filter(i => i.patientAmount > 0.005);
@@ -2148,6 +2151,11 @@ function CreatePatientInvoiceDialog({
           {/* KDV oranı */}
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">KDV Oranı (%)</Label>
+            {hasPassportNo && (
+              <p className="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-2 py-1">
+                Yabancı uyruklu hasta (pasaport kayıtlı) — KDV %0 uygulanır.
+              </p>
+            )}
             <div className="flex gap-2">
               {['0', '10', '20'].map(v => (
                 <button

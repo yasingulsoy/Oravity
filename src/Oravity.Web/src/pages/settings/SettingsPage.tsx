@@ -758,9 +758,7 @@ function CreateUserDialog({ open, onClose, branches, roles, onSuccess }: {
               <Label>Rol</Label>
               <Select value={form.roleCode ?? ''} onValueChange={v => set({ roleCode: v || undefined })}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Rol seçin">
-                    {(val: string | null) => val ? (roles.find(r => r.code === val)?.name ?? val) : undefined}
-                  </SelectValue>
+                  <SelectValue placeholder="Rol seçin" />
                 </SelectTrigger>
                 <SelectContent>
                   {roles.map(r => <SelectItem key={r.code} value={r.code}>{r.name}</SelectItem>)}
@@ -771,9 +769,7 @@ function CreateUserDialog({ open, onClose, branches, roles, onSuccess }: {
               <Label>Şube</Label>
               <Select value={form.branchPublicId ?? ''} onValueChange={v => set({ branchPublicId: v || undefined })}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Tüm şubeler">
-                    {(val: string | null) => val ? (branches.find(b => b.publicId === val)?.name ?? val) : undefined}
-                  </SelectValue>
+                  <SelectValue placeholder="Tüm şubeler" />
                 </SelectTrigger>
                 <SelectContent>
                   {branches.filter(b => b.isActive).map(b => <SelectItem key={b.publicId} value={b.publicId}>{b.name}</SelectItem>)}
@@ -833,8 +829,17 @@ function EditUserDialog({ publicId, onClose, branches, roles, onSuccess }: {
 
   const assignMut = useMutation({
     mutationFn: () => settingsApi.assignRole(publicId, { roleCode, branchPublicId: branchId || undefined }),
-    onSuccess: () => { toast.success('Rol atandı'); qc.invalidateQueries({ queryKey: ['settings', 'users', publicId] }); setRoleCode(''); setBranchId(''); },
-    onError: () => toast.error('Rol atanamadı'),
+    onSuccess: () => {
+      toast.success('Rol atandı');
+      qc.invalidateQueries({ queryKey: ['settings', 'users', publicId] });
+      qc.invalidateQueries({ queryKey: ['settings', 'users'] });
+      setRoleCode('');
+      setBranchId('');
+    },
+    onError: (e: unknown) => {
+      const status = (e as { response?: { status?: number } })?.response?.status;
+      toast.error(status === 409 ? 'Bu rol zaten atanmış.' : 'Rol atanamadı');
+    },
   });
 
   const revokeMut = useMutation({
@@ -906,9 +911,7 @@ function EditUserDialog({ publicId, onClose, branches, roles, onSuccess }: {
                   <Label className="text-xs">Rol</Label>
                   <Select value={roleCode} onValueChange={setRoleCode}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Rol seçin">
-                        {(val: string | null) => val ? (roles.find(r => r.code === val)?.name ?? val) : undefined}
-                      </SelectValue>
+                      <SelectValue placeholder="Rol seçin" />
                     </SelectTrigger>
                     <SelectContent>
                       {roles.map(r => <SelectItem key={r.code} value={r.code}>{r.name}</SelectItem>)}
@@ -919,9 +922,7 @@ function EditUserDialog({ publicId, onClose, branches, roles, onSuccess }: {
                   <Label className="text-xs">Şube</Label>
                   <Select value={branchId} onValueChange={setBranchId}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Tüm şubeler">
-                        {(val: string | null) => val ? (branches.find(b => b.publicId === val)?.name ?? val) : undefined}
-                      </SelectValue>
+                      <SelectValue placeholder="Tüm şubeler" />
                     </SelectTrigger>
                     <SelectContent>
                       {branches.filter(b => b.isActive).map(b => <SelectItem key={b.publicId} value={b.publicId}>{b.name}</SelectItem>)}
@@ -952,6 +953,7 @@ function EditUserDialog({ publicId, onClose, branches, roles, onSuccess }: {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function RolesTab() {
+  const qc = useQueryClient();
   const { data: roles, isLoading } = useQuery({
     queryKey: ['settings', 'roles'],
     queryFn: () => settingsApi.listRoles().then(r => r.data),
@@ -962,6 +964,7 @@ function RolesTab() {
   });
 
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [editRole, setEditRole] = useState<RoleItem | null>(null);
 
   if (isLoading) return <LoadingSkeleton rows={6} />;
 
@@ -982,23 +985,31 @@ function RolesTab() {
           const isOpen = expanded === role.code;
           return (
             <Card key={role.code}>
-              <button
-                className="w-full text-left px-4 py-3 flex items-center justify-between hover:bg-muted/50 rounded-xl transition-colors"
-                onClick={() => setExpanded(isOpen ? null : role.code)}
-              >
-                <div className="flex items-center gap-3">
-                  <KeyRound className="h-4 w-4 text-primary" />
+              <div className="px-4 py-3 flex items-center justify-between">
+                <button
+                  className="flex-1 text-left flex items-center gap-3 hover:opacity-80 transition-opacity"
+                  onClick={() => setExpanded(isOpen ? null : role.code)}
+                >
+                  <KeyRound className="h-4 w-4 text-primary shrink-0" />
                   <div>
                     <p className="font-medium text-sm">{role.name} <span className="text-muted-foreground font-normal">({role.code})</span></p>
                     {role.description && <p className="text-xs text-muted-foreground">{role.description}</p>}
                   </div>
-                </div>
-                <div className="flex items-center gap-3">
+                </button>
+                <div className="flex items-center gap-2 shrink-0">
                   <Badge variant="secondary" className="text-xs">{role.permissions.length} izin</Badge>
                   <Badge variant="outline" className="text-xs">{role.activeUserCount} kullanıcı</Badge>
-                  {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                  <Button
+                    size="icon" variant="ghost" className="h-7 w-7"
+                    onClick={() => setEditRole(role)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <button onClick={() => setExpanded(isOpen ? null : role.code)}>
+                    {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                  </button>
                 </div>
-              </button>
+              </div>
               {isOpen && (
                 <CardContent className="border-t pt-4">
                   <div className="space-y-3">
@@ -1033,7 +1044,121 @@ function RolesTab() {
           );
         })}
       </div>
+
+      {editRole && permissions && (
+        <EditRoleDialog
+          role={editRole}
+          allPermissions={permissions}
+          onClose={() => setEditRole(null)}
+          onSuccess={(updated) => {
+            qc.setQueryData<RoleItem[]>(['settings', 'roles'], old =>
+              old?.map(r => r.publicId === updated.publicId ? updated : r) ?? old
+            );
+            setEditRole(null);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function EditRoleDialog({ role, allPermissions, onClose, onSuccess }: {
+  role: RoleItem;
+  allPermissions: PermissionItem[];
+  onClose: () => void;
+  onSuccess: (updated: RoleItem) => void;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set(role.permissions));
+
+  const permByResource = allPermissions.reduce<Record<string, PermissionItem[]>>((acc, p) => {
+    (acc[p.resource] ??= []).push(p);
+    return acc;
+  }, {});
+
+  const mutation = useMutation({
+    mutationFn: () => settingsApi.updateRolePermissions(role.publicId, [...selected]),
+    onSuccess: (res) => {
+      toast.success('Rol izinleri güncellendi');
+      onSuccess(res.data);
+    },
+    onError: () => toast.error('Güncelleme başarısız'),
+  });
+
+  function toggle(code: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(code) ? next.delete(code) : next.add(code);
+      return next;
+    });
+  }
+
+  function toggleResource(perms: PermissionItem[], checked: boolean) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      perms.forEach(p => checked ? next.add(p.code) : next.delete(p.code));
+      return next;
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Rol Düzenle — {role.name}</DialogTitle>
+          <DialogDescription className="text-xs">{role.code} · {selected.size} izin seçili</DialogDescription>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto space-y-4 py-2 pr-1">
+          {Object.entries(permByResource).map(([resource, perms]) => {
+            const allChecked = perms.every(p => selected.has(p.code));
+            const someChecked = perms.some(p => selected.has(p.code));
+            return (
+              <div key={resource} className="rounded-lg border p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id={`res-${resource}`}
+                    checked={allChecked}
+                    data-state={someChecked && !allChecked ? 'indeterminate' : undefined}
+                    onCheckedChange={v => toggleResource(perms, !!v)}
+                  />
+                  <label
+                    htmlFor={`res-${resource}`}
+                    className="text-xs font-semibold uppercase tracking-wider cursor-pointer select-none"
+                  >
+                    {resource}
+                  </label>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pl-6">
+                  {perms.map(p => (
+                    <label
+                      key={p.code}
+                      className="flex items-center gap-2 cursor-pointer select-none"
+                    >
+                      <Checkbox
+                        checked={selected.has(p.code)}
+                        onCheckedChange={() => toggle(p.code)}
+                      />
+                      <span className={cn('text-xs', p.isDangerous && 'text-destructive font-medium')}>
+                        {p.isDangerous && <AlertTriangle className="inline h-3 w-3 mr-0.5 -mt-0.5" />}
+                        {p.action}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <DialogFooter className="pt-2 border-t">
+          <Button variant="ghost" onClick={onClose}>İptal</Button>
+          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+            Kaydet
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

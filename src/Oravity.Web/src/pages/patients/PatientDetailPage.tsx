@@ -731,7 +731,7 @@ export function PatientDetailPage() {
         </TabsContent>
 
         <TabsContent value="account" className="mt-4">
-          <PatientAccountTab patientId={patient.id} />
+          <PatientAccountTab patientId={patient.id} hasPassportNo={patient.hasPassportNo} />
         </TabsContent>
       </Tabs>
     </div>

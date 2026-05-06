@@ -287,6 +287,8 @@ export const settingsApi = {
     apiClient.get<RoleItem[]>('/settings/roles'),
   listPermissions: () =>
     apiClient.get<PermissionItem[]>('/settings/permissions'),
+  updateRolePermissions: (publicId: string, permissionCodes: string[]) =>
+    apiClient.put<RoleItem>(`/settings/roles/${publicId}/permissions`, { permissionCodes }),
 
   // Güvenlik Politikası
   getSecurityPolicy: (branchPublicId: string) =>

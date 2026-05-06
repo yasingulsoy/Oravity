@@ -392,15 +392,31 @@ public class SettingsController : ControllerBase
         if (role is null) return BadRequest("Rol bulunamadı.");
 
         long? branchId = null;
+        string? branchName = null;
         if (req.BranchPublicId.HasValue)
-            branchId = await _db.Branches.Where(b => b.PublicId == req.BranchPublicId.Value)
-                .Select(b => (long?)b.Id).FirstOrDefaultAsync(ct);
+        {
+            var branch = await _db.Branches
+                .Where(b => b.PublicId == req.BranchPublicId.Value)
+                .Select(b => new { b.Id, b.Name })
+                .FirstOrDefaultAsync(ct);
+            branchId = branch?.Id;
+            branchName = branch?.Name;
+        }
+
+        var duplicate = await _db.UserRoleAssignments.AnyAsync(
+            a => a.UserId == user.Id && a.RoleTemplateId == role.Id
+              && a.BranchId == branchId && a.IsActive, ct);
+        if (duplicate)
+            return Conflict("Bu rol zaten atanmış.");
 
         var assignment = UserRoleAssignment.Create(user.Id, role.Id, companyId, branchId);
         _db.UserRoleAssignments.Add(assignment);
         await _db.SaveChangesAsync(ct);
 
-        return Ok(new { assignment.PublicId, RoleName = role.Name, role.Code });
+        return Ok(new UserRoleAssignmentResponse(
+            assignment.PublicId, role.Code, role.Name,
+            branchId, branchName, companyId,
+            assignment.IsActive, assignment.AssignedAt, assignment.ExpiresAt));
     }
 
     [HttpDelete("users/{userPublicId:guid}/roles/{assignmentPublicId:guid}")]
@@ -442,6 +458,36 @@ public class SettingsController : ControllerBase
     // ═══════════════════════════════════════════════════════════════════════════
     // ROLLER & İZİNLER
     // ═══════════════════════════════════════════════════════════════════════════
+
+    [HttpPut("roles/{publicId:guid}/permissions")]
+    [RequirePermission("settings:edit_general")]
+    public async Task<IActionResult> UpdateRolePermissions(
+        Guid publicId, [FromBody] UpdateRolePermissionsRequest req, CancellationToken ct)
+    {
+        var role = await _db.RoleTemplates
+            .Include(r => r.RoleTemplatePermissions)
+            .FirstOrDefaultAsync(r => r.PublicId == publicId, ct);
+        if (role is null) return NotFound();
+
+        var allPerms = await _db.Permissions.AsNoTracking()
+            .Where(p => req.PermissionCodes.Contains(p.Code))
+            .ToListAsync(ct);
+
+        // Mevcut junction satırlarını sil
+        _db.RoleTemplatePermissions.RemoveRange(role.RoleTemplatePermissions);
+
+        // Yeni junction satırlarını ekle
+        foreach (var perm in allPerms)
+            _db.RoleTemplatePermissions.Add(RoleTemplatePermission.Create(role.Id, perm.Id));
+
+        await _db.SaveChangesAsync(ct);
+
+        var updatedPerms = allPerms.Select(p => p.Code).ToList();
+        return Ok(new RoleResponse(
+            role.PublicId, role.Code, role.Name, role.Description,
+            updatedPerms,
+            await _db.UserRoleAssignments.CountAsync(a => a.RoleTemplateId == role.Id && a.IsActive, ct)));
+    }
 
     [HttpGet("roles")]
     [RequirePermission("settings:view")]
@@ -860,6 +906,7 @@ public class UpdateUserRequest
 }
 
 public record AssignRoleRequest(string RoleCode, Guid? BranchPublicId);
+public record UpdateRolePermissionsRequest(List<string> PermissionCodes);
 
 public record RoleResponse(
     Guid PublicId, string Code, string Name, string? Description,
