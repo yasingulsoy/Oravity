@@ -108,7 +108,11 @@ public class GetPatientAccountQueryHandler
         else if (_tenant.IsCompanyAdmin && _tenant.CompanyId.HasValue)
             itemsQ = itemsQ.Where(i => i.Plan.Branch.CompanyId == _tenant.CompanyId.Value);
 
-        var raw = await (from i in itemsQ
+        var itemsOrdered = itemsQ
+            .OrderByDescending(i => i.CompletedAt)
+            .ThenBy(i => i.Id);
+
+        var raw = await (from i in itemsOrdered
                          join t in _db.Treatments.AsNoTracking() on i.TreatmentId equals t.Id
                          select new
                          {
