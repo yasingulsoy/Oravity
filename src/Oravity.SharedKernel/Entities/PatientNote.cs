@@ -35,6 +35,9 @@ public class PatientNote : BaseEntity
     /// <summary>Gizli not — sadece izinli kullanıcı görebilir.</summary>
     public bool IsHidden { get; private set; }
 
+    /// <summary>Hasta dosyası açılırken uyarı popup'ında gösterilir.</summary>
+    public bool IsAlert { get; private set; }
+
     /// <summary>İlgili randevu (opsiyonel).</summary>
     public long? AppointmentId { get; private set; }
 
@@ -60,6 +63,7 @@ public class PatientNote : BaseEntity
         string? title = null,
         bool isPinned = false,
         bool isHidden = false,
+        bool isAlert = false,
         long? appointmentId = null)
     {
         if (string.IsNullOrWhiteSpace(content))
@@ -74,6 +78,7 @@ public class PatientNote : BaseEntity
             Content       = content,
             IsPinned      = isPinned,
             IsHidden      = isHidden || type == NoteType.Hidden,
+            IsAlert       = isAlert,
             AppointmentId = appointmentId,
             CreatedBy     = createdBy,
             CreatedAt     = DateTime.UtcNow

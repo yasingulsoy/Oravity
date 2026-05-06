@@ -92,6 +92,23 @@ export interface PatientAnamnesis {
   filledByName: string;
 }
 
+export type NoteType = 1 | 2 | 3 | 4 | 5 | 6;
+
+export interface PatientNote {
+  publicId: string;
+  type: NoteType;
+  typeLabel: string;
+  title?: string;
+  content: string;
+  isPinned: boolean;
+  isHidden: boolean;
+  isAlert: boolean;
+  createdBy: number;
+  createdByName: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface AnamnesisHistoryItem {
   publicId: string;
   filledAt: string;

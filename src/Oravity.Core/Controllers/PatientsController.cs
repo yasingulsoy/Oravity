@@ -210,6 +210,41 @@ public class PatientsController : ControllerBase
         await _mediator.Send(new DeletePatientCommand(publicId));
         return NoContent();
     }
+
+    // ── Notlar ────────────────────────────────────────────────────────────────
+
+    /// <summary>Hastanın notlarını döner. Pinlenmiş notlar önce gelir.</summary>
+    [HttpGet("{publicId:guid}/notes")]
+    [RequirePermission("note:write_patient")]
+    [ProducesResponseType(typeof(IReadOnlyList<PatientNoteDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetNotes(Guid publicId, [FromQuery] int? type = null)
+    {
+        var result = await _mediator.Send(new GetPatientNotesQuery(publicId, type));
+        return Ok(result);
+    }
+
+    /// <summary>Yeni not oluşturur.</summary>
+    [HttpPost("{publicId:guid}/notes")]
+    [RequirePermission("note:write_patient")]
+    [ProducesResponseType(typeof(PatientNoteDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> CreateNote(Guid publicId, [FromBody] CreateNoteBody body)
+    {
+        var result = await _mediator.Send(new CreatePatientNoteCommand(
+            publicId, body.Type, body.Content, body.Title, body.IsPinned, body.IsAlert));
+        return StatusCode(StatusCodes.Status201Created, result);
+    }
+
+    /// <summary>Notu siler (soft delete).</summary>
+    [HttpDelete("{publicId:guid}/notes/{noteId:guid}")]
+    [RequirePermission("note:delete_patient")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteNote(Guid publicId, Guid noteId)
+    {
+        await _mediator.Send(new DeletePatientNoteCommand(publicId, noteId));
+        return NoContent();
+    }
 }
 
 // ─── Request DTO'lar ───────────────────────────────────────────────────────
@@ -265,6 +300,9 @@ public record UpsertAnamnesisRequest(
     int? AlcoholUse,
     string? AdditionalNotes
 );
+
+/// <summary>Not oluşturma isteği</summary>
+public record CreateNoteBody(int Type, string Content, string? Title = null, bool IsPinned = false, bool IsAlert = false);
 
 /// <summary>Hasta güncelleme isteği</summary>
 public record UpdatePatientRequest(

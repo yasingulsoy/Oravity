@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Pencil, X, Check } from 'lucide-react';
+import { ArrowLeft, Pencil, X, Check, Stethoscope } from 'lucide-react';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { patientsApi } from '@/api/patients';
+import { protocolsApi } from '@/api/visits';
 import { lookupsApi } from '@/api/lookups';
 import { geoApi } from '@/api/geo';
 import { institutionsApi } from '@/api/institutions';
@@ -17,6 +18,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PatientAccountTab } from './tabs/PatientAccountTab';
 import { PatientConsentsTab } from './tabs/PatientConsentsTab';
+import { PatientNotesTab } from './tabs/PatientNotesTab';
+import { PatientAppointmentsTab } from './tabs/PatientAppointmentsTab';
+import { PatientAnamnezTab } from './tabs/PatientAnamnezTab';
+import { PatientLaboratuvarTab } from './tabs/PatientLaboratuvarTab';
+import { StickyNote, ClipboardList, FlaskConical } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -98,6 +104,7 @@ function FormSelect({
 
 export function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const { hasPermission } = usePermissions();
@@ -135,6 +142,16 @@ export function PatientDetailPage() {
   });
 
   const patient = data?.data;
+
+  const { data: protocolHistory } = useQuery({
+    queryKey: ['patient-protocols', id],
+    queryFn: () => protocolsApi.getPatientHistory(id!, 5).then(r => r.data),
+    enabled: !!id,
+    staleTime: 60_000,
+  });
+
+  const activeProtocol = protocolHistory?.find(p => p.status === 1);
+  const latestProtocol = protocolHistory?.[0];
 
   const { register, handleSubmit, control, reset, formState: { errors } } =
     useForm<UpdatePatientRequest>();
@@ -250,6 +267,27 @@ export function PatientDetailPage() {
             {!patient.isActive && <Badge variant="destructive">Pasif</Badge>}
           </div>
         </div>
+        {!editing && activeProtocol && (
+          <Button
+            size="sm"
+            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+            onClick={() => navigate(`/muayene/${activeProtocol.publicId}`)}
+          >
+            <Stethoscope className="h-4 w-4" />
+            Aktif Muayene
+          </Button>
+        )}
+        {!editing && !activeProtocol && latestProtocol && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => navigate(`/muayene/${latestProtocol.publicId}`)}
+          >
+            <Stethoscope className="h-4 w-4" />
+            Son Protokol
+          </Button>
+        )}
         {!editing && (
           <Button variant="outline" size="sm" onClick={startEdit}>
             <Pencil className="h-4 w-4 mr-2" />Düzenle
@@ -264,6 +302,9 @@ export function PatientDetailPage() {
           <TabsTrigger value="treatments">Tedaviler</TabsTrigger>
           <TabsTrigger value="consents">Onam Formları</TabsTrigger>
           <TabsTrigger value="account">Cari Hesap</TabsTrigger>
+          <TabsTrigger value="notlar"><StickyNote className="size-3.5 mr-1.5 inline" />Notlar</TabsTrigger>
+          <TabsTrigger value="anamnez"><ClipboardList className="size-3.5 mr-1.5 inline" />Anamnez</TabsTrigger>
+          <TabsTrigger value="laboratuvar"><FlaskConical className="size-3.5 mr-1.5 inline" />Laboratuvar</TabsTrigger>
         </TabsList>
 
         <TabsContent value="info" className="mt-4">
@@ -713,10 +754,7 @@ export function PatientDetailPage() {
         </TabsContent>
 
         <TabsContent value="appointments" className="mt-4">
-          <Card>
-            <CardHeader><CardTitle>Randevu Geçmişi</CardTitle></CardHeader>
-            <CardContent><p className="text-sm text-muted-foreground">Yakında eklenecek.</p></CardContent>
-          </Card>
+          <PatientAppointmentsTab patientPublicId={patient.publicId} />
         </TabsContent>
 
         <TabsContent value="treatments" className="mt-4">
@@ -732,6 +770,15 @@ export function PatientDetailPage() {
 
         <TabsContent value="account" className="mt-4">
           <PatientAccountTab patientId={patient.id} hasPassportNo={patient.hasPassportNo} />
+        </TabsContent>
+        <TabsContent value="notlar" className="mt-4">
+          <PatientNotesTab patientPublicId={patient.publicId} />
+        </TabsContent>
+        <TabsContent value="anamnez" className="mt-4">
+          <PatientAnamnezTab patientPublicId={patient.publicId} />
+        </TabsContent>
+        <TabsContent value="laboratuvar" className="mt-4">
+          <PatientLaboratuvarTab patientPublicId={patient.publicId} />
         </TabsContent>
       </Tabs>
     </div>

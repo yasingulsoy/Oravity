@@ -137,3 +137,20 @@ public static class PatientMappings
         p.Notes, p.PreferredLanguageCode,
         p.SmsOptIn, p.CampaignOptIn, p.IsActive, p.CreatedAt);
 }
+
+// ── Note ──────────────────────────────────────────────────────────────────────
+
+public record PatientNoteDto(
+    Guid      PublicId,
+    int       Type,
+    string    TypeLabel,
+    string?   Title,
+    string    Content,
+    bool      IsPinned,
+    bool      IsHidden,
+    bool      IsAlert,
+    long      CreatedBy,
+    string    CreatedByName,
+    DateTime  CreatedAt,
+    DateTime? UpdatedAt
+);

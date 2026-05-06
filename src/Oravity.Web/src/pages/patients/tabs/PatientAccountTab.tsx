@@ -123,7 +123,7 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
   const [refundTarget,   setRefundTarget]   = useState<PatientAccountPayment | null>(null);
   const [invoiceOpen,         setInvoiceOpen]         = useState(false);
   const [patientInvoiceOpen,  setPatientInvoiceOpen]  = useState(false);
-  const [invoiceItemIds, setInvoiceItemIds] = useState<Set<number>>(new Set());
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<number>>(new Set());
   const [expandedItems,  setExpandedItems]  = useState<Set<number>>(new Set());
   const [previewInvoice, setPreviewInvoice] = useState<
     | { type: 'patient';     data: PatientInvoice }
@@ -191,7 +191,8 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
   const completedItems  = (data?.items ?? []).filter(i => i.status === 'Completed');
   const plannedItems    = (data?.items ?? []).filter(i => i.status !== 'Completed');
   const unpaidItems     = completedItems.filter(i => i.remainingAmount > 0.005);
-  const billableItems   = completedItems.filter(i => i.totalAmountTry - i.patientAmount > 0.005);
+  const billableItems         = completedItems.filter(i => i.totalAmountTry - i.patientAmount > 0.005);
+  const patientBillableItems  = completedItems.filter(i => i.patientAmount > 0.005);
   const hasProvisionRows = completedItems.some(i => i.institutionPaymentModel === 2);
 
   const onRefresh = () => {
@@ -275,13 +276,18 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setPatientInvoiceOpen(true)}>
             <FileText className="size-4" />
             Hastaya Fatura
+            {patientBillableItems.some(i => selectedItemIds.has(i.treatmentPlanItemId)) && (
+              <span className="ml-0.5 rounded-full bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 leading-none font-medium">
+                {patientBillableItems.filter(i => selectedItemIds.has(i.treatmentPlanItemId)).length}
+              </span>
+            )}
           </Button>
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setInvoiceOpen(true)}>
             <ArrowRight className="size-4" />
             Kuruma Fatura
-            {invoiceItemIds.size > 0 && (
+            {billableItems.some(i => selectedItemIds.has(i.treatmentPlanItemId)) && (
               <span className="ml-0.5 rounded-full bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 leading-none font-medium">
-                {invoiceItemIds.size}
+                {billableItems.filter(i => selectedItemIds.has(i.treatmentPlanItemId)).length}
               </span>
             )}
           </Button>
@@ -304,26 +310,34 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
           <Table>
             <TableHeader>
               <TableRow>
+                {/* Fatura seç-tümü */}
                 <TableHead className="w-8 px-3">
-                  {billableItems.length > 0 && (
-                    <Checkbox
-                      checked={billableItems.length > 0 && billableItems.every(i => invoiceItemIds.has(i.treatmentPlanItemId))}
-                      onCheckedChange={checked => {
-                        if (checked) setInvoiceItemIds(new Set(billableItems.map(i => i.treatmentPlanItemId)));
-                        else setInvoiceItemIds(new Set());
-                      }}
-                    />
-                  )}
+                  {(billableItems.length > 0 || patientBillableItems.length > 0) && (() => {
+                    const allSelectable = completedItems.filter(
+                      i => i.totalAmountTry - i.patientAmount > 0.005 || i.patientAmount > 0.005
+                    );
+                    const allChecked = allSelectable.length > 0 && allSelectable.every(i => selectedItemIds.has(i.treatmentPlanItemId));
+                    return (
+                      <Checkbox
+                        checked={allChecked}
+                        onCheckedChange={checked => {
+                          if (checked) setSelectedItemIds(new Set(allSelectable.map(i => i.treatmentPlanItemId)));
+                          else setSelectedItemIds(new Set());
+                        }}
+                      />
+                    );
+                  })()}
                 </TableHead>
                 <TableHead>Tedavi</TableHead>
                 <TableHead>Diş</TableHead>
                 <TableHead>Hekim</TableHead>
                 <TableHead>Tarih</TableHead>
-                <TableHead className="text-right">Tutar</TableHead>
-                {hasProvisionRows && <TableHead className="text-right">Kurum</TableHead>}
-                {hasProvisionRows && <TableHead className="text-right">Hasta Payı</TableHead>}
-                <TableHead className="text-right">Ödenen</TableHead>
-                <TableHead className="text-right">Kalan</TableHead>
+                <TableHead className="text-right border-l">Tutar</TableHead>
+                {hasProvisionRows && <TableHead className="text-right border-l">Kurum Payı</TableHead>}
+                {hasProvisionRows && <TableHead className="text-right">Kurum Ödenen</TableHead>}
+                {hasProvisionRows && <TableHead className="text-right border-l">Hasta Payı</TableHead>}
+                <TableHead className={cn("text-right", hasProvisionRows ? "" : "border-l")}>Hasta Ödenen</TableHead>
+                <TableHead className="text-right border-l">Kalan</TableHead>
                 <TableHead className="w-6" />
               </TableRow>
             </TableHeader>
@@ -338,7 +352,7 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                 ))
               ) : completedItems.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center text-muted-foreground py-6 text-sm">
+                  <TableCell colSpan={9} className="text-center text-muted-foreground py-6 text-sm">
                     Tamamlanmış tedavi kalemi yok.
                   </TableCell>
                 </TableRow>
@@ -352,12 +366,12 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                       className={cn(hasAllocs && 'cursor-pointer hover:bg-muted/40')}
                       onClick={() => hasAllocs && toggleExpand(i.treatmentPlanItemId)}
                     >
-                      {/* Kurum faturası checkbox */}
+                      {/* Fatura seçim checkbox */}
                       <TableCell className="w-8 px-3" onClick={e => e.stopPropagation()}>
-                        {i.totalAmountTry - i.patientAmount > 0.005 && (
+                        {(i.totalAmountTry - i.patientAmount > 0.005 || i.patientAmount > 0.005) && (
                           <Checkbox
-                            checked={invoiceItemIds.has(i.treatmentPlanItemId)}
-                            onCheckedChange={() => setInvoiceItemIds(prev => {
+                            checked={selectedItemIds.has(i.treatmentPlanItemId)}
+                            onCheckedChange={() => setSelectedItemIds(prev => {
                               const next = new Set(prev);
                               next.has(i.treatmentPlanItemId) ? next.delete(i.treatmentPlanItemId) : next.add(i.treatmentPlanItemId);
                               return next;
@@ -408,7 +422,7 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                         {i.completedAt ? format(new Date(i.completedAt), 'dd MMM yyyy', { locale: tr }) : '—'}
                       </TableCell>
                       {/* Tutar */}
-                      <TableCell className="text-right font-medium">
+                      <TableCell className="text-right font-medium border-l">
                         {i.priceCurrency !== 'TRY' ? (
                           <div className="space-y-0.5">
                             <div>{fmt(i.totalAmountTry)}</div>
@@ -425,7 +439,7 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                       </TableCell>
                       {/* Kurum payı — sadece provizyon planı olan hastalarda sütun görünür */}
                       {hasProvisionRows && (
-                        <TableCell className="text-right">
+                        <TableCell className="text-right border-l">
                           {(() => {
                             if (i.institutionPaymentModel !== 2)
                               return <span className="text-xs text-muted-foreground">—</span>;
@@ -436,9 +450,7 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                             const invoiced = invs.length > 0;
                             const statusBadge = paid
                               ? <div className="text-[10px] text-green-600 font-medium">Tahsil ✓</div>
-                              : invoiced
-                                ? <div className="text-[10px] text-purple-600">Faturalı</div>
-                                : null;
+                              : null;
 
                             const hasAllocations = i.allocatedAmount > 0;
                             const inputEl = (
@@ -447,7 +459,7 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                                 initialValue={i.institutionContributionAmount}
                                 refValue={i.totalAmountTry}
                                 isPending={contribMutation.isPending}
-                                disabled={hasAllocations}
+                                disabled={hasAllocations || invoiced}
                                 onSave={(amount) => contribMutation.mutate({
                                   planId: i.planPublicId,
                                   itemId: i.itemPublicId,
@@ -475,18 +487,30 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                           })()}
                         </TableCell>
                       )}
+                      {/* Kurum Ödenen — sadece provizyon planı olan hastalarda sütun görünür */}
+                      {hasProvisionRows && (
+                        <TableCell className="text-right text-green-600">
+                          {i.institutionPaymentModel === 2
+                            ? (i.institutionAllocatedAmount > 0.005
+                                ? fmt(i.institutionAllocatedAmount)
+                                : <span className="text-muted-foreground">—</span>)
+                            : <span className="text-xs text-muted-foreground">—</span>}
+                        </TableCell>
+                      )}
                       {/* Hasta payı — sadece provizyon planı olan hastalarda sütun görünür */}
                       {hasProvisionRows && (
-                        <TableCell className="text-right font-medium">
+                        <TableCell className="text-right font-medium border-l">
                           {i.institutionPaymentModel === 2
                             ? fmt(i.patientAmount)
                             : <span className="text-xs text-muted-foreground">—</span>}
                         </TableCell>
                       )}
-                      {/* Ödenen */}
-                      <TableCell className="text-right text-green-600">{fmt(i.allocatedAmount)}</TableCell>
+                      {/* Hasta Ödenen */}
+                      <TableCell className={cn("text-right text-green-600", !hasProvisionRows && "border-l")}>
+                        {fmt(i.allocatedAmount)}
+                      </TableCell>
                       {/* Kalan */}
-                      <TableCell className="text-right">
+                      <TableCell className="text-right border-l">
                         {i.remainingAmount > 0.005 ? (
                           <span className="text-destructive font-semibold">{fmt(i.remainingAmount)}</span>
                         ) : (
@@ -517,7 +541,7 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                       const hasFx = i.allocationDetails.some(a => a.paymentCurrency !== 'TRY');
                       return (
                         <TableRow key={`alloc-${i.treatmentPlanItemId}`} className="bg-muted/20 hover:bg-muted/20">
-                          <TableCell colSpan={hasProvisionRows ? 11 : 9} className="py-0 pl-8 pr-4">
+                          <TableCell colSpan={hasProvisionRows ? 12 : 9} className="py-0 pl-8 pr-4">
                             <table className="w-full text-xs my-2">
                               <thead>
                                 <tr className="text-muted-foreground border-b border-border/50">
@@ -570,6 +594,70 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                   ].filter(Boolean);
                 })
               )}
+            {/* ── Toplamlar satırı ── */}
+            {completedItems.length > 0 && (() => {
+              const totalTutar         = completedItems.reduce((s, i) => s + i.totalAmountTry, 0);
+              const totalKurum         = completedItems.reduce((s, i) => s + (i.institutionContributionAmount ?? 0), 0);
+              const totalKurumOdenen   = completedItems.filter(i => i.institutionPaymentModel === 2).reduce((s, i) => s + i.institutionAllocatedAmount, 0);
+              const totalHastaPayi     = completedItems.filter(i => i.institutionPaymentModel === 2).reduce((s, i) => s + i.patientAmount, 0);
+              const totalHastaOdenen   = completedItems.reduce((s, i) => s + i.allocatedAmount, 0);
+              const totalKalan         = completedItems.reduce((s, i) => s + i.remainingAmount, 0);
+
+              // Dövizli kalemler — para birimine göre grupla
+              const fxGroups = completedItems
+                .filter(i => i.priceCurrency && i.priceCurrency !== 'TRY')
+                .reduce<Record<string, number>>((acc, i) => {
+                  acc[i.priceCurrency] = (acc[i.priceCurrency] ?? 0) + i.totalAmount;
+                  return acc;
+                }, {});
+              const hasFx = Object.keys(fxGroups).length > 0;
+
+              return (
+                <TableRow className="border-t-2 bg-muted/20 font-semibold text-sm hover:bg-muted/20">
+                  {/* checkbox + tedavi + diş + hekim + tarih */}
+                  <TableCell colSpan={5} className="text-muted-foreground text-xs font-normal pl-3">
+                    {completedItems.length} kalem
+                  </TableCell>
+                  {/* Tutar */}
+                  <TableCell className="text-right border-l">
+                    <div>{fmt(totalTutar)}</div>
+                    {hasFx && Object.entries(fxGroups).map(([cur, amt]) => (
+                      <div key={cur} className="text-xs text-muted-foreground font-normal">
+                        {amt.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {cur}
+                      </div>
+                    ))}
+                  </TableCell>
+                  {/* Kurum Payı */}
+                  {hasProvisionRows && (
+                    <TableCell className="text-right border-l">
+                      {totalKurum > 0.005 ? fmt(totalKurum) : <span className="text-muted-foreground font-normal">—</span>}
+                    </TableCell>
+                  )}
+                  {/* Kurum Ödenen */}
+                  {hasProvisionRows && (
+                    <TableCell className="text-right text-green-600">
+                      {totalKurumOdenen > 0.005 ? fmt(totalKurumOdenen) : <span className="text-muted-foreground font-normal">—</span>}
+                    </TableCell>
+                  )}
+                  {/* Hasta Payı */}
+                  {hasProvisionRows && (
+                    <TableCell className="text-right border-l">
+                      {totalHastaPayi > 0.005 ? fmt(totalHastaPayi) : <span className="text-muted-foreground font-normal">—</span>}
+                    </TableCell>
+                  )}
+                  {/* Hasta Ödenen */}
+                  <TableCell className={cn("text-right text-green-600", !hasProvisionRows && "border-l")}>{fmt(totalHastaOdenen)}</TableCell>
+                  {/* Kalan */}
+                  <TableCell className="text-right border-l">
+                    {totalKalan > 0.005
+                      ? <span className="text-destructive">{fmt(totalKalan)}</span>
+                      : <span className="text-green-600">✓</span>}
+                  </TableCell>
+                  {/* Kurum ikonu sütunu */}
+                  <TableCell />
+                </TableRow>
+              );
+            })()}
             </TableBody>
           </Table>
         </CardContent>
@@ -656,7 +744,10 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
               ) : (
                 data!.payments.map(p => (
                   <TableRow key={p.id} className={cn(p.isRefunded && 'opacity-50 line-through')}>
-                    <TableCell>{format(new Date(p.paymentDate), 'dd MMM yyyy', { locale: tr })}</TableCell>
+                    <TableCell>
+                      {format(new Date(p.paymentDate), 'dd MMM yyyy', { locale: tr })}
+                      {p.createdAt && <span className="ml-1.5 text-xs text-muted-foreground">{format(new Date(p.createdAt), 'HH:mm')}</span>}
+                    </TableCell>
                     <TableCell>{p.methodLabel}</TableCell>
                     <TableCell className="text-right font-medium">
                       {p.currency !== 'TRY' ? (
@@ -868,7 +959,7 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
           onClose={() => setPreviewInvoice(null)}
           onCancelled={() => {
             setPreviewInvoice(null);
-            qc.invalidateQueries({ queryKey: ['institution-invoices-for-patient', patientId] });
+            onRefresh();
           }}
         />
       )}
@@ -877,9 +968,9 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
       {invoiceOpen && (
         <CreateInvoiceDialog
           patientId={patientId}
-          preselectedIds={invoiceItemIds}
-          onClose={() => { setInvoiceOpen(false); setInvoiceItemIds(new Set()); }}
-          onSuccess={() => { setInvoiceOpen(false); setInvoiceItemIds(new Set()); onRefresh(); }}
+          preselectedIds={new Set(billableItems.filter(i => selectedItemIds.has(i.treatmentPlanItemId)).map(i => i.treatmentPlanItemId))}
+          onClose={() => { setInvoiceOpen(false); setSelectedItemIds(new Set()); }}
+          onSuccess={() => { setInvoiceOpen(false); setSelectedItemIds(new Set()); onRefresh(); }}
         />
       )}
 
@@ -889,8 +980,9 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
           patientId={patientId}
           completedItems={completedItems}
           hasPassportNo={hasPassportNo}
-          onClose={() => setPatientInvoiceOpen(false)}
-          onSuccess={() => { setPatientInvoiceOpen(false); onRefresh(); }}
+          preselectedIds={new Set(patientBillableItems.filter(i => selectedItemIds.has(i.treatmentPlanItemId)).map(i => i.treatmentPlanItemId))}
+          onClose={() => { setPatientInvoiceOpen(false); setSelectedItemIds(new Set()); }}
+          onSuccess={() => { setPatientInvoiceOpen(false); setSelectedItemIds(new Set()); onRefresh(); }}
         />
       )}
     </div>
@@ -2060,11 +2152,12 @@ function PatientInvoiceList({ patientId }: { patientId: number }) {
 // ── Hastaya Fatura Kes Dialog ─────────────────────────────────────────────────
 
 function CreatePatientInvoiceDialog({
-  patientId, completedItems, hasPassportNo = false, onClose, onSuccess,
+  patientId, completedItems, hasPassportNo = false, preselectedIds, onClose, onSuccess,
 }: {
   patientId: number;
   completedItems: PatientAccountItem[];
   hasPassportNo?: boolean;
+  preselectedIds?: Set<number>;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -2074,15 +2167,17 @@ function CreatePatientInvoiceDialog({
   const [recipientVkn,  setRecipientVkn]  = useState('');
   const [recipientTaxOffice, setRecipientTaxOffice] = useState('');
   const [invoiceType,   setInvoiceType]   = useState('EARCHIVE');
-  const [selectedIds,   setSelectedIds]   = useState<Set<number>>(new Set());
+  const [selectedIds,   setSelectedIds]   = useState<Set<number>>(
+    () => preselectedIds && preselectedIds.size > 0 ? new Set(preselectedIds) : new Set()
+  );
   const [invoiceNo,     setInvoiceNo]     = useState('');
   const [invoiceDate,   setInvoiceDate]   = useState(() => new Date().toISOString().slice(0, 10));
   const [dueDate,       setDueDate]       = useState(() => {
     const d = new Date(); d.setDate(d.getDate() + 30);
     return d.toISOString().slice(0, 10);
   });
-  // Pasaport numarası kayıtlı yabancı uyruklu hastalara sıfır KDV uygulanır
-  const [kdvRate, setKdvRate] = useState(hasPassportNo ? '0' : '10');
+  const [kdvRate, setKdvRate] = useState<0 | 10>(10);
+  const kdvRateNum = kdvRate / 100;
   const [notes,   setNotes]   = useState('');
 
   const billableItems = completedItems.filter(i => i.patientAmount > 0.005);
@@ -2098,7 +2193,6 @@ function CreatePatientInvoiceDialog({
     if (nextNumber && !invoiceNo) setInvoiceNo(nextNumber);
   }, [nextNumber]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const kdvRateNum = (parseFloat(kdvRate) || 0) / 100;
   const selectedItems = billableItems.filter(i => selectedIds.has(i.treatmentPlanItemId));
   // patientAmount = KDV dahil; matrahı içinden çıkarıyoruz
   const grossTotal = selectedItems.reduce((s, i) => s + i.patientAmount, 0);
@@ -2277,38 +2371,27 @@ function CreatePatientInvoiceDialog({
           </div>
 
           {/* KDV oranı */}
-          <div className="space-y-1.5">
-            <Label className="text-sm font-medium">KDV Oranı (%)</Label>
-            {hasPassportNo && (
-              <p className="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-2 py-1">
-                Yabancı uyruklu hasta (pasaport kayıtlı) — KDV %0 uygulanır.
-              </p>
-            )}
-            <div className="flex gap-2">
-              {['0', '10', '20'].map(v => (
+          <div className="flex items-center gap-3">
+            <Label className="text-sm shrink-0">KDV Oranı</Label>
+            <div className="flex rounded-md border overflow-hidden text-sm">
+              {([0, 10] as const).map(v => (
                 <button
                   key={v}
                   type="button"
                   className={cn(
-                    'px-4 py-1.5 rounded-md border text-sm transition-colors',
-                    kdvRate === v ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-muted'
+                    'px-4 py-1.5 transition-colors',
+                    v > 0 && 'border-l',
+                    kdvRate === v ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
                   )}
                   onClick={() => setKdvRate(v)}
                 >
                   %{v}
                 </button>
               ))}
-              <Input
-                type="number"
-                min="0"
-                max="100"
-                step="1"
-                value={kdvRate}
-                onChange={e => setKdvRate(e.target.value)}
-                className="w-20 font-mono"
-                placeholder="%"
-              />
             </div>
+            {hasPassportNo && (
+              <span className="text-xs text-emerald-600">Pasaport kayıtlı hasta</span>
+            )}
           </div>
 
           {/* Tedavi kalemleri */}
@@ -2381,7 +2464,7 @@ function CreatePatientInvoiceDialog({
             </div>
             {kdvRateNum > 0 && (
               <div className="flex justify-between text-muted-foreground">
-                <span>KDV (%{kdvRate})</span>
+                <span>KDV (%{kdvRateNum * 100})</span>
                 <span>{fmt(kdvAmount)}</span>
               </div>
             )}
@@ -2484,6 +2567,11 @@ function CreateInvoiceDialog({
 
   const institution = provisionInstitutions.find(i => i.id === institutionId);
 
+  // KDVGUT I/C-2.1.3.2 — 2026 yasal tevkifat eşiği (KDV dahil)
+  const WITHHOLDING_THRESHOLD = 12_000;
+  const withholdingEffective = (institution?.withholdingApplies ?? false)
+    && grossInstitutionAmount > WITHHOLDING_THRESHOLD;
+
   const mutation = useMutation({
     mutationFn: () => institutionInvoicesApi.create({
       patientId,
@@ -2567,11 +2655,16 @@ function CreateInvoiceDialog({
           </div>
 
           {/* Tevkifat uyarısı */}
-          {institution?.withholdingApplies && (
+          {institution?.withholdingApplies && !withholdingEffective && grossInstitutionAmount > 0 && (
+            <div className="rounded-md bg-muted border px-3 py-2 text-xs text-muted-foreground">
+              Bu kurum tevkifat kapsamında ancak fatura toplamı ₺{WITHHOLDING_THRESHOLD.toLocaleString('tr-TR')} eşiğinin altında — tevkifat uygulanmayacak.
+            </div>
+          )}
+          {withholdingEffective && (
             <div className="rounded-md bg-orange-50 border border-orange-200 px-3 py-2 text-xs text-orange-800 dark:bg-orange-950/30 dark:border-orange-800 dark:text-orange-300">
               Bu kuruma <strong>tevkifatlı fatura</strong> kesilecek.
-              KDV'nin {institution.withholdingNumerator}/{institution.withholdingDenominator}'i kurum tarafından vergi dairesine ödenir.
-              {institution.withholdingCode && <> Tevkifat kodu: <strong>{institution.withholdingCode}</strong></>}
+              KDV'nin {institution!.withholdingNumerator}/{institution!.withholdingDenominator}'i kurum tarafından vergi dairesine ödenir.
+              {institution!.withholdingCode && <> Tevkifat kodu: <strong>{institution!.withholdingCode}</strong></>}
             </div>
           )}
           {institution?.isEInvoiceTaxpayer && (
@@ -2661,10 +2754,10 @@ function CreateInvoiceDialog({
               <span>KDV (%10)</span>
               <span>{fmt(institutionKdv)}</span>
             </div>
-            {institution?.withholdingApplies && (
+            {withholdingEffective && (
               <div className="flex justify-between text-orange-600">
-                <span>Tevkifat ({institution.withholdingNumerator}/{institution.withholdingDenominator} KDV)</span>
-                <span>-{fmt(Math.round(institutionKdv * institution.withholdingNumerator / institution.withholdingDenominator * 100) / 100)}</span>
+                <span>Tevkifat ({institution!.withholdingNumerator}/{institution!.withholdingDenominator} KDV)</span>
+                <span>-{fmt(Math.round(institutionKdv * institution!.withholdingNumerator / institution!.withholdingDenominator * 100) / 100)}</span>
               </div>
             )}
             <div className="flex justify-between font-bold text-base pt-1 border-t">

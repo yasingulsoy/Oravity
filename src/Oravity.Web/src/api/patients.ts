@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { Patient, PatientAnamnesis, AnamnesisHistoryItem, PatientListRequest, CreatePatientRequest, UpdatePatientRequest } from '@/types/patient';
+import type { Patient, PatientAnamnesis, AnamnesisHistoryItem, PatientNote, NoteType, PatientListRequest, CreatePatientRequest, UpdatePatientRequest } from '@/types/patient';
 import type { PaginatedResponse } from '@/types/common';
 
 export const patientsApi = {
@@ -39,4 +39,15 @@ export const patientsApi = {
 
   getAnamnesisById: (patientPublicId: string, anamnesisPublicId: string) =>
     apiClient.get<PatientAnamnesis>(`/patients/${patientPublicId}/anamnesis/${anamnesisPublicId}`),
+
+  getNotes: (patientPublicId: string, type?: NoteType) =>
+    apiClient.get<PatientNote[]>(`/patients/${patientPublicId}/notes`, {
+      params: type != null ? { type } : undefined,
+    }),
+
+  createNote: (patientPublicId: string, data: { type: NoteType; content: string; title?: string; isPinned?: boolean; isAlert?: boolean }) =>
+    apiClient.post<PatientNote>(`/patients/${patientPublicId}/notes`, data),
+
+  deleteNote: (patientPublicId: string, notePublicId: string) =>
+    apiClient.delete(`/patients/${patientPublicId}/notes/${notePublicId}`),
 };
