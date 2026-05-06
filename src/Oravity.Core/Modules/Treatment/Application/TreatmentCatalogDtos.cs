@@ -13,6 +13,7 @@ public record TreatmentCategoryResponse(
 );
 
 public record TreatmentResponse(
+    long                        Id,
     Guid                        PublicId,
     string                      Code,
     string?                     SutCode,
@@ -46,6 +47,7 @@ public static class TreatmentCatalogMappings
 
     public static TreatmentResponse ToResponse(SharedKernel.Entities.Treatment t)
         => new(
+            t.Id,
             t.PublicId,
             t.Code,
             t.SutCode,

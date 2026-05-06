@@ -9,7 +9,7 @@ using static Oravity.Core.Modules.Core.Pricing.Application.TenantCompanyResolver
 namespace Oravity.Core.Modules.Commission.Application.Commands;
 
 public record AssignTemplateCommand(
-    long DoctorId,
+    Guid UserPublicId,
     Guid TemplatePublicId,
     DateOnly EffectiveDate,
     DateOnly? ExpiryDate
@@ -40,19 +40,19 @@ public class AssignTemplateCommandHandler
             ?? throw new NotFoundException($"Şablon bulunamadı: {r.TemplatePublicId}");
 
         var doctor = await _db.Users.AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Id == r.DoctorId, ct)
-            ?? throw new NotFoundException($"Hekim bulunamadı: {r.DoctorId}");
+            .FirstOrDefaultAsync(u => u.PublicId == r.UserPublicId, ct)
+            ?? throw new NotFoundException($"Hekim bulunamadı: {r.UserPublicId}");
 
         // Aynı hekimin aktif ataması varsa expire et
         var current = await _db.DoctorTemplateAssignments
-            .Where(a => a.DoctorId == r.DoctorId && a.IsActive)
+            .Where(a => a.DoctorId == doctor.Id && a.IsActive)
             .ToListAsync(ct);
 
         foreach (var c in current)
             c.Expire(DateOnly.FromDateTime(DateTime.UtcNow.Date));
 
         var assignment = DoctorTemplateAssignment.Create(
-            r.DoctorId, template.Id, r.EffectiveDate, r.ExpiryDate);
+            doctor.Id, template.Id, r.EffectiveDate, r.ExpiryDate);
 
         if (_user.IsAuthenticated)
             assignment.SetCreatedBy(_user.UserId, _user.TenantId);

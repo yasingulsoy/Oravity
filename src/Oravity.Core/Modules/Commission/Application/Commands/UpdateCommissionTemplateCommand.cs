@@ -24,6 +24,7 @@ public record UpdateCommissionTemplateCommand(
     bool DeductTreatmentPlanCommission,
     bool DeductLabCost,
     bool DeductTreatmentCost,
+    bool RequireLabApproval,
     bool KdvEnabled,
     decimal? KdvRate,
     string? KdvAppliedPaymentTypes,
@@ -32,7 +33,8 @@ public record UpdateCommissionTemplateCommand(
     bool WithholdingTaxEnabled,
     decimal? WithholdingTaxRate,
     bool IsActive,
-    IReadOnlyList<JobStartPriceRequest>? JobStartPrices
+    IReadOnlyList<JobStartPriceRequest>? JobStartPrices,
+    IReadOnlyList<PriceRangeRequest>? PriceRanges
 ) : IRequest<CommissionTemplateResponse>;
 
 public class UpdateCommissionTemplateCommandHandler
@@ -58,6 +60,7 @@ public class UpdateCommissionTemplateCommandHandler
 
         var template = await _db.DoctorCommissionTemplates
             .Include(t => t.JobStartPrices)
+            .Include(t => t.PriceRanges)
             .FirstOrDefaultAsync(t => t.PublicId == r.PublicId && t.CompanyId == companyId, ct)
             ?? throw new NotFoundException($"Şablon bulunamadı: {r.PublicId}");
 
@@ -77,6 +80,7 @@ public class UpdateCommissionTemplateCommandHandler
 
         template.UpdateDeductions(
             r.DeductTreatmentPlanCommission, r.DeductLabCost, r.DeductTreatmentCost,
+            r.RequireLabApproval,
             r.KdvEnabled, r.KdvRate, r.KdvAppliedPaymentTypes,
             r.ExtraExpenseEnabled, r.ExtraExpenseRate,
             r.WithholdingTaxEnabled, r.WithholdingTaxRate);
@@ -86,20 +90,29 @@ public class UpdateCommissionTemplateCommandHandler
         if (_user.IsAuthenticated)
             template.SetUpdatedBy(_user.UserId);
 
+        // İş başı fiyatları: gelen liste varsa tümünü sil+yeniden yaz
         if (r.JobStartPrices != null)
         {
             _db.TemplateJobStartPrices.RemoveRange(template.JobStartPrices);
             foreach (var jp in r.JobStartPrices)
-            {
                 _db.TemplateJobStartPrices.Add(
                     TemplateJobStartPrice.Create(template.Id, jp.TreatmentId, jp.PriceType, jp.Value));
-            }
+        }
+
+        // Fiyat bantları: gelen liste varsa tümünü sil+yeniden yaz
+        if (r.PriceRanges != null)
+        {
+            _db.TemplatePriceRanges.RemoveRange(template.PriceRanges);
+            foreach (var pr in r.PriceRanges)
+                _db.TemplatePriceRanges.Add(
+                    TemplatePriceRange.Create(template.Id, pr.MinAmount, pr.MaxAmount, pr.Rate));
         }
 
         await _db.SaveChangesAsync(ct);
 
         var reloaded = await _db.DoctorCommissionTemplates
             .Include(t => t.JobStartPrices)
+            .Include(t => t.PriceRanges)
             .FirstAsync(t => t.Id == template.Id, ct);
 
         return CommissionMappings.ToResponse(reloaded);

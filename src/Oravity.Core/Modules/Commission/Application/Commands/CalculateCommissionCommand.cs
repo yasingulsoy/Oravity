@@ -73,77 +73,81 @@ public class CalculateCommissionCommandHandler
                 "Hekime atanmış aktif bir hakediş şablonu bulunmuyor. Hakediş hesaplanamaz.");
 
         // ── SPEC 9352: Koşul 3 ─ Lab işi varsa onaylanmış olmalı ────────────
-        var openLabWorks = await _db.LaboratoryWorks.AsNoTracking()
-            .Where(w => w.TreatmentPlanItemId == r.TreatmentPlanItemId
-                && w.Status != LaboratoryWorkStatus.Approved
-                && w.Status != LaboratoryWorkStatus.Cancelled
-                && w.Status != LaboratoryWorkStatus.Rejected)
-            .AnyAsync(ct);
-
-        if (openLabWorks)
-            throw new InvalidOperationException(
-                "Bu tedaviye bağlı laboratuvar işleri henüz onaylanmamış. Hakediş hesaplanamaz.");
-
-        // ── SPEC 9351: Koşul 2 ─ Ödeme tam dağıtılmış olmalı ────────────────
-        //    + SPEC 9353-9355: Koşul 4 ─ Kurum ödemesi zamanlaması
-        var patient = await _db.Patients.AsNoTracking()
-            .Where(p => p.Id == item.Plan.PatientId)
-            .Select(p => new { p.AgreementInstitutionId })
-            .FirstOrDefaultAsync(ct);
-
-        var allocatedPatient = await _db.PaymentAllocations.AsNoTracking()
-            .Where(a => a.TreatmentPlanItemId == r.TreatmentPlanItemId
-                && a.Source == AllocationSource.Patient
-                && !a.IsRefunded)
-            .SumAsync(a => (decimal?)a.AllocatedAmount, ct) ?? 0m;
-
-        var allocatedInstitution = await _db.PaymentAllocations.AsNoTracking()
-            .Where(a => a.TreatmentPlanItemId == r.TreatmentPlanItemId
-                && a.Source == AllocationSource.Institution
-                && !a.IsRefunded)
-            .SumAsync(a => (decimal?)a.AllocatedAmount, ct) ?? 0m;
-
-        var totalAllocatedPaid = allocatedPatient + allocatedInstitution;
-
-        // Kurum anlaşması varsa fatura kesilmiş mi kontrol et
-        bool hasInstitutionInvoice = false;
-        if (patient?.AgreementInstitutionId.HasValue == true)
+        //    Şablon RequireLabApproval=false ise bu kontrol atlanır.
+        if (template.RequireLabApproval)
         {
-            hasInstitutionInvoice = await _db.InstitutionInvoices.AsNoTracking()
-                .Where(inv =>
-                    inv.PatientId == item.Plan.PatientId &&
-                    inv.InstitutionId == patient.AgreementInstitutionId.Value &&
-                    inv.Status != InstitutionInvoiceStatus.Rejected)
+            var openLabWorks = await _db.LaboratoryWorks.AsNoTracking()
+                .Where(w => w.TreatmentPlanItemId == r.TreatmentPlanItemId
+                    && w.Status != LaboratoryWorkStatus.Approved
+                    && w.Status != LaboratoryWorkStatus.Cancelled
+                    && w.Status != LaboratoryWorkStatus.Rejected)
                 .AnyAsync(ct);
-        }
 
-        // "Dağıtılmış sayılır" yaklaşımı:
-        //   - Kurum anlaşması yok → sadece hasta dağıtımları sayılır.
-        //   - Kurum anlaşması var + template "Fatura Kesilince" → fatura kesildiyse
-        //     kurum payı "hak edilmiş" kabul edilir. Hasta dağıtımı + hasta payı hariç
-        //     kalan kısım invoice toplamından çıkarılır. Basitleştirilmiş:
-        //         toplam "hak edilen" = hasta dağıtımı + (fatura varsa) kurum ödemesi veya fatura bakiye.
-        //   - Kurum anlaşması var + template "Kurum Ödeyince" → kurum ödemesi (allocationInstitution)
-        //     tamamlanmalı.
-        decimal totalConsideredPaid = totalAllocatedPaid;
-        if (patient?.AgreementInstitutionId.HasValue == true && template.InstitutionPayOnInvoice)
-        {
-            if (!hasInstitutionInvoice)
+            if (openLabWorks)
                 throw new InvalidOperationException(
-                    "Kurum anlaşmalı tedavi için henüz fatura kesilmemiş. " +
-                    "Hekim şablonu 'Fatura Kesilince' olduğundan hakediş hesaplanamaz.");
-            // Fatura kesildiğinde kurum payı hak edilmiş sayılır; hasta + fatura bakiyesi ile
-            // tam dağıtım oluşmuş kabul edilir.
-            totalConsideredPaid = Math.Max(totalConsideredPaid, item.FinalPrice);
+                    "Bu tedaviye bağlı laboratuvar işleri henüz onaylanmamış. " +
+                    "Hakediş hesaplanamaz. (Şablon: Lab onayı zorunlu)");
         }
 
-        if (totalConsideredPaid + 0.01m < item.FinalPrice)
+        // ── SPEC 9351: Koşul 2 ─ Ödeme koşulları (Tahsilat modunda çalışır) ─
+        //    WorkingStyle.Accrual (Tahakkuk): tedavi tamamlanınca hakediş hak edilir,
+        //    ödeme beklenmez → bu blok tamamen atlanır.
+        //    WorkingStyle.Collection (Tahsilat): ödeme + kurum fatura zamanlaması kontrol edilir.
+        if (template.WorkingStyle == CommissionWorkingStyle.Collection)
         {
-            throw new InvalidOperationException(
-                patient?.AgreementInstitutionId.HasValue == true && !template.InstitutionPayOnInvoice
-                    ? "Kurum ödemesi henüz tahsil edilmemiş. " +
-                      "Hekim şablonu 'Kurum Ödeyince' olduğundan hakediş hesaplanamaz."
-                    : "Tedavi kaleminin ödemesi tam dağıtılmamış. Hakediş hesaplanamaz.");
+            var patient = await _db.Patients.AsNoTracking()
+                .Where(p => p.Id == item.Plan.PatientId)
+                .Select(p => new { p.AgreementInstitutionId })
+                .FirstOrDefaultAsync(ct);
+
+            var allocatedPatient = await _db.PaymentAllocations.AsNoTracking()
+                .Where(a => a.TreatmentPlanItemId == r.TreatmentPlanItemId
+                    && a.Source == AllocationSource.Patient
+                    && !a.IsRefunded)
+                .SumAsync(a => (decimal?)a.AllocatedAmount, ct) ?? 0m;
+
+            var allocatedInstitution = await _db.PaymentAllocations.AsNoTracking()
+                .Where(a => a.TreatmentPlanItemId == r.TreatmentPlanItemId
+                    && a.Source == AllocationSource.Institution
+                    && !a.IsRefunded)
+                .SumAsync(a => (decimal?)a.AllocatedAmount, ct) ?? 0m;
+
+            var totalAllocatedPaid = allocatedPatient + allocatedInstitution;
+
+            // Kurum anlaşması varsa fatura kesilmiş mi kontrol et
+            bool hasInstitutionInvoice = false;
+            if (patient?.AgreementInstitutionId.HasValue == true)
+            {
+                hasInstitutionInvoice = await _db.InstitutionInvoices.AsNoTracking()
+                    .Where(inv =>
+                        inv.PatientId == item.Plan.PatientId &&
+                        inv.InstitutionId == patient.AgreementInstitutionId.Value &&
+                        inv.Status != InstitutionInvoiceStatus.Rejected)
+                    .AnyAsync(ct);
+            }
+
+            // SPEC 9353-9355: Kurum ödemesi zamanlaması
+            //   InstitutionPayOnInvoice=true  → fatura kesilince kurum payı hak edilmiş sayılır
+            //   InstitutionPayOnInvoice=false → kurum fiilen ödeyince (allocationInstitution)
+            decimal totalConsideredPaid = totalAllocatedPaid;
+            if (patient?.AgreementInstitutionId.HasValue == true && template.InstitutionPayOnInvoice)
+            {
+                if (!hasInstitutionInvoice)
+                    throw new InvalidOperationException(
+                        "Kurum anlaşmalı tedavi için henüz fatura kesilmemiş. " +
+                        "Hekim şablonu 'Fatura Kesilince' olduğundan hakediş hesaplanamaz.");
+
+                totalConsideredPaid = Math.Max(totalConsideredPaid, item.FinalPrice);
+            }
+
+            if (totalConsideredPaid + 0.01m < item.FinalPrice)
+            {
+                throw new InvalidOperationException(
+                    patient?.AgreementInstitutionId.HasValue == true && !template.InstitutionPayOnInvoice
+                        ? "Kurum ödemesi henüz tahsil edilmemiş. " +
+                          "Hekim şablonu 'Kurum Ödeyince' olduğundan hakediş hesaplanamaz."
+                        : "Tedavi kaleminin ödemesi tam dağıtılmamış. Hakediş hesaplanamaz.");
+            }
         }
 
         // ── Hesaplama ───────────────────────────────────────────────────────

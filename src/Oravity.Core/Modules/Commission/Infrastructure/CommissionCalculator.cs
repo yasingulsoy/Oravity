@@ -181,20 +181,49 @@ public class CommissionCalculator : ICommissionCalculator
         }
 
         // ── 5. Brüt Hakediş (SPEC 9590) ──────────────────────────────────
-        //    grossCommission = FixedFee + (netBase * primRate / 100)
         decimal primAmount;
-        if (template?.PaymentType is CommissionPaymentType.Fix)
+        switch (template?.PaymentType)
         {
-            primAmount = fixedFee;
-        }
-        else if (template?.PaymentType is CommissionPaymentType.FixPlusPrim)
-        {
-            primAmount = fixedFee + Math.Round(netBase * appliedRate / 100m, 2);
-        }
-        else
-        {
-            // Prim / PerJob / PriceRange (PerJob/PriceRange için basit fallback)
-            primAmount = Math.Round(netBase * appliedRate / 100m, 2);
+            case CommissionPaymentType.Fix:
+                primAmount = fixedFee;
+                break;
+
+            case CommissionPaymentType.FixPlusPrim:
+                primAmount = fixedFee + Math.Round(netBase * appliedRate / 100m, 2);
+                break;
+
+            case CommissionPaymentType.PerJob:
+            {
+                // Tedavi bazında şablonda tanımlı sabit ücret veya yüzdeyi kullan;
+                // eşleşme yoksa normal prim hesabına düş.
+                var jobAmount = await GetJobStartAmountAsync(template, item.TreatmentId, netBase, ct);
+                primAmount = jobAmount ?? Math.Round(netBase * appliedRate / 100m, 2);
+                break;
+            }
+
+            case CommissionPaymentType.PerJobSelectedPlusFixPrim:
+            {
+                // Tedaviye özel iş başı tanımı varsa onu kullan;
+                // yoksa Fix+Prim formülüne dön.
+                var jobAmount = await GetJobStartAmountAsync(template, item.TreatmentId, netBase, ct);
+                primAmount = jobAmount.HasValue
+                    ? jobAmount.Value
+                    : fixedFee + Math.Round(netBase * appliedRate / 100m, 2);
+                break;
+            }
+
+            case CommissionPaymentType.PriceRange:
+            {
+                // Brüt bedele göre eşleşen bant oranını uygula;
+                // hiç bant tanımlı değilse şablondaki primRate'e dön.
+                var bandRate = await GetPriceRangeRateAsync(template, gross, ct);
+                primAmount = Math.Round(netBase * (bandRate ?? appliedRate) / 100m, 2);
+                break;
+            }
+
+            default: // Prim
+                primAmount = Math.Round(netBase * appliedRate / 100m, 2);
+                break;
         }
 
         // ── 6. KDV (SPEC 9147-9149, 9593-9594) ───────────────────────────
@@ -259,8 +288,10 @@ public class CommissionCalculator : ICommissionCalculator
 
             AppliedPrimRate  = appliedRate,
             BonusApplied     = bonusApplied,
-            FixedFee         = template?.PaymentType is CommissionPaymentType.Fix or CommissionPaymentType.FixPlusPrim
-                                ? fixedFee : 0m,
+            FixedFee         = template?.PaymentType is CommissionPaymentType.Fix
+                                   or CommissionPaymentType.FixPlusPrim
+                                   or CommissionPaymentType.PerJobSelectedPlusFixPrim
+                               ? fixedFee : 0m,
             GrossCommission  = primAmount,
 
             KdvRate              = kdvRate,
@@ -270,6 +301,42 @@ public class CommissionCalculator : ICommissionCalculator
 
             NetCommissionAmount  = netCommission
         };
+    }
+
+    /// <summary>
+    /// PerJob / PerJobSelectedPlusFixPrim için tedaviye özel iş başı tutarını hesaplar.
+    /// Şablonda bu tedavi için kayıt yoksa null döner (çağıran fallback uygular).
+    /// </summary>
+    private async Task<decimal?> GetJobStartAmountAsync(
+        DoctorCommissionTemplate template, long treatmentId, decimal netBase, CancellationToken ct)
+    {
+        var entry = await _db.TemplateJobStartPrices.AsNoTracking()
+            .FirstOrDefaultAsync(j => j.TemplateId == template.Id && j.TreatmentId == treatmentId, ct);
+
+        if (entry == null)
+            return null;
+
+        return entry.PriceType == JobStartPriceType.FixedAmount
+            ? entry.Value
+            : Math.Round(netBase * entry.Value / 100m, 2);
+    }
+
+    /// <summary>
+    /// PriceRange tipinde brüt bedele göre eşleşen bandın oranını döner.
+    /// Hiç bant tanımlı değilse veya eşleşme yoksa null döner (çağıran primRate'e düşer).
+    /// </summary>
+    private async Task<decimal?> GetPriceRangeRateAsync(
+        DoctorCommissionTemplate template, decimal gross, CancellationToken ct)
+    {
+        var ranges = await _db.TemplatePriceRanges.AsNoTracking()
+            .Where(r => r.TemplateId == template.Id)
+            .OrderBy(r => r.MinAmount)
+            .ToListAsync(ct);
+
+        var matched = ranges.FirstOrDefault(r =>
+            gross >= r.MinAmount && (r.MaxAmount == null || gross < r.MaxAmount));
+
+        return matched?.Rate;
     }
 
     /// <summary>

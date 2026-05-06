@@ -23,6 +23,7 @@ public record CreateCommissionTemplateCommand(
     bool DeductTreatmentPlanCommission,
     bool DeductLabCost,
     bool DeductTreatmentCost,
+    bool RequireLabApproval,
     bool KdvEnabled,
     decimal? KdvRate,
     string? KdvAppliedPaymentTypes,
@@ -30,7 +31,8 @@ public record CreateCommissionTemplateCommand(
     decimal? ExtraExpenseRate,
     bool WithholdingTaxEnabled,
     decimal? WithholdingTaxRate,
-    IReadOnlyList<JobStartPriceRequest>? JobStartPrices
+    IReadOnlyList<JobStartPriceRequest>? JobStartPrices,
+    IReadOnlyList<PriceRangeRequest>? PriceRanges
 ) : IRequest<CommissionTemplateResponse>;
 
 public class CreateCommissionTemplateCommandHandler
@@ -74,6 +76,7 @@ public class CreateCommissionTemplateCommandHandler
 
         template.UpdateDeductions(
             r.DeductTreatmentPlanCommission, r.DeductLabCost, r.DeductTreatmentCost,
+            r.RequireLabApproval,
             r.KdvEnabled, r.KdvRate, r.KdvAppliedPaymentTypes,
             r.ExtraExpenseEnabled, r.ExtraExpenseRate,
             r.WithholdingTaxEnabled, r.WithholdingTaxRate);
@@ -87,16 +90,22 @@ public class CreateCommissionTemplateCommandHandler
         if (r.JobStartPrices?.Count > 0)
         {
             foreach (var jp in r.JobStartPrices)
-            {
-                var row = TemplateJobStartPrice.Create(
-                    template.Id, jp.TreatmentId, jp.PriceType, jp.Value);
-                _db.TemplateJobStartPrices.Add(row);
-            }
-            await _db.SaveChangesAsync(ct);
+                _db.TemplateJobStartPrices.Add(
+                    TemplateJobStartPrice.Create(template.Id, jp.TreatmentId, jp.PriceType, jp.Value));
         }
+
+        if (r.PriceRanges?.Count > 0)
+        {
+            foreach (var pr in r.PriceRanges)
+                _db.TemplatePriceRanges.Add(
+                    TemplatePriceRange.Create(template.Id, pr.MinAmount, pr.MaxAmount, pr.Rate));
+        }
+
+        await _db.SaveChangesAsync(ct);
 
         var reloaded = await _db.DoctorCommissionTemplates
             .Include(t => t.JobStartPrices)
+            .Include(t => t.PriceRanges)
             .FirstAsync(t => t.Id == template.Id, ct);
 
         return CommissionMappings.ToResponse(reloaded);

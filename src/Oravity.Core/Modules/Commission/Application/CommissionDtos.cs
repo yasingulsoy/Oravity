@@ -23,6 +23,7 @@ public record CommissionTemplateResponse(
     bool DeductTreatmentPlanCommission,
     bool DeductLabCost,
     bool DeductTreatmentCost,
+    bool RequireLabApproval,
     bool DeductCreditCardCommission,
     bool KdvEnabled,
     decimal? KdvRate,
@@ -33,6 +34,7 @@ public record CommissionTemplateResponse(
     decimal? WithholdingTaxRate,
     bool IsActive,
     IReadOnlyList<JobStartPriceResponse> JobStartPrices,
+    IReadOnlyList<PriceRangeResponse> PriceRanges,
     DateTime CreatedAt
 );
 
@@ -47,6 +49,19 @@ public record JobStartPriceRequest(
     long TreatmentId,
     JobStartPriceType PriceType,
     decimal Value
+);
+
+public record PriceRangeResponse(
+    long Id,
+    decimal MinAmount,
+    decimal? MaxAmount,
+    decimal Rate
+);
+
+public record PriceRangeRequest(
+    decimal MinAmount,
+    decimal? MaxAmount,
+    decimal Rate
 );
 
 // ─── Assignment ──────────────────────────────────────────────────────────
@@ -100,12 +115,14 @@ public static class CommissionMappings
             t.DoctorTargetEnabled, t.DoctorTargetBonusRate,
             t.InstitutionPayOnInvoice,
             t.DeductTreatmentPlanCommission, t.DeductLabCost, t.DeductTreatmentCost,
+            t.RequireLabApproval,
             t.DeductCreditCardCommission,
             t.KdvEnabled, t.KdvRate, t.KdvAppliedPaymentTypes,
             t.ExtraExpenseEnabled, t.ExtraExpenseRate,
             t.WithholdingTaxEnabled, t.WithholdingTaxRate,
             t.IsActive,
             t.JobStartPrices.Select(p => new JobStartPriceResponse(p.Id, p.TreatmentId, p.PriceType, p.Value)).ToList(),
+            t.PriceRanges.OrderBy(r => r.MinAmount).Select(r => new PriceRangeResponse(r.Id, r.MinAmount, r.MaxAmount, r.Rate)).ToList(),
             t.CreatedAt);
 
     public static TemplateAssignmentResponse ToResponse(DoctorTemplateAssignment a, string doctorName, string templateName)

@@ -2,6 +2,7 @@ import apiClient from './client';
 import type { TreatmentPlan, TreatmentPlanItem } from '@/types/treatment';
 
 export interface TreatmentCatalogItem {
+  id: number;
   publicId: string;
   code: string;
   sutCode: string | null;
@@ -32,6 +33,7 @@ export interface TreatmentPriceResponse {
 }
 
 export interface TreatmentDetail {
+  id: number;
   publicId: string;
   code: string;
   sutCode: string | null;
@@ -173,6 +175,7 @@ export const treatmentPlansApi = {
     unitPrice: number;
     discountRate: number;
     toothNumber?: string | null;
+    notes?: string | null;
   }) =>
     apiClient.put<TreatmentPlanItem>(`/treatment-plans/${planPublicId}/items/${itemPublicId}`, data),
 

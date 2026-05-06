@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Oravity.Infrastructure.Database;
@@ -11,9 +12,11 @@ using Oravity.Infrastructure.Database;
 namespace Oravity.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260506201237_AddPatientNoteIsAlert")]
+    partial class AddPatientNoteIsAlert
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1944,9 +1947,6 @@ namespace Oravity.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<bool>("RequireLabApproval")
-                        .HasColumnType("boolean");
 
                     b.Property<long>("TenantId")
                         .HasColumnType("bigint");
@@ -5043,9 +5043,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<bool>("IsAlert")
-                        .HasColumnType("boolean");
-
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
@@ -6524,36 +6521,6 @@ namespace Oravity.Infrastructure.Migrations
                         .HasDatabaseName("ix_job_start_prices_template_treatment");
 
                     b.ToTable("commission_template_job_start_prices", (string)null);
-                });
-
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.TemplatePriceRange", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<decimal?>("MaxAmount")
-                        .HasColumnType("numeric(14,2)");
-
-                    b.Property<decimal>("MinAmount")
-                        .HasColumnType("numeric(14,2)");
-
-                    b.Property<decimal>("Rate")
-                        .HasColumnType("numeric(5,2)");
-
-                    b.Property<long>("TemplateId")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TemplateId");
-
-                    b.ToTable("commission_template_price_ranges", (string)null);
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.ToothConditionHistory", b =>
@@ -9120,17 +9087,6 @@ namespace Oravity.Infrastructure.Migrations
                     b.Navigation("Treatment");
                 });
 
-            modelBuilder.Entity("Oravity.SharedKernel.Entities.TemplatePriceRange", b =>
-                {
-                    b.HasOne("Oravity.SharedKernel.Entities.DoctorCommissionTemplate", "Template")
-                        .WithMany("PriceRanges")
-                        .HasForeignKey("TemplateId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Template");
-                });
-
             modelBuilder.Entity("Oravity.SharedKernel.Entities.ToothConditionHistory", b =>
                 {
                     b.HasOne("Oravity.SharedKernel.Entities.User", "Changer")
@@ -9484,8 +9440,6 @@ namespace Oravity.Infrastructure.Migrations
             modelBuilder.Entity("Oravity.SharedKernel.Entities.DoctorCommissionTemplate", b =>
                 {
                     b.Navigation("JobStartPrices");
-
-                    b.Navigation("PriceRanges");
                 });
 
             modelBuilder.Entity("Oravity.SharedKernel.Entities.EInvoice", b =>

@@ -75,6 +75,7 @@ public class AppDbContext : DbContext
     public DbSet<DoctorCommission> DoctorCommissions => Set<DoctorCommission>();
     public DbSet<DoctorCommissionTemplate> DoctorCommissionTemplates => Set<DoctorCommissionTemplate>();
     public DbSet<TemplateJobStartPrice> TemplateJobStartPrices => Set<TemplateJobStartPrice>();
+    public DbSet<TemplatePriceRange> TemplatePriceRanges => Set<TemplatePriceRange>();
     public DbSet<DoctorTemplateAssignment> DoctorTemplateAssignments => Set<DoctorTemplateAssignment>();
     public DbSet<DoctorTarget> DoctorTargets => Set<DoctorTarget>();
     public DbSet<BranchTarget> BranchTargets => Set<BranchTarget>();
@@ -1088,6 +1089,11 @@ public class AppDbContext : DbContext
              .WithOne(x => x.Template)
              .HasForeignKey(x => x.TemplateId)
              .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasMany(x => x.PriceRanges)
+             .WithOne(x => x.Template)
+             .HasForeignKey(x => x.TemplateId)
+             .OnDelete(DeleteBehavior.Cascade);
         });
 
         // ── TemplateJobStartPrice ─────────────────────────────────────────
@@ -1104,6 +1110,18 @@ public class AppDbContext : DbContext
              .WithMany()
              .HasForeignKey(x => x.TreatmentId)
              .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── TemplatePriceRange ────────────────────────────────────────────
+        m.Entity<TemplatePriceRange>(e =>
+        {
+            e.ToTable("commission_template_price_ranges");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityByDefaultColumn();
+            e.Property(x => x.MinAmount).HasColumnType("numeric(14,2)").IsRequired();
+            e.Property(x => x.MaxAmount).HasColumnType("numeric(14,2)");
+            e.Property(x => x.Rate).HasColumnType("numeric(5,2)").IsRequired();
+            e.Property(x => x.CreatedAt).IsRequired();
         });
 
         // ── DoctorTemplateAssignment ──────────────────────────────────────

@@ -4,6 +4,20 @@ import apiClient from './client';
 
 export type WorkingStyle = 'Accrual' | 'Collection';
 
+export const WORKING_STYLE_LABEL: Record<WorkingStyle, string> = {
+  Accrual:    'Tahakkuk (Tedavi yapılınca)',
+  Collection: 'Tahsilat (Ödeme alınınca)',
+};
+
+export const PAYMENT_TYPE_LABEL: Record<PaymentType, string> = {
+  Fix:                       'Sabit',
+  Prim:                      'Prim (%)',
+  FixPlusPrim:               'Sabit + Prim',
+  PerJob:                    'İş Başı',
+  PerJobSelectedPlusFixPrim: 'Seçili İş Başı + Fix/Prim',
+  PriceRange:                'Fiyat Bandı',
+};
+
 export type PaymentType =
   | 'Fix'
   | 'Prim'
@@ -29,6 +43,19 @@ export interface JobStartPriceRequest {
   treatmentId: number;
   priceType: JobStartPriceType;
   value: number;
+}
+
+export interface PriceRangeResponse {
+  id: number;
+  minAmount: number;
+  maxAmount: number | null;
+  rate: number;
+}
+
+export interface PriceRangeRequest {
+  minAmount: number;
+  maxAmount: number | null;
+  rate: number;
 }
 
 /**
@@ -62,6 +89,7 @@ export interface CommissionTemplate {
   deductTreatmentPlanCommission: boolean;
   deductLabCost: boolean;
   deductTreatmentCost: boolean;
+  requireLabApproval: boolean;
   deductCreditCardCommission: boolean;
 
   kdvEnabled: boolean;
@@ -77,6 +105,7 @@ export interface CommissionTemplate {
 
   isActive: boolean;
   jobStartPrices: JobStartPriceResponse[];
+  priceRanges: PriceRangeResponse[];
   createdAt: string;
 }
 
@@ -97,6 +126,7 @@ export interface CommissionTemplateInput {
   deductTreatmentPlanCommission: boolean;
   deductLabCost: boolean;
   deductTreatmentCost: boolean;
+  requireLabApproval: boolean;
 
   kdvEnabled: boolean;
   kdvRate: number | null;
@@ -109,6 +139,7 @@ export interface CommissionTemplateInput {
   withholdingTaxRate: number | null;
 
   jobStartPrices: JobStartPriceRequest[];
+  priceRanges: PriceRangeRequest[];
 }
 
 // ── Assignments ────────────────────────────────────────────────────────
@@ -222,13 +253,13 @@ export const commissionsApi = {
 
   // Assignments
   listAssignments: (params?: { doctorId?: number; activeOnly?: boolean }) =>
-    apiClient.get<TemplateAssignment[]>('/commission-templates/assignments', { params }),
+    apiClient.get<TemplateAssignment[]>('/commission-assignments', { params }),
 
-  assignTemplate: (body: { doctorId: number; templatePublicId: string; effectiveDate: string; expiryDate?: string }) =>
-    apiClient.post<TemplateAssignment>('/commission-templates/assignments', body),
+  assignTemplate: (body: { userPublicId: string; templatePublicId: string; effectiveDate: string; expiryDate?: string }) =>
+    apiClient.post<TemplateAssignment>('/commission-assignments', body),
 
   unassign: (publicId: string) =>
-    apiClient.delete(`/commission-templates/assignments/${publicId}`),
+    apiClient.delete(`/commission-assignments/${publicId}`),
 
   // Targets
   listDoctorTargets: (params?: { doctorId?: number; branchId?: number; year?: number; month?: number }) =>

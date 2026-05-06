@@ -29,6 +29,7 @@ public class GetCommissionTemplatesQueryHandler
 
         var q = _db.DoctorCommissionTemplates.AsNoTracking()
             .Include(t => t.JobStartPrices)
+            .Include(t => t.PriceRanges)
             .Where(t => t.CompanyId == companyId.Value);
 
         if (r.ActiveOnly) q = q.Where(t => t.IsActive);
@@ -61,6 +62,7 @@ public class GetCommissionTemplateByIdQueryHandler
 
         var t = await _db.DoctorCommissionTemplates.AsNoTracking()
             .Include(t => t.JobStartPrices)
+            .Include(t => t.PriceRanges)
             .FirstOrDefaultAsync(x => x.PublicId == r.PublicId && x.CompanyId == companyId.Value, ct);
 
         return t == null ? null : CommissionMappings.ToResponse(t);

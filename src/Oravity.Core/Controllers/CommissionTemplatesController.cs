@@ -54,10 +54,11 @@ public class CommissionTemplatesController : ControllerBase
             r.ClinicTargetEnabled, r.ClinicTargetBonusRate,
             r.DoctorTargetEnabled, r.DoctorTargetBonusRate,
             r.DeductTreatmentPlanCommission, r.DeductLabCost, r.DeductTreatmentCost,
+            r.RequireLabApproval,
             r.KdvEnabled, r.KdvRate, r.KdvAppliedPaymentTypes,
             r.ExtraExpenseEnabled, r.ExtraExpenseRate,
             r.WithholdingTaxEnabled, r.WithholdingTaxRate,
-            r.JobStartPrices));
+            r.JobStartPrices, r.PriceRanges));
         return Created($"api/commission-templates/{result.PublicId}", result);
     }
 
@@ -72,10 +73,11 @@ public class CommissionTemplatesController : ControllerBase
             r.ClinicTargetEnabled, r.ClinicTargetBonusRate,
             r.DoctorTargetEnabled, r.DoctorTargetBonusRate,
             r.DeductTreatmentPlanCommission, r.DeductLabCost, r.DeductTreatmentCost,
+            r.RequireLabApproval,
             r.KdvEnabled, r.KdvRate, r.KdvAppliedPaymentTypes,
             r.ExtraExpenseEnabled, r.ExtraExpenseRate,
             r.WithholdingTaxEnabled, r.WithholdingTaxRate, r.IsActive,
-            r.JobStartPrices));
+            r.JobStartPrices, r.PriceRanges));
         return Ok(result);
     }
 
@@ -107,7 +109,7 @@ public class CommissionTemplatesController : ControllerBase
     public async Task<IActionResult> Assign([FromBody] AssignTemplateRequest r)
     {
         var result = await _mediator.Send(new AssignTemplateCommand(
-            r.DoctorId, r.TemplatePublicId, r.EffectiveDate, r.ExpiryDate));
+            r.UserPublicId, r.TemplatePublicId, r.EffectiveDate, r.ExpiryDate));
         return Created($"api/commission-assignments/{result.PublicId}", result);
     }
 
@@ -234,6 +236,7 @@ public record CreateCommissionTemplateRequest(
     bool DeductTreatmentPlanCommission,
     bool DeductLabCost,
     bool DeductTreatmentCost,
+    bool RequireLabApproval,
     bool KdvEnabled,
     decimal? KdvRate,
     string? KdvAppliedPaymentTypes,
@@ -241,7 +244,8 @@ public record CreateCommissionTemplateRequest(
     decimal? ExtraExpenseRate,
     bool WithholdingTaxEnabled,
     decimal? WithholdingTaxRate,
-    IReadOnlyList<JobStartPriceRequest>? JobStartPrices
+    IReadOnlyList<JobStartPriceRequest>? JobStartPrices,
+    IReadOnlyList<PriceRangeRequest>? PriceRanges
 );
 
 public record UpdateCommissionTemplateRequest(
@@ -259,6 +263,7 @@ public record UpdateCommissionTemplateRequest(
     bool DeductTreatmentPlanCommission,
     bool DeductLabCost,
     bool DeductTreatmentCost,
+    bool RequireLabApproval,
     bool KdvEnabled,
     decimal? KdvRate,
     string? KdvAppliedPaymentTypes,
@@ -267,11 +272,12 @@ public record UpdateCommissionTemplateRequest(
     bool WithholdingTaxEnabled,
     decimal? WithholdingTaxRate,
     bool IsActive,
-    IReadOnlyList<JobStartPriceRequest>? JobStartPrices
+    IReadOnlyList<JobStartPriceRequest>? JobStartPrices,
+    IReadOnlyList<PriceRangeRequest>? PriceRanges
 );
 
 public record AssignTemplateRequest(
-    long DoctorId,
+    Guid UserPublicId,
     Guid TemplatePublicId,
     DateOnly EffectiveDate,
     DateOnly? ExpiryDate

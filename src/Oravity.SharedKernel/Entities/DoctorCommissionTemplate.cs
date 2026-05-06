@@ -72,6 +72,12 @@ public class DoctorCommissionTemplate : AuditableEntity
     public bool DeductTreatmentPlanCommission { get; private set; }
     public bool DeductLabCost { get; private set; }
     public bool DeductTreatmentCost { get; private set; }
+
+    /// <summary>
+    /// true (varsayılan): Tedaviye bağlı lab işi varsa <em>onaylanmış</em> olmalı.
+    /// false: Lab onayı beklenmeden hakediş hesaplanabilir.
+    /// </summary>
+    public bool RequireLabApproval { get; private set; } = true;
     /// <summary>Her zaman açık (kararlaştırıldı).</summary>
     public bool DeductCreditCardCommission { get; private set; } = true;
 
@@ -92,6 +98,7 @@ public class DoctorCommissionTemplate : AuditableEntity
     public bool IsActive { get; private set; } = true;
 
     public ICollection<TemplateJobStartPrice> JobStartPrices { get; private set; } = [];
+    public ICollection<TemplatePriceRange> PriceRanges { get; private set; } = [];
 
     private DoctorCommissionTemplate() { }
 
@@ -156,6 +163,7 @@ public class DoctorCommissionTemplate : AuditableEntity
         bool planCommission,
         bool labCost,
         bool treatmentCost,
+        bool requireLabApproval,
         bool kdvEnabled, decimal? kdvRate, string? kdvPaymentTypes,
         bool extraExpense, decimal? extraRate,
         bool withholding, decimal? withholdingRate)
@@ -163,6 +171,7 @@ public class DoctorCommissionTemplate : AuditableEntity
         DeductTreatmentPlanCommission = planCommission;
         DeductLabCost                 = labCost;
         DeductTreatmentCost           = treatmentCost;
+        RequireLabApproval            = requireLabApproval;
 
         KdvEnabled             = kdvEnabled;
         KdvRate                = kdvEnabled ? kdvRate : null;
