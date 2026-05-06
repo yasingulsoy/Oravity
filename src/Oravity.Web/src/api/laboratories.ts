@@ -9,6 +9,9 @@ export interface LaboratoryItem {
   city: string | null;
   phone: string | null;
   isActive: boolean;
+  assignedBranchCount: number;
+  assignedBranchNames: string[];
+  activeWorkCount: number;
 }
 
 export interface LaboratoryResponse {
@@ -154,6 +157,7 @@ export interface LaboratoryWorkListItem {
   laboratoryName: string;
   branchPublicId: string;
   branchName: string;
+  treatmentPlanItemPublicId: string | null;
   workType: string;
   deliveryType: string;
   toothNumbers: string | null;
@@ -266,6 +270,7 @@ export type LabWorkTransitionAction =
   | 'receive'
   | 'fit'
   | 'complete'
+  | 'fast_complete'
   | 'approve'
   | 'reject'
   | 'cancel';

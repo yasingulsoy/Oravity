@@ -24,7 +24,8 @@ public record LaboratoryResponse(
     bool     IsActive,
     int      AssignedBranchCount,
     int      ActiveWorkCount,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    IReadOnlyList<string> AssignedBranchNames
 );
 
 public record LaboratoryListItemResponse(
@@ -71,6 +72,7 @@ public record LaboratoryWorkListItemResponse(
     string   LaboratoryName,
     Guid     BranchPublicId,
     string   BranchName,
+    Guid?    TreatmentPlanItemPublicId,
     string   WorkType,
     string   DeliveryType,
     string?  ToothNumbers,

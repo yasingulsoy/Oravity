@@ -80,13 +80,18 @@ public class TransitionLaboratoryWorkCommandHandler
                 work.Complete(userId, request.Notes);
                 break;
 
+            case "fast_complete":
+                await EnsureApprovalAuthorityAsync(userId, canApprove: true, ct);
+                work.FastComplete(userId, request.Notes);
+                break;
+
             case "approve":
-                await EnsureApprovalAuthorityAsync(userId, work.BranchId, canApprove: true, ct);
+                await EnsureApprovalAuthorityAsync(userId, canApprove: true, ct);
                 work.Approve(userId, request.Notes);
                 break;
 
             case "reject":
-                await EnsureApprovalAuthorityAsync(userId, work.BranchId, canApprove: false, ct);
+                await EnsureApprovalAuthorityAsync(userId, canApprove: false, ct);
                 work.Reject(userId, request.Notes ?? throw new InvalidOperationException("Red nedeni zorunludur."));
                 break;
 
@@ -103,16 +108,23 @@ public class TransitionLaboratoryWorkCommandHandler
         return await GetLaboratoryWorkDetailQueryHandler.BuildDetailAsync(_db, work.Id, ct);
     }
 
-    private async Task EnsureApprovalAuthorityAsync(long userId, long branchId, bool canApprove, CancellationToken ct)
+    private async Task EnsureApprovalAuthorityAsync(long userId, bool canApprove, CancellationToken ct)
     {
         if (_tenant.IsPlatformAdmin) return;
 
-        var auth = await _db.LaboratoryApprovalAuthorities.AsNoTracking()
-            .FirstOrDefaultAsync(a => a.UserId == userId
-                                       && (a.BranchId == null || a.BranchId == branchId), ct);
+        const string permCode = "laboratory.work_approve";
 
-        if (auth == null) throw new ForbiddenException("Lab işi onay/red yetkiniz yok.");
-        if (canApprove && !auth.CanApprove) throw new ForbiddenException("Lab işi onay yetkiniz yok.");
-        if (!canApprove && !auth.CanReject) throw new ForbiddenException("Lab işi red yetkiniz yok.");
+        var hasPermission = await _db.UserRoleAssignments
+            .Where(a => a.UserId == userId
+                        && a.IsActive
+                        && (a.ExpiresAt == null || a.ExpiresAt > DateTime.UtcNow))
+            .SelectMany(a => a.RoleTemplate.RoleTemplatePermissions)
+            .AnyAsync(rtp => rtp.Permission.Code == permCode, ct);
+
+        if (!hasPermission)
+        {
+            var msg = canApprove ? "Lab işi onay yetkiniz yok." : "Lab işi red yetkiniz yok.";
+            throw new ForbiddenException(msg);
+        }
     }
 }

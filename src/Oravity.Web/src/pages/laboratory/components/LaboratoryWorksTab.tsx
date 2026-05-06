@@ -29,6 +29,10 @@ import {
 import { LaboratoryWorkDetailSheet } from './LaboratoryWorkDetailSheet';
 import { CreateLabWorkDialog } from './CreateLabWorkDialog';
 
+const WORK_TYPE_LABEL: Record<string, string> = {
+  prosthetic: 'Protetik', orthodontic: 'Ortodontik', implant: 'İmplant', other: 'Diğer',
+};
+
 const STATUS_META: Record<LabWorkStatus, { label: string; className: string }> = {
   pending:     { label: 'Taslak',       className: 'bg-slate-100 text-slate-700' },
   sent:        { label: 'Gönderildi',   className: 'bg-blue-100 text-blue-800' },
@@ -151,7 +155,7 @@ export function LaboratoryWorksTab() {
                     <TableCell>{w.doctorFullName}</TableCell>
                     <TableCell>{w.laboratoryName}</TableCell>
                     <TableCell>
-                      <div className="text-sm">{w.workType}</div>
+                      <div className="text-sm">{WORK_TYPE_LABEL[w.workType] ?? w.workType}</div>
                       {w.toothNumbers && (
                         <div className="text-xs text-muted-foreground font-mono">
                           Dişler: {w.toothNumbers}

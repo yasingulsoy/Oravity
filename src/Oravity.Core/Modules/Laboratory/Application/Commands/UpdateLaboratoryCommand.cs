@@ -89,6 +89,6 @@ public class UpdateLaboratoryCommandHandler
             lab.Country, lab.City, lab.District, lab.Address,
             lab.ContactPerson, lab.ContactPhone,
             lab.WorkingDays, lab.WorkingHours, lab.PaymentTerms, lab.PaymentDays,
-            lab.Notes, lab.IsActive, branchCount, workCount, lab.CreatedAt);
+            lab.Notes, lab.IsActive, branchCount, workCount, lab.CreatedAt, []);
     }
 }

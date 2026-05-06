@@ -20,13 +20,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import type { Patient } from '@/types/patient';
 
 interface Props {
@@ -58,8 +51,8 @@ export function CreateLabWorkDialog({ open, onClose }: Props) {
 
   // Work form
   const [labId, setLabId] = useState('');
-  const [workType, setWorkType] = useState('Zirkonyum');
-  const [deliveryType, setDeliveryType] = useState('Pickup');
+  const [workType, setWorkType] = useState('prosthetic');
+  const [deliveryType, setDeliveryType] = useState('pickup');
   const [toothNumbers, setToothNumbers] = useState('');
   const [shadeColor, setShadeColor] = useState('');
   const [doctorNotes, setDoctorNotes] = useState('');
@@ -69,7 +62,7 @@ export function CreateLabWorkDialog({ open, onClose }: Props) {
     if (!open) {
       setPatientSearch(''); setSelectedPatient(null);
       setLabId('');
-      setWorkType('Zirkonyum'); setDeliveryType('Pickup');
+      setWorkType('prosthetic'); setDeliveryType('pickup');
       setToothNumbers(''); setShadeColor(''); setDoctorNotes('');
       setItems([]);
     }
@@ -251,36 +244,44 @@ export function CreateLabWorkDialog({ open, onClose }: Props) {
           {/* Lab */}
           <div className="space-y-1.5">
             <Label>Laboratuvar *</Label>
-            <Select value={labId} onValueChange={setLabId}>
-              <SelectTrigger><SelectValue placeholder="Seç" /></SelectTrigger>
-              <SelectContent>
-                {(labs ?? []).map(l => (
-                  <SelectItem key={l.publicId} value={l.publicId}>{l.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <select
+              value={labId}
+              onChange={e => setLabId(e.target.value)}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            >
+              <option value="">Laboratuvar seçin…</option>
+              {(labs ?? []).map(l => (
+                <option key={l.publicId} value={l.publicId}>{l.name}</option>
+              ))}
+            </select>
           </div>
 
           {/* Work type */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>İş Tipi *</Label>
-              <Input
+              <select
                 value={workType}
                 onChange={e => setWorkType(e.target.value)}
-                placeholder="Zirkonyum / Porselen / Protez..."
-              />
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              >
+                <option value="prosthetic">Protetik</option>
+                <option value="orthodontic">Ortodontik</option>
+                <option value="implant">İmplant</option>
+                <option value="other">Diğer</option>
+              </select>
             </div>
             <div className="space-y-1.5">
               <Label>Teslim Tipi</Label>
-              <Select value={deliveryType} onValueChange={setDeliveryType}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Pickup">Elden</SelectItem>
-                  <SelectItem value="Courier">Kargo/Kurye</SelectItem>
-                  <SelectItem value="Mail">Posta</SelectItem>
-                </SelectContent>
-              </Select>
+              <select
+                value={deliveryType}
+                onChange={e => setDeliveryType(e.target.value)}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              >
+                <option value="pickup">Elden</option>
+                <option value="courier">Kargo/Kurye</option>
+                <option value="digital">Dijital</option>
+              </select>
             </div>
             <div className="space-y-1.5">
               <Label>Diş Numaraları</Label>
@@ -322,28 +323,24 @@ export function CreateLabWorkDialog({ open, onClose }: Props) {
                 {items.map(i => (
                   <div key={i.key} className="rounded-md border p-3 space-y-2">
                     <div className="flex items-center gap-2">
-                      <Select
+                      <select
                         value={i.labPriceItemPublicId ?? '__free__'}
-                        onValueChange={v => {
-                          if (v === '__free__') {
+                        onChange={e => {
+                          if (e.target.value === '__free__') {
                             updateItem(i.key, { labPriceItemPublicId: null });
                           } else {
-                            onSelectPriceItem(i.key, v);
+                            onSelectPriceItem(i.key, e.target.value);
                           }
                         }}
+                        className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                       >
-                        <SelectTrigger className="flex-1">
-                          <SelectValue placeholder="Fiyat listesinden seç veya serbest" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__free__">Serbest kalem</SelectItem>
-                          {priceItems.map(p => (
-                            <SelectItem key={p.publicId} value={p.publicId}>
-                              {p.itemName} — {p.price.toFixed(2)} {p.currency}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        <option value="__free__">Serbest kalem</option>
+                        {priceItems.map(p => (
+                          <option key={p.publicId} value={p.publicId}>
+                            {p.itemName} — {p.price.toFixed(2)} {p.currency}
+                          </option>
+                        ))}
+                      </select>
                       <Button
                         variant="ghost"
                         size="sm"

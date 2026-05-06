@@ -44,8 +44,17 @@ export function LaboratoriesTab() {
   });
 
   const createMut = useMutation({
-    mutationFn: (payload: CreateLaboratoryPayload) =>
-      laboratoriesApi.create(payload),
+    mutationFn: async ({ payload, branchIds }: { payload: CreateLaboratoryPayload; branchIds: string[] }) => {
+      const res = await laboratoriesApi.create(payload);
+      if (branchIds.length > 0) {
+        await Promise.all(
+          branchIds.map(branchPublicId =>
+            laboratoriesApi.assignBranch(res.data.publicId, { branchPublicId, priority: 1, isActive: true }),
+          ),
+        );
+      }
+      return res;
+    },
     onSuccess: () => {
       toast.success('Laboratuvar oluşturuldu');
       qc.invalidateQueries({ queryKey: ['laboratories'] });
@@ -108,6 +117,7 @@ export function LaboratoriesTab() {
               <TableHead>Kod</TableHead>
               <TableHead>Şehir</TableHead>
               <TableHead>Telefon</TableHead>
+              <TableHead>Atanmış Şubeler</TableHead>
               <TableHead>Durum</TableHead>
               <TableHead className="w-28 text-right">İşlem</TableHead>
             </TableRow>
@@ -116,14 +126,14 @@ export function LaboratoriesTab() {
             {isLoading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={6}>
+                  <TableCell colSpan={7}>
                     <Skeleton className="h-8 w-full" />
                   </TableCell>
                 </TableRow>
               ))
             ) : items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
                   <FlaskConical className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   Henüz laboratuvar eklenmemiş.
                 </TableCell>
@@ -144,6 +154,19 @@ export function LaboratoriesTab() {
                   <TableCell className="font-mono text-xs">{lab.code ?? '—'}</TableCell>
                   <TableCell>{lab.city ?? '—'}</TableCell>
                   <TableCell>{lab.phone ?? '—'}</TableCell>
+                  <TableCell>
+                    {lab.assignedBranchNames?.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {lab.assignedBranchNames.map(b => (
+                          <Badge key={b} variant="outline" className="text-xs font-normal">
+                            {b}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     {lab.isActive
                       ? <Badge className="bg-green-100 text-green-800">Aktif</Badge>
@@ -180,14 +203,14 @@ export function LaboratoriesTab() {
         open={formOpen}
         onClose={() => { setFormOpen(false); setEditing(null); }}
         editing={editing}
-        onSubmit={(payload) => {
+        onSubmit={(payload, selectedBranchPublicIds) => {
           if (editing) {
             updateMut.mutate({
               publicId: editing.publicId,
               payload: { ...payload, isActive: true },
             });
           } else {
-            createMut.mutate(payload);
+            createMut.mutate({ payload, branchIds: selectedBranchPublicIds });
           }
         }}
         isPending={createMut.isPending || updateMut.isPending}

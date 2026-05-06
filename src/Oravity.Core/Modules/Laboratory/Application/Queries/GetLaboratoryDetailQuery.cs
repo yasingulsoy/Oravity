@@ -59,7 +59,7 @@ public class GetLaboratoryDetailQueryHandler
                 p.ValidFrom, p.ValidUntil, p.IsActive))
             .ToListAsync(ct);
 
-        var branchCount = assignments.Count(a => a.IsActive);
+        var activeAssignments = assignments.Where(a => a.IsActive).ToList();
         var workCount = await _db.LaboratoryWorks.AsNoTracking()
             .CountAsync(w => w.LaboratoryId == lab.Id, ct);
 
@@ -68,7 +68,8 @@ public class GetLaboratoryDetailQueryHandler
             lab.Country, lab.City, lab.District, lab.Address,
             lab.ContactPerson, lab.ContactPhone,
             lab.WorkingDays, lab.WorkingHours, lab.PaymentTerms, lab.PaymentDays,
-            lab.Notes, lab.IsActive, branchCount, workCount, lab.CreatedAt);
+            lab.Notes, lab.IsActive, activeAssignments.Count, workCount, lab.CreatedAt,
+            activeAssignments.Select(a => a.BranchName).ToList());
 
         return new LaboratoryDetailResponse(labDto, assignments, prices);
     }

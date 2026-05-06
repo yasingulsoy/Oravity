@@ -58,11 +58,14 @@ public class GetLaboratoriesQueryHandler
 
         var labIds = labs.Select(l => l.Id).ToArray();
 
-        var branchCounts = await _db.LaboratoryBranchAssignments.AsNoTracking()
+        var branchAssignments = await _db.LaboratoryBranchAssignments.AsNoTracking()
             .Where(a => labIds.Contains(a.LaboratoryId) && a.IsActive)
+            .Select(a => new { a.LaboratoryId, BranchName = a.Branch.Name })
+            .ToListAsync(ct);
+
+        var branchNamesByLab = branchAssignments
             .GroupBy(a => a.LaboratoryId)
-            .Select(g => new { LabId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.LabId, x => x.Count, ct);
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<string>)g.Select(a => a.BranchName).OrderBy(n => n).ToList());
 
         var activeWorkCounts = await _db.LaboratoryWorks.AsNoTracking()
             .Where(w => labIds.Contains(w.LaboratoryId)
@@ -73,15 +76,19 @@ public class GetLaboratoriesQueryHandler
             .Select(g => new { LabId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.LabId, x => x.Count, ct);
 
-        return labs.Select(l => new LaboratoryResponse(
-            l.PublicId, l.Name, l.Code, l.Phone, l.Email, l.Website,
-            l.Country, l.City, l.District, l.Address,
-            l.ContactPerson, l.ContactPhone,
-            l.WorkingDays, l.WorkingHours, l.PaymentTerms, l.PaymentDays,
-            l.Notes, l.IsActive,
-            branchCounts.GetValueOrDefault(l.Id, 0),
-            activeWorkCounts.GetValueOrDefault(l.Id, 0),
-            l.CreatedAt
-        )).ToList();
+        return labs.Select(l =>
+        {
+            var branches = branchNamesByLab.GetValueOrDefault(l.Id, []);
+            return new LaboratoryResponse(
+                l.PublicId, l.Name, l.Code, l.Phone, l.Email, l.Website,
+                l.Country, l.City, l.District, l.Address,
+                l.ContactPerson, l.ContactPhone,
+                l.WorkingDays, l.WorkingHours, l.PaymentTerms, l.PaymentDays,
+                l.Notes, l.IsActive,
+                branches.Count,
+                activeWorkCounts.GetValueOrDefault(l.Id, 0),
+                l.CreatedAt,
+                branches);
+        }).ToList();
     }
 }

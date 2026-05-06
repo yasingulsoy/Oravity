@@ -238,6 +238,25 @@ public class LaboratoryWork : AuditableEntity
         MarkUpdated();
     }
 
+    /// <summary>
+    /// Ara adımları atlayarak doğrudan 'completed' durumuna geçer.
+    /// Komut katmanında <c>laboratory.work_approve</c> yetkisi kontrol edilir.
+    /// </summary>
+    public void FastComplete(long userId, string? notes = null)
+    {
+        if (Status is LaboratoryWorkStatus.Completed
+                    or LaboratoryWorkStatus.Approved
+                    or LaboratoryWorkStatus.Rejected
+                    or LaboratoryWorkStatus.Cancelled)
+            throw new InvalidOperationException($"'{Status}' durumundaki iş emri hızlı tamamlanamaz.");
+
+        var prev = Status;
+        Status      = LaboratoryWorkStatus.Completed;
+        CompletedAt = DateTime.UtcNow;
+        AppendHistory(prev, LaboratoryWorkStatus.Completed, userId, notes ?? "Hızlı tamamlama (ara adımlar atlandı)");
+        MarkUpdated();
+    }
+
     public void Cancel(long userId, string? reason)
     {
         if (Status is LaboratoryWorkStatus.Approved or LaboratoryWorkStatus.Completed or LaboratoryWorkStatus.Cancelled)

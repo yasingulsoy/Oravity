@@ -82,6 +82,6 @@ public class CreateLaboratoryCommandHandler
             lab.Country, lab.City, lab.District, lab.Address,
             lab.ContactPerson, lab.ContactPhone,
             lab.WorkingDays, lab.WorkingHours, lab.PaymentTerms, lab.PaymentDays,
-            lab.Notes, lab.IsActive, 0, 0, lab.CreatedAt);
+            lab.Notes, lab.IsActive, 0, 0, lab.CreatedAt, []);
     }
 }

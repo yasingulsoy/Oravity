@@ -90,6 +90,7 @@ public class GetLaboratoryWorksQueryHandler
                 w.Doctor.PublicId,  w.Doctor.FullName,
                 w.Laboratory.PublicId, w.Laboratory.Name,
                 w.Branch.PublicId, w.Branch.Name,
+                w.TreatmentPlanItem != null ? w.TreatmentPlanItem.PublicId : (Guid?)null,
                 w.WorkType, w.DeliveryType, w.ToothNumbers, w.ShadeColor,
                 w.Status, w.CreatedAt,
                 w.SentToLabAt, w.EstimatedDeliveryDate,

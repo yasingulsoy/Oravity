@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { FlaskConical, ClipboardList, ShieldCheck } from 'lucide-react';
+import { FlaskConical, ClipboardList } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LaboratoriesTab } from './components/LaboratoriesTab';
 import { LaboratoryWorksTab } from './components/LaboratoryWorksTab';
-import { ApprovalAuthoritiesTab } from './components/ApprovalAuthoritiesTab';
 
 export function LaboratoryPage() {
   const [tab, setTab] = useState('labs');
@@ -27,10 +26,6 @@ export function LaboratoryPage() {
             <ClipboardList className="mr-2 h-4 w-4" />
             İş Emirleri
           </TabsTrigger>
-          <TabsTrigger value="approvers">
-            <ShieldCheck className="mr-2 h-4 w-4" />
-            Onay Yetkilileri
-          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="labs" className="mt-4">
@@ -38,9 +33,6 @@ export function LaboratoryPage() {
         </TabsContent>
         <TabsContent value="works" className="mt-4">
           <LaboratoryWorksTab />
-        </TabsContent>
-        <TabsContent value="approvers" className="mt-4">
-          <ApprovalAuthoritiesTab />
         </TabsContent>
       </Tabs>
     </div>

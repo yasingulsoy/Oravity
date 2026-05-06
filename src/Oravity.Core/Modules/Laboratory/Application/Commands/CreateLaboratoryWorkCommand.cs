@@ -41,9 +41,6 @@ public class CreateLaboratoryWorkCommandHandler
         CreateLaboratoryWorkCommand request,
         CancellationToken ct)
     {
-        if (request.Items == null || request.Items.Count == 0)
-            throw new InvalidOperationException("En az bir fiyat kalemi gereklidir.");
-
         var companyId = await ResolveCompanyIdAsync(_tenant, _db, ct)
             ?? throw new ForbiddenException("Şirket bağlamı gerekli.");
 
@@ -65,19 +62,12 @@ public class CreateLaboratoryWorkCommandHandler
             throw new InvalidOperationException("Şube bilgisi çözümlenemedi.");
         }
 
-        // Laboratory resolution + şube ataması kontrolü
+        // Laboratory resolution
         var lab = await _db.Laboratories.AsNoTracking()
             .FirstOrDefaultAsync(l => l.PublicId == request.LaboratoryPublicId
                                        && l.CompanyId == companyId
                                        && l.IsActive, ct)
             ?? throw new NotFoundException("Laboratuvar bulunamadı veya pasif.");
-
-        var isAssigned = await _db.LaboratoryBranchAssignments.AsNoTracking()
-            .AnyAsync(a => a.LaboratoryId == lab.Id
-                            && a.BranchId == branchId
-                            && a.IsActive, ct);
-        if (!isAssigned)
-            throw new InvalidOperationException("Seçilen laboratuvar bu şubeye atanmamış.");
 
         // Patient resolution
         var patient = await _db.Patients.AsNoTracking()
@@ -124,7 +114,7 @@ public class CreateLaboratoryWorkCommandHandler
         var workNo = $"{prefix}{seq:D5}";
 
         // Fiyat kalemi publicId → Id lookup
-        var priceItemPids = request.Items
+        var priceItemPids = (request.Items ?? [])
             .Where(i => i.LabPriceItemPublicId.HasValue)
             .Select(i => i.LabPriceItemPublicId!.Value)
             .Distinct()
@@ -146,7 +136,7 @@ public class CreateLaboratoryWorkCommandHandler
         var currency = "TRY";
         var details = new List<object>();
 
-        foreach (var i in request.Items)
+        foreach (var i in request.Items ?? [])
         {
             long? priceId = null;
             if (i.LabPriceItemPublicId is { } ppid
