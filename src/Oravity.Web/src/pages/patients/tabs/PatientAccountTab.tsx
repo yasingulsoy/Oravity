@@ -182,10 +182,11 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
     return map;
   }, [institutionInvoicesData]);
 
-  const completedItems = (data?.items ?? []).filter(i => i.status === 'Completed');
-  const plannedItems   = (data?.items ?? []).filter(i => i.status !== 'Completed');
-  const unpaidItems    = completedItems.filter(i => i.remainingAmount > 0.005);
-  const billableItems  = completedItems.filter(i => i.totalAmountTry - i.patientAmount > 0.005);
+  const completedItems  = (data?.items ?? []).filter(i => i.status === 'Completed');
+  const plannedItems    = (data?.items ?? []).filter(i => i.status !== 'Completed');
+  const unpaidItems     = completedItems.filter(i => i.remainingAmount > 0.005);
+  const billableItems   = completedItems.filter(i => i.totalAmountTry - i.patientAmount > 0.005);
+  const hasProvisionRows = completedItems.some(i => i.institutionPaymentModel === 2);
 
   const onRefresh = () => {
     qc.invalidateQueries({ queryKey: ['patient-account', patientId] });
@@ -313,8 +314,8 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                 <TableHead>Hekim</TableHead>
                 <TableHead>Tarih</TableHead>
                 <TableHead className="text-right">Tutar</TableHead>
-                <TableHead className="text-right">Kurum</TableHead>
-                <TableHead className="text-right">Hasta Payı</TableHead>
+                {hasProvisionRows && <TableHead className="text-right">Kurum</TableHead>}
+                {hasProvisionRows && <TableHead className="text-right">Hasta Payı</TableHead>}
                 <TableHead className="text-right">Ödenen</TableHead>
                 <TableHead className="text-right">Kalan</TableHead>
               </TableRow>
@@ -408,20 +409,23 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                           </span>
                         ) : fmt(i.totalAmount)}
                       </TableCell>
-                      {/* Kurum payı — provizyon tipinde düzenlenebilir, diğerlerinde read-only */}
-                      <TableCell className="text-right">
-                        {(() => {
-                          const invs = (institutionInvoicesByItemId.get(i.treatmentPlanItemId) ?? [])
-                            .filter(inv => inv.status !== 'Rejected' && inv.status !== 'Cancelled');
-                          const paid     = invs.some(inv => inv.status === 'Paid');
-                          const invoiced = invs.length > 0;
-                          const statusBadge = paid
-                            ? <div className="text-[10px] text-green-600 font-medium">Tahsil ✓</div>
-                            : invoiced
-                              ? <div className="text-[10px] text-purple-600">Faturalı</div>
-                              : null;
+                      {/* Kurum payı — sadece provizyon planı olan hastalarda sütun görünür */}
+                      {hasProvisionRows && (
+                        <TableCell className="text-right">
+                          {(() => {
+                            if (i.institutionPaymentModel !== 2)
+                              return <span className="text-xs text-muted-foreground">—</span>;
 
-                          if (i.institutionPaymentModel === 2) {
+                            const invs = (institutionInvoicesByItemId.get(i.treatmentPlanItemId) ?? [])
+                              .filter(inv => inv.status !== 'Rejected' && inv.status !== 'Cancelled');
+                            const paid     = invs.some(inv => inv.status === 'Paid');
+                            const invoiced = invs.length > 0;
+                            const statusBadge = paid
+                              ? <div className="text-[10px] text-green-600 font-medium">Tahsil ✓</div>
+                              : invoiced
+                                ? <div className="text-[10px] text-purple-600">Faturalı</div>
+                                : null;
+
                             return (
                               <div className="space-y-0.5 flex flex-col items-end">
                                 <ContribInput
@@ -438,20 +442,17 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                                 {statusBadge}
                               </div>
                             );
-                          }
-
-                          const kontribüsyon = i.totalAmountTry - i.patientAmount;
-                          if (kontribüsyon <= 0.005) return <span className="text-xs text-muted-foreground">—</span>;
-                          return (
-                            <div className="space-y-0.5">
-                              <div className="text-muted-foreground">{fmt(kontribüsyon)}</div>
-                              {statusBadge}
-                            </div>
-                          );
-                        })()}
-                      </TableCell>
-                      {/* Hasta payı */}
-                      <TableCell className="text-right font-medium">{fmt(i.patientAmount)}</TableCell>
+                          })()}
+                        </TableCell>
+                      )}
+                      {/* Hasta payı — sadece provizyon planı olan hastalarda sütun görünür */}
+                      {hasProvisionRows && (
+                        <TableCell className="text-right font-medium">
+                          {i.institutionPaymentModel === 2
+                            ? fmt(i.patientAmount)
+                            : <span className="text-xs text-muted-foreground">—</span>}
+                        </TableCell>
+                      )}
                       {/* Ödenen */}
                       <TableCell className="text-right text-green-600">{fmt(i.allocatedAmount)}</TableCell>
                       {/* Kalan */}
@@ -469,7 +470,7 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                       const hasFx = i.allocationDetails.some(a => a.paymentCurrency !== 'TRY');
                       return (
                         <TableRow key={`alloc-${i.treatmentPlanItemId}`} className="bg-muted/20 hover:bg-muted/20">
-                          <TableCell colSpan={10} className="py-0 pl-8 pr-4">
+                          <TableCell colSpan={hasProvisionRows ? 10 : 8} className="py-0 pl-8 pr-4">
                             <table className="w-full text-xs my-2">
                               <thead>
                                 <tr className="text-muted-foreground border-b border-border/50">
