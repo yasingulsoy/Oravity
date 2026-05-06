@@ -409,11 +409,11 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                           </span>
                         ) : fmt(i.totalAmount)}
                       </TableCell>
-                      {/* Kurum payı — sadece provizyon + değer girilmiş kalemlerde input göster */}
+                      {/* Kurum payı — sadece provizyon planı olan hastalarda sütun görünür */}
                       {hasProvisionRows && (
                         <TableCell className="text-right">
                           {(() => {
-                            if (i.institutionPaymentModel !== 2 || i.institutionContributionAmount == null)
+                            if (i.institutionPaymentModel !== 2)
                               return <span className="text-xs text-muted-foreground">—</span>;
 
                             const invs = (institutionInvoicesByItemId.get(i.treatmentPlanItemId) ?? [])
@@ -445,10 +445,10 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                           })()}
                         </TableCell>
                       )}
-                      {/* Hasta payı */}
+                      {/* Hasta payı — sadece provizyon planı olan hastalarda sütun görünür */}
                       {hasProvisionRows && (
                         <TableCell className="text-right font-medium">
-                          {i.institutionPaymentModel === 2 && i.institutionContributionAmount != null
+                          {i.institutionPaymentModel === 2
                             ? fmt(i.patientAmount)
                             : <span className="text-xs text-muted-foreground">—</span>}
                         </TableCell>
