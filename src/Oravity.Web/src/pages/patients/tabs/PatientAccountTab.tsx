@@ -6,6 +6,7 @@ import { CreditCard, Wallet, AlertCircle, CheckCircle2, Clock, ArrowRight, Chevr
 import { toast } from 'sonner';
 import { patientAccountApi } from '@/api/patientAccount';
 import type { PatientAccountPayment, PatientAccountItem } from '@/api/patientAccount';
+import { treatmentPlansApi } from '@/api/treatments';
 import { exchangeRatesApi } from '@/api/exchangeRates';
 import { patientInvoicesApi } from '@/api/patientInvoices';
 import type { InvoiceRecipientType, PatientInvoice } from '@/api/patientInvoices';
@@ -56,6 +57,57 @@ const CURRENCIES = [
 
 function fmt(n: number) {
   return `₺${n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function ContribInput({
+  initialValue, refValue, onSave, isPending,
+}: {
+  initialValue: number | null;
+  refValue: number;
+  onSave: (amount: number | null) => void;
+  isPending?: boolean;
+}) {
+  const [val, setVal] = useState(initialValue != null ? String(initialValue) : '');
+
+  useEffect(() => {
+    setVal(initialValue != null ? String(initialValue) : '');
+  }, [initialValue]);
+
+  const parsed = val.trim() === '' ? null : parseFloat(val.replace(',', '.'));
+  const isInvalid = parsed !== null && (isNaN(parsed) || parsed < 0);
+  const isOverRef = parsed !== null && !isNaN(parsed) && parsed > refValue;
+
+  const commit = () => {
+    const trimmed = val.trim();
+    if (trimmed === '') { onSave(null); return; }
+    const n = parseFloat(trimmed.replace(',', '.'));
+    if (isNaN(n) || n < 0) { setVal(initialValue != null ? String(initialValue) : ''); return; }
+    onSave(n);
+  };
+
+  const borderClass = isInvalid
+    ? 'border-destructive text-destructive'
+    : isOverRef
+      ? 'border-amber-400 text-amber-700'
+      : parsed !== null && parsed > 0
+        ? 'border-blue-300 text-blue-700'
+        : 'text-muted-foreground';
+
+  return (
+    <input
+      type="number"
+      min={0}
+      step="0.01"
+      className={`w-[72px] text-right text-xs border rounded px-1.5 py-0.5 bg-background tabular-nums
+        focus:outline-none focus:ring-1 focus:ring-blue-400
+        ${isPending ? 'opacity-50' : ''} ${borderClass}`}
+      value={val}
+      onChange={e => setVal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } }}
+      onClick={e => e.stopPropagation()}
+    />
+  );
 }
 
 export function PatientAccountTab({ patientId, hasPassportNo = false }: { patientId: number; hasPassportNo?: boolean }) {
@@ -140,6 +192,13 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
     qc.invalidateQueries({ queryKey: ['patient-invoices', patientId] });
     qc.invalidateQueries({ queryKey: ['institution-invoices-for-patient', patientId] });
   };
+
+  const contribMutation = useMutation({
+    mutationFn: ({ planId, itemId, amount }: { planId: string; itemId: string; amount: number | null }) =>
+      treatmentPlansApi.setContribution(planId, itemId, amount),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['patient-account', patientId] }),
+    onError: () => toast.error('Kurum katkısı kaydedilemedi.'),
+  });
 
   return (
     <div className="space-y-4">
@@ -349,23 +408,44 @@ export function PatientAccountTab({ patientId, hasPassportNo = false }: { patien
                           </span>
                         ) : fmt(i.totalAmount)}
                       </TableCell>
-                      {/* Kurum payı */}
+                      {/* Kurum payı — provizyon tipinde düzenlenebilir, diğerlerinde read-only */}
                       <TableCell className="text-right">
                         {(() => {
-                          const kontribüsyon = i.totalAmountTry - i.patientAmount;
-                          if (kontribüsyon <= 0.005) return <span className="text-xs text-muted-foreground">—</span>;
                           const invs = (institutionInvoicesByItemId.get(i.treatmentPlanItemId) ?? [])
                             .filter(inv => inv.status !== 'Rejected' && inv.status !== 'Cancelled');
-                          const paid = invs.some(inv => inv.status === 'Paid');
+                          const paid     = invs.some(inv => inv.status === 'Paid');
                           const invoiced = invs.length > 0;
+                          const statusBadge = paid
+                            ? <div className="text-[10px] text-green-600 font-medium">Tahsil ✓</div>
+                            : invoiced
+                              ? <div className="text-[10px] text-purple-600">Faturalı</div>
+                              : null;
+
+                          if (i.institutionPaymentModel === 2) {
+                            return (
+                              <div className="space-y-0.5 flex flex-col items-end">
+                                <ContribInput
+                                  key={`${i.itemPublicId}:${i.institutionContributionAmount}`}
+                                  initialValue={i.institutionContributionAmount}
+                                  refValue={i.totalAmountTry}
+                                  isPending={contribMutation.isPending}
+                                  onSave={(amount) => contribMutation.mutate({
+                                    planId: i.planPublicId,
+                                    itemId: i.itemPublicId,
+                                    amount,
+                                  })}
+                                />
+                                {statusBadge}
+                              </div>
+                            );
+                          }
+
+                          const kontribüsyon = i.totalAmountTry - i.patientAmount;
+                          if (kontribüsyon <= 0.005) return <span className="text-xs text-muted-foreground">—</span>;
                           return (
                             <div className="space-y-0.5">
                               <div className="text-muted-foreground">{fmt(kontribüsyon)}</div>
-                              {paid
-                                ? <div className="text-[10px] text-green-600 font-medium">Tahsil ✓</div>
-                                : invoiced
-                                  ? <div className="text-[10px] text-purple-600">Faturalı</div>
-                                  : <div className="text-[10px] text-amber-600">Faturasız</div>}
+                              {statusBadge}
                             </div>
                           );
                         })()}

@@ -27,6 +27,9 @@ export interface PatientAccountItem {
   completedAt?: string;
   doctorId?: number;
   doctorName?: string;
+  planPublicId: string;
+  institutionPaymentModel: 1 | 2 | null;
+  institutionContributionAmount: number | null;
   allocationDetails: AllocationDetail[];
 }
 

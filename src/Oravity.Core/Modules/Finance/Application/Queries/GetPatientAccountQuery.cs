@@ -36,6 +36,9 @@ public record PatientAccountItemResponse(
     decimal AllocatedAmount,   // bu kaleme dağıtılmış TRY tutarı
     decimal RemainingAmount,   // kalan TRY borç
     DateTime? CompletedAt,
+    Guid PlanPublicId,                        // ContribInput için plan endpoint'i
+    int? InstitutionPaymentModel,             // null=kurum yok, 1=indirim, 2=provizyon
+    decimal? InstitutionContributionAmount,   // mevcut kurum payı (null=girilmemiş)
     IReadOnlyList<ItemAllocationDetail> AllocationDetails  // kalem bazında ödeme geçmişi
 );
 
@@ -123,7 +126,10 @@ public class GetPatientAccountQueryHandler
                                  ? i.TotalAmount
                                  : i.PriceBaseAmount,
                              i.PatientAmount,
-                             i.CompletedAt
+                             i.CompletedAt,
+                             PlanPublicId                    = i.Plan.PublicId,
+                             InstitutionPaymentModel         = i.Plan.InstitutionId != null ? (int?)i.Plan.Institution!.PaymentModel : null,
+                             i.InstitutionContributionAmount,
                          }).ToListAsync(ct);
 
         var doctorIds = raw.Select(x => x.DoctorId).Distinct().ToList();
@@ -146,7 +152,10 @@ public class GetPatientAccountQueryHandler
             x.TotalAmount,
             x.TotalAmountTry,  // allocation ve özet hesapları için
             x.PatientAmount,
-            x.CompletedAt
+            x.CompletedAt,
+            x.PlanPublicId,
+            x.InstitutionPaymentModel,
+            x.InstitutionContributionAmount,
         }).ToList();
 
         var itemIds = items.Select(x => x.Id).ToList();
@@ -230,6 +239,9 @@ public class GetPatientAccountQueryHandler
                 allocated,
                 Math.Max(0, x.PatientAmount - allocated),
                 x.CompletedAt,
+                x.PlanPublicId,
+                x.InstitutionPaymentModel,
+                x.InstitutionContributionAmount,
                 details);
         }).ToList();
 

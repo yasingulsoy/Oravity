@@ -3271,85 +3271,6 @@ function OnaylananTedavilerTab({ patientPublicId }: { patientPublicId: string })
   );
 }
 
-// ─── Inline Kurum Katkısı input ──────────────────────────────────────────────
-
-function ContribInput({
-  initialValue,
-  refValue,
-  onSave,
-  isPending,
-}: {
-  initialValue: number | null;
-  /** PriceBaseAmount (TRY) — sadece uyarı için referans, engel değil */
-  refValue: number;
-  onSave: (amount: number | null) => void;
-  isPending?: boolean;
-}) {
-  const [val, setVal] = useState(initialValue != null ? String(initialValue) : '');
-
-  useEffect(() => {
-    setVal(initialValue != null ? String(initialValue) : '');
-  }, [initialValue]);
-
-  const parsed = val.trim() === '' ? null : parseFloat(val.replace(',', '.'));
-  const isInvalid = parsed !== null && (isNaN(parsed) || parsed < 0);
-  const isOverRef = parsed !== null && !isNaN(parsed) && parsed > refValue;
-
-  const commit = () => {
-    const trimmed = val.trim();
-    if (trimmed === '') { onSave(null); return; }
-    const n = parseFloat(trimmed.replace(',', '.'));
-    if (isNaN(n) || n < 0) { setVal(initialValue != null ? String(initialValue) : ''); return; }
-    // Ref değerini aşıyorsa kaydet ama uyarı göster (kur farkı olabilir)
-    onSave(n);
-  };
-
-  const borderClass = isInvalid
-    ? 'border-destructive text-destructive'
-    : isOverRef
-      ? 'border-amber-400 text-amber-700'
-      : parsed !== null && parsed > 0
-        ? 'border-blue-300 text-blue-700'
-        : 'text-muted-foreground';
-
-  const input = (
-    <input
-      type="number"
-      min={0}
-      step="0.01"
-      className={`w-[72px] text-right text-xs border rounded px-1.5 py-0.5 bg-background tabular-nums
-        focus:outline-none focus:ring-1 focus:ring-blue-400
-        ${isPending ? 'opacity-50' : ''}
-        ${borderClass}
-      `}
-      value={val}
-      placeholder="—"
-      disabled={isPending}
-      onChange={e => setVal(e.target.value)}
-      onBlur={commit}
-      onKeyDown={e => {
-        if (e.key === 'Enter') { commit(); (e.target as HTMLInputElement).blur(); }
-        if (e.key === 'Escape') { setVal(initialValue != null ? String(initialValue) : ''); (e.target as HTMLInputElement).blur(); }
-      }}
-    />
-  );
-
-  if (!isOverRef) return input;
-
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger render={<span className="inline-flex" />}>
-          {input}
-        </TooltipTrigger>
-        <TooltipContent side="top" className="text-amber-700 bg-amber-50 border-amber-200 max-w-[200px] text-xs">
-          Plan fiyatını ({refValue.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺) aşıyor — kur farkı varsa normal.
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
-
 // ─── Tab: Yapılan Tedaviler ───────────────────────────────────────────────────
 
 function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
@@ -3423,16 +3344,6 @@ function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
     else { setSortKey(key); setSortDir('asc'); }
   };
 
-  // Kurum katkısı inline save
-  const contribMutation = useMutation({
-    mutationFn: ({ planId, itemId, amount }: { planId: string; itemId: string; amount: number | null }) =>
-      treatmentPlansApi.setContribution(planId, itemId, amount),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['treatment-plans', patientPublicId] });
-      qc.invalidateQueries({ queryKey: ['patient-account', patientNumericId] });
-    },
-    onError: () => toast.error('Kurum katkısı kaydedilemedi.'),
-  });
 
   // Revert dialog
   const [revertTarget, setRevertTarget] = useState<{ planPublicId: string; item: TreatmentPlan['items'][0] } | null>(null);
@@ -3605,20 +3516,13 @@ function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
                     )}
                   </td>
 
-                  {/* Kurum Payı — provizyon veya bilinmeyen (eski plan) satırlarda input, açıkça indirim ise — */}
+                  {/* Kurum Payı — read-only; düzenleme Hasta Cari Hesap sekmesinden yapılır */}
                   {hasProvisionRows && (
-                    <td className="px-2 py-1.5 text-right">
-                      {institutionPaymentModel !== 1 ? (
-                        <ContribInput
-                          key={`${item.publicId}:${item.institutionContributionAmount}`}
-                          initialValue={item.institutionContributionAmount}
-                          refValue={isForeign ? item.priceBaseAmount : item.totalAmount}
-                          isPending={contribMutation.isPending}
-                          onSave={(amount) => contribMutation.mutate({ planId: planPublicId, itemId: item.publicId, amount })}
-                        />
-                      ) : (
-                        <span className="text-muted-foreground text-[10px]">—</span>
-                      )}
+                    <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                      {institutionPaymentModel !== 1 && item.institutionContributionAmount != null && item.institutionContributionAmount > 0
+                        ? <span className="text-xs tabular-nums text-muted-foreground">{item.institutionContributionAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</span>
+                        : <span className="text-muted-foreground text-[10px]">—</span>
+                      }
                     </td>
                   )}
 
