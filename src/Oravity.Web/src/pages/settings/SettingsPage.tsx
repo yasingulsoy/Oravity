@@ -1029,7 +1029,7 @@ function RolesTab() {
                                   className={cn('text-[10px]', !has && 'opacity-30', p.isDangerous && has && 'bg-destructive text-destructive-foreground')}
                                 >
                                   {p.isDangerous && <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />}
-                                  {p.action}
+                                  {permLabel(p.code, p.action)}
                                 </Badge>
                               );
                             })}
@@ -1058,8 +1058,70 @@ function RolesTab() {
           }}
         />
       )}
+
     </div>
   );
+}
+
+const RESOURCE_LABELS: Record<string, string> = {
+  patient: 'Hastalar',
+  appointment: 'Randevular',
+  treatment_plan: 'Tedavi Planları',
+  laboratory: 'Laboratuvar',
+  payment: 'Ödemeler',
+  invoice: 'Faturalar',
+  report: 'Raporlar',
+  settings: 'Ayarlar',
+  campaign: 'Kampanyalar',
+  pricing: 'Fiyatlandırma',
+  survey: 'Anketler',
+  complaint: 'Şikayetler',
+  notification: 'Bildirimler',
+  audit: 'Denetim',
+  note: 'Hasta Notları',
+  anamnesis: 'Anamnez',
+  commission: 'Komisyon',
+  institution: 'Kurum',
+};
+
+const PERMISSION_LABELS: Record<string, string> = {
+  view: 'Görüntüle',
+  manage: 'Yönet (ekle / düzenle / sil)',
+  create: 'Oluştur',
+  update: 'Düzenle',
+  delete: 'Sil',
+  export: 'Dışa Aktar',
+  import: 'İçe Aktar',
+  // patient-specific
+  'patient.view_contact': 'İletişim bilgilerini gör',
+  'patient.edit_basic': 'Temel bilgileri düzenle',
+  'patient.upload_document': 'Dosya / belge yükle',
+  'patient.write_hidden_note': 'Gizli not yaz',
+  // note-specific
+  'note.write_patient': 'Not ekle',
+  'note.delete_patient': 'Not sil',
+  write_patient: 'Not ekle',
+  delete_patient: 'Not sil',
+  // anamnesis-specific
+  'anamnesis.edit': 'Anamnez düzenle',
+  edit: 'Düzenle',
+  // commission-specific
+  distribute: 'Dağıt',
+  // report-specific
+  view_daily: 'Günlük rapor gör',
+  // laboratory-specific
+  'laboratory.manage': 'Yönet (ekle / düzenle / sil / fiyat)',
+  'laboratory.work_create': 'İş emri oluştur',
+  'laboratory.work_send': 'Lab\'a gönder',
+  'laboratory.work_receive': 'Teslim al',
+  'laboratory.work_fit': 'Hastaya dene',
+  'laboratory.work_complete': 'Tamamla',
+  'laboratory.work_approve': 'Onayla / Reddet',
+  'laboratory.work_cancel': 'İptal et',
+};
+
+function permLabel(code: string, action: string): string {
+  return PERMISSION_LABELS[code] ?? PERMISSION_LABELS[action] ?? action;
 }
 
 function EditRoleDialog({ role, allPermissions, onClose, onSuccess }: {
@@ -1125,7 +1187,7 @@ function EditRoleDialog({ role, allPermissions, onClose, onSuccess }: {
                     htmlFor={`res-${resource}`}
                     className="text-xs font-semibold uppercase tracking-wider cursor-pointer select-none"
                   >
-                    {resource}
+                    {RESOURCE_LABELS[resource] ?? resource}
                   </label>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pl-6">
@@ -1140,7 +1202,7 @@ function EditRoleDialog({ role, allPermissions, onClose, onSuccess }: {
                       />
                       <span className={cn('text-xs', p.isDangerous && 'text-destructive font-medium')}>
                         {p.isDangerous && <AlertTriangle className="inline h-3 w-3 mr-0.5 -mt-0.5" />}
-                        {p.action}
+                        {permLabel(p.code, p.action)}
                       </span>
                     </label>
                   ))}

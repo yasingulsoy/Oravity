@@ -76,6 +76,11 @@ export const appointmentsApi = {
   updateCalendarSettings: (data: CalendarSettings) =>
     apiClient.put<CalendarSettings>('/appointments/calendar-settings', data),
 
+  getByPatient: (patientPublicId: string, page = 1, pageSize = 50) =>
+    apiClient.get<{ items: Appointment[]; total: number }>(`/appointments/patient/${patientPublicId}`, {
+      params: { page, pageSize },
+    }),
+
   getForDoctors: async (date: string, doctorIds: number[]) => {
     if (doctorIds.length === 0) return { data: [] as Appointment[] };
     const results = await Promise.all(

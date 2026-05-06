@@ -23,6 +23,7 @@ export interface PatientAccountItem {
   totalAmountTry: number;   // TRY karşılığı
   patientAmount: number;    // hastanın gerçek borcu (TRY, kurum payı düşülmüş)
   allocatedAmount: number;
+  institutionAllocatedAmount: number;
   remainingAmount: number;
   completedAt?: string;
   doctorId?: number;
@@ -42,6 +43,7 @@ export interface PatientAccountPayment {
   exchangeRate: number;
   baseAmount: number;   // TRY karşılığı
   paymentDate: string;
+  createdAt: string;
   method: number;
   methodLabel: string;
   notes?: string;

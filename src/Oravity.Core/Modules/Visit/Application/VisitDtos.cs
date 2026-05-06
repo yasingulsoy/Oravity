@@ -80,6 +80,7 @@ public record ProtocolDetailResponse(
     string   ProtocolNo,
     long     VisitId,
     long     PatientId,
+    Guid     PatientPublicId,
     string   PatientName,
     long     DoctorId,
     string   DoctorName,

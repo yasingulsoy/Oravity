@@ -33,8 +33,9 @@ public record PatientAccountItemResponse(
     decimal TotalAmount,       // KDV dahil, orijinal para birimi
     decimal TotalAmountTry,    // KDV dahil, TRY karşılığı (allocation bazı)
     decimal PatientAmount,     // hastanın gerçek borcu (TRY, kurum payı düşülmüş)
-    decimal AllocatedAmount,   // bu kaleme dağıtılmış TRY tutarı
-    decimal RemainingAmount,   // kalan TRY borç
+    decimal AllocatedAmount,             // hasta ödemesinden dağıtılmış TRY
+    decimal InstitutionAllocatedAmount,  // kurum ödemesinden dağıtılmış TRY
+    decimal RemainingAmount,             // kalan TRY borç (hasta payı − hasta ödenen)
     DateTime? CompletedAt,
     Guid PlanPublicId,                        // ContribInput için plan endpoint'i
     int? InstitutionPaymentModel,             // null=kurum yok, 1=indirim, 2=provizyon
@@ -53,6 +54,7 @@ public record PatientAccountPaymentResponse(
     PaymentMethod Method,
     string MethodLabel,
     DateOnly PaymentDate,
+    DateTime CreatedAt,
     decimal AllocatedAmount,
     decimal UnallocatedAmount,
     bool IsRefunded
@@ -186,10 +188,20 @@ public class GetPatientAccountQueryHandler
             }
         ).ToListAsync(ct);
 
-        // Toplam ve detay grupla
+        // Toplam ve detay grupla (hasta ödemeleri)
         var allocDict        = allocRaw
             .GroupBy(x => x.TreatmentPlanItemId)
             .ToDictionary(g => g.Key, g => g.Sum(x => x.AllocatedAmount));
+
+        // Kurum ödemelerinden yapılan tahsisler
+        var instAllocDict = await _db.PaymentAllocations.AsNoTracking()
+            .Where(a => a.InstitutionPaymentId.HasValue
+                     && itemIds.Contains(a.TreatmentPlanItemId)
+                     && !a.IsRefunded)
+            .GroupBy(a => a.TreatmentPlanItemId)
+            .Select(g => new { ItemId = g.Key, Amount = g.Sum(x => x.AllocatedAmount) })
+            .ToListAsync(ct);
+        var instAllocByItem = instAllocDict.ToDictionary(x => x.ItemId, x => x.Amount);
 
         var allocDetailByItem = allocRaw
             .GroupBy(x => x.TreatmentPlanItemId)
@@ -218,7 +230,7 @@ public class GetPatientAccountQueryHandler
             {
                 p.PublicId, p.Id,
                 p.Amount, p.Currency, p.ExchangeRate, p.BaseAmount,
-                p.Method, p.PaymentDate, p.IsRefunded
+                p.Method, p.PaymentDate, p.CreatedAt, p.IsRefunded
             })
             .ToListAsync(ct);
 
@@ -233,9 +245,10 @@ public class GetPatientAccountQueryHandler
         // ── Item DTO'ları ─────────────────────────────────────────────────
         var itemDtos = items.Select(x =>
         {
-            var allocated = allocDict.GetValueOrDefault(x.Id);
-            var details   = allocDetailByItem.GetValueOrDefault(x.Id)
-                            ?? (IReadOnlyList<ItemAllocationDetail>)[];
+            var allocated     = allocDict.GetValueOrDefault(x.Id);
+            var instAllocated = instAllocByItem.GetValueOrDefault(x.Id);
+            var details       = allocDetailByItem.GetValueOrDefault(x.Id)
+                                ?? (IReadOnlyList<ItemAllocationDetail>)[];
             return new PatientAccountItemResponse(
                 x.Id, x.PublicId, x.DoctorId, x.DoctorName,
                 x.TreatmentId, x.TreatmentName, x.ToothNumber,
@@ -244,6 +257,7 @@ public class GetPatientAccountQueryHandler
                 x.FinalPrice, x.TotalAmount, x.TotalAmountTry,
                 x.PatientAmount,
                 allocated,
+                instAllocated,
                 Math.Max(0, x.PatientAmount - allocated),
                 x.CompletedAt,
                 x.PlanPublicId,
@@ -263,7 +277,7 @@ public class GetPatientAccountQueryHandler
                 p.PublicId, p.Id,
                 p.Amount, p.Currency, p.ExchangeRate, p.BaseAmount,
                 p.Method, FinanceMappings.MethodLabel(p.Method),
-                p.PaymentDate, allocated, unallocated, p.IsRefunded);
+                p.PaymentDate, p.CreatedAt, allocated, unallocated, p.IsRefunded);
         }).ToList();
 
         // ── Özet ──────────────────────────────────────────────────────────

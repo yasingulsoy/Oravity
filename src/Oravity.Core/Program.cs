@@ -15,6 +15,7 @@ using Oravity.Infrastructure.Services;
 using Oravity.SharedKernel.Interfaces;
 using Oravity.Core.Modules.Notification.Infrastructure.Hubs;
 using Oravity.Core.Modules.Notification.Infrastructure.Services;
+using Oravity.Core.Settings;
 using Oravity.Infrastructure;
 using Oravity.Infrastructure.Database;
 using Oravity.Infrastructure.Tenancy;
@@ -36,6 +37,9 @@ try
         .Enrich.FromLogContext()
         .WriteTo.Console()
         .WriteTo.Seq(ctx.Configuration["Serilog:SeqUrl"] ?? "http://localhost:5341"));
+
+    builder.Services.Configure<TaxSettings>(
+        builder.Configuration.GetSection(TaxSettings.SectionName));
 
     builder.Services.AddControllers()
         .AddJsonOptions(options =>

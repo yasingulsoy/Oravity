@@ -45,6 +45,7 @@ public class GetAppointmentsByDateQueryHandler
             .Select(a => new
             {
                 a.PublicId, a.BranchId, a.PatientId, a.DoctorId,
+                PatientPublicId  = a.Patient != null ? (Guid?)a.Patient.PublicId : null,
                 PatientName = a.Patient != null
                     ? a.Patient.FirstName + " " + a.Patient.LastName
                     : null,
@@ -72,7 +73,8 @@ public class GetAppointmentsByDateQueryHandler
             AppointmentMappings.StatusLabel(a.StatusId),
             a.Notes, a.IsUrgent, a.IsEarlierRequest, a.RowVersion, a.CreatedAt,
             a.AppointmentTypeName,
-            a.PatientBirthDate, a.PatientGender, a.HasOpenProtocol, a.IsBeingCalled
+            a.PatientBirthDate, a.PatientGender, a.HasOpenProtocol, a.IsBeingCalled,
+            a.PatientPublicId
         )).ToList();
     }
 

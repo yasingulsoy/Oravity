@@ -587,6 +587,22 @@ public class AppointmentsController : ControllerBase
         return Ok(result.OrderBy(r => r.BranchName).ThenBy(r => r.FullName).ToList());
     }
 
+    /// <summary>
+    /// Belirli hastanın tüm randevularını listeler (en yeni önce).
+    /// </summary>
+    [HttpGet("patient/{patientPublicId:guid}")]
+    [RequirePermission("appointment:view")]
+    [ProducesResponseType(typeof(PatientAppointmentsResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetByPatient(
+        Guid patientPublicId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50)
+    {
+        var result = await _mediator.Send(
+            new GetPatientAppointmentsQuery(patientPublicId, pageSize, page));
+        return Ok(result);
+    }
+
     /// <summary>Randevuyu iptal eder (soft cancel — status=6).</summary>
     [HttpDelete("{publicId:guid}")]
     [RequirePermission("appointment:cancel")]

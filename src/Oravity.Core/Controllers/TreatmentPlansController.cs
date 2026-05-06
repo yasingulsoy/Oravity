@@ -301,7 +301,7 @@ public class TreatmentPlansController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateItem(Guid id, Guid itemId, [FromBody] UpdateTreatmentPlanItemRequest request)
     {
-        var result = await _mediator.Send(new UpdateTreatmentPlanItemCommand(itemId, request.UnitPrice, request.DiscountRate, request.ToothNumber));
+        var result = await _mediator.Send(new UpdateTreatmentPlanItemCommand(itemId, request.UnitPrice, request.DiscountRate, request.ToothNumber, request.Notes));
         return Ok(result);
     }
 
@@ -348,7 +348,8 @@ public record UpdateTreatmentPlanRequest(
 public record UpdateTreatmentPlanItemRequest(
     decimal UnitPrice,
     decimal DiscountRate,
-    string? ToothNumber
+    string? ToothNumber,
+    string? Notes = null
 );
 
 public record ApproveItemsRequest(List<Guid> ItemPublicIds);

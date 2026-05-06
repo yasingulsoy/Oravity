@@ -2,12 +2,14 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Oravity.Core.Filters;
 using Oravity.Core.Modules.InstitutionInvoice.Application;
 using Oravity.Core.Modules.InstitutionInvoice.Application.Commands;
 using Oravity.Core.Modules.InstitutionInvoice.Application.Queries;
 using Oravity.Core.Modules.InvoiceIntegration;
 using Oravity.Core.Services;
+using Oravity.Core.Settings;
 using Oravity.Infrastructure.Database;
 using Oravity.SharedKernel.Entities;
 using Oravity.SharedKernel.Exceptions;
@@ -29,17 +31,20 @@ public class InstitutionInvoicesController : ControllerBase
     private readonly ITenantContext _tenant;
     private readonly InvoiceIntegratorFactory _integratorFactory;
     private readonly InvoicePdfService _pdfService;
+    private readonly TaxSettings _tax;
 
     public InstitutionInvoicesController(
         IMediator mediator, AppDbContext db, ITenantContext tenant,
         InvoiceIntegratorFactory integratorFactory,
-        InvoicePdfService pdfService)
+        InvoicePdfService pdfService,
+        IOptions<TaxSettings> tax)
     {
         _mediator = mediator;
         _db = db;
         _tenant = tenant;
         _integratorFactory = integratorFactory;
         _pdfService = pdfService;
+        _tax = tax.Value;
     }
 
     /// <summary>
@@ -156,12 +161,17 @@ public class InstitutionInvoicesController : ControllerBase
         var institution = await _db.Institutions.AsNoTracking()
             .FirstOrDefaultAsync(i => i.Id == r.InstitutionId, ct);
 
+        // KDVGUT I/C-2.1.3.2 — tevkifat yalnızca KDV dahil tutar yasal eşiği aşarsa uygulanır
+        // Eşik appsettings.json › Tax:WithholdingThresholdTry (her yıl güncellenir)
+        var applyWithholding = (institution?.WithholdingApplies ?? false)
+            && r.Amount > _tax.WithholdingThresholdTry;
+
         var result = await _mediator.Send(new CreateInstitutionInvoiceCommand(
             r.PatientId, r.InstitutionId, r.InvoiceNo,
             r.InvoiceDate, r.DueDate, r.Amount, r.Currency ?? "TRY",
             r.TreatmentItemIds, r.Notes,
             institution?.IsEInvoiceTaxpayer ?? false,
-            institution?.WithholdingApplies ?? false,
+            applyWithholding,
             institution?.WithholdingCode,
             institution?.WithholdingNumerator ?? 5,
             institution?.WithholdingDenominator ?? 10));

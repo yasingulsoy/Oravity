@@ -66,6 +66,9 @@ export interface ProtocolDiagnosis {
 export interface ProtocolDetail {
   publicId: string;
   protocolNo: string;
+  patientId: number;
+  patientPublicId: string;
+  patientName: string;
   protocolType: number;
   protocolTypeName: string;
   status: number;

@@ -1,11 +1,12 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { format, addDays, subDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import {
   ChevronLeft, ChevronRight,
   CalendarDays, PhoneCall, UserCheck, Stethoscope, CheckCheck,
-  XCircle, Ban, LogOut, Trash2,
+  XCircle, Ban, LogOut, Trash2, ExternalLink,
 } from 'lucide-react';
 import { appointmentsApi } from '@/api/appointments';
 import { useCalendarSocket } from '@/hooks/useCalendarSocket';
@@ -144,6 +145,7 @@ function AppointmentJourney({ statusId }: { statusId: number }) {
 
 export function AppointmentCalendarPage() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   // --- Date navigation ---
   const [currentDate, setCurrentDate] = useState(() => new Date());
@@ -569,9 +571,21 @@ export function AppointmentCalendarPage() {
                 <Separator />
 
                 <dl className="space-y-3 text-sm">
-                  <div className="flex justify-between">
+                  <div className="flex justify-between items-center">
                     <dt className="text-muted-foreground">Hasta</dt>
-                    <dd className="font-medium">{liveAppointment.patientName}</dd>
+                    <dd className="font-medium flex items-center gap-1.5">
+                      {liveAppointment.patientName}
+                      {liveAppointment.patientPublicId && (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/patients/${liveAppointment.patientPublicId}`)}
+                          className="text-muted-foreground hover:text-primary"
+                          title="Hasta kartını aç"
+                        >
+                          <ExternalLink className="size-3.5" />
+                        </button>
+                      )}
+                    </dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Doktor</dt>

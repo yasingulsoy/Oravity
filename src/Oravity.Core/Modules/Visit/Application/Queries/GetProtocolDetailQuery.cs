@@ -33,6 +33,7 @@ public class GetProtocolDetailQueryHandler : IRequestHandler<GetProtocolDetailQu
             p.ProtocolNo,
             p.VisitId,
             p.PatientId,
+            p.Patient?.PublicId ?? Guid.Empty,
             p.Patient != null ? $"{p.Patient.FirstName} {p.Patient.LastName}".Trim() : "",
             p.DoctorId,
             p.Doctor?.FullName ?? "",

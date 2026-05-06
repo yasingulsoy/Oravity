@@ -10,7 +10,7 @@ import {
   FileText, Search, Trash2, History, Lock, X,
   Stethoscope, Plus, ChevronDown, ChevronRight, CheckCircle2, Megaphone, Info, FileDown,
   Pencil, RotateCcw, QrCode, ClipboardCheck, Copy, XCircle, ArrowUpDown, ArrowUp, ArrowDown, Building2,
-  LogOut,
+  LogOut, FlaskConical, StickyNote, Pin, PinOff, BellRing,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -37,9 +38,13 @@ import { campaignsApi } from '@/api/campaigns';
 import { notificationsApi } from '@/api/notifications';
 import { consentFormsApi, consentInstancesApi } from '@/api/consent';
 import { patientAccountApi } from '@/api/patientAccount';
+import { laboratoriesApi } from '@/api/laboratories';
+import type { LaboratoryItem, LaboratoryPriceItem, LabWorkItemInput, LabWorkTransitionAction } from '@/api/laboratories';
 import type { ConsentFormTemplateSummary, ConsentInstanceResponse } from '@/api/consent';
 import type { TreatmentCatalogItem } from '@/api/treatments';
 import type { TreatmentPlan } from '@/types/treatment';
+import type { PatientNote, NoteType } from '@/types/patient';
+import { PatientNotesTab, NOTE_TYPE_LABELS, NOTE_TYPE_COLORS } from '../patients/tabs/PatientNotesTab';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -89,6 +94,34 @@ function InfoRow({ label, value, icon: Icon }: {
 }
 
 // ─── Tab: Hasta Bilgileri ─────────────────────────────────────────────────────
+
+const LAB_TERMINAL: LabWorkStatus[] = ['completed', 'approved', 'rejected', 'cancelled'];
+
+const LAB_STATUS_LABELS: Record<LabWorkStatus, string> = {
+  pending:    'Bekliyor',
+  sent:       'Gönderildi',
+  in_progress:'Üretimde',
+  ready:      'Hazır',
+  received:   'Teslim Alındı',
+  fitted:     'Denendi',
+  completed:  'Tamamlandı',
+  approved:   'Onaylandı',
+  rejected:   'Reddedildi',
+  cancelled:  'İptal',
+};
+
+const LAB_STATUS_COLOR: Record<LabWorkStatus, string> = {
+  pending:    'bg-slate-100 text-slate-600',
+  sent:       'bg-blue-100 text-blue-700',
+  in_progress:'bg-amber-100 text-amber-700',
+  ready:      'bg-emerald-100 text-emerald-700',
+  received:   'bg-teal-100 text-teal-700',
+  fitted:     'bg-purple-100 text-purple-700',
+  completed:  'bg-green-100 text-green-700',
+  approved:   'bg-green-100 text-green-800',
+  rejected:   'bg-red-100 text-red-700',
+  cancelled:  'bg-slate-100 text-slate-500',
+};
 
 function PatientInfoTab({ patientPublicId }: { patientPublicId: string }) {
   const { data: patient, isLoading } = useQuery<Patient>({
@@ -158,13 +191,18 @@ function PatientInfoTab({ patientPublicId }: { patientPublicId: string }) {
 
       {patient.notes && (
         <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Notlar</p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Genel Not</p>
           <div className="rounded-lg border p-3 text-sm text-muted-foreground">{patient.notes}</div>
         </div>
       )}
+
     </div>
   );
 }
+
+// ─── Tab: Notlar — PatientNotesTab (shared) ───────────────────────────────────
+
+const NotesTab = PatientNotesTab;
 
 // ─── Tab: Anamnez ─────────────────────────────────────────────────────────────
 
@@ -1291,7 +1329,273 @@ interface DraftItem {
   currency: string;
   chartSymbolCode: string | null;
   requiresSurfaceSelection: boolean;
+  requiresLaboratory: boolean;
   surfaces: string;      // "MOD", "MO", "V", "" vb.
+  note: string;          // tedavi kalemi notu
+}
+
+interface PendingLabOrder {
+  laboratoryPublicId: string;
+  laboratoryName: string;
+  workType: string;
+  deliveryType: string;
+  shadeColor: string;
+  doctorNotes: string;
+  items: LabWorkItemInput[];
+}
+
+// ─── Lab Emri Seçim Diyalogu ─────────────────────────────────────────────────
+
+const WORK_TYPES = [
+  { value: 'prosthetic',   label: 'Protetik' },
+  { value: 'orthodontic',  label: 'Ortodontik' },
+  { value: 'implant',      label: 'İmplant' },
+  { value: 'other',        label: 'Diğer' },
+];
+const DELIVERY_TYPES = [
+  { value: 'pickup',  label: 'Elden' },
+  { value: 'courier', label: 'Kargo/Kurye' },
+  { value: 'digital', label: 'Dijital' },
+];
+const SELECT_CLS = 'h-8 w-full rounded-md border border-input bg-background px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2';
+
+function LabOrderDialog({
+  open, treatmentName, initial, onConfirm, onSkip,
+}: {
+  open: boolean;
+  treatmentName: string;
+  initial: PendingLabOrder | null;
+  onConfirm: (order: PendingLabOrder) => void;
+  onSkip: () => void;
+}) {
+  const [labPublicId,   setLabPublicId]   = useState('');
+  const [workType,      setWorkType]      = useState('prosthetic');
+  const [deliveryType,  setDeliveryType]  = useState('pickup');
+  const [shadeColor,    setShadeColor]    = useState('');
+  const [doctorNotes,   setDoctorNotes]   = useState('');
+  const [orderItems,    setOrderItems]    = useState<LabWorkItemInput[]>([]);
+  const [labSearch,     setLabSearch]     = useState('');
+
+  // Seçili lab detayı (fiyat listesi için)
+  const [labDetail, setLabDetail] = useState<{ priceItems: LaboratoryPriceItem[] } | null>(null);
+
+  // Lab listesi
+  const { data: labs = [] } = useQuery<LaboratoryItem[]>({
+    queryKey: ['laboratories', 'active'],
+    queryFn: () => laboratoriesApi.list({ activeOnly: true }).then(r => r.data),
+    staleTime: 60_000,
+    enabled: open,
+  });
+
+  // Açılışta initial değerleri yükle
+  useEffect(() => {
+    if (!open) return;
+    if (initial) {
+      setLabPublicId(initial.laboratoryPublicId);
+      setWorkType(initial.workType);
+      setDeliveryType(initial.deliveryType);
+      setShadeColor(initial.shadeColor);
+      setDoctorNotes(initial.doctorNotes);
+      setOrderItems(initial.items);
+    } else {
+      setLabPublicId('');
+      setWorkType('prosthetic');
+      setDeliveryType('pickup');
+      setShadeColor('');
+      setDoctorNotes('');
+      setOrderItems([]);
+      setLabDetail(null);
+    }
+    setLabSearch('');
+  }, [open, initial]);
+
+  // Lab seçilince detayını çek
+  useEffect(() => {
+    if (!labPublicId) { setLabDetail(null); return; }
+    laboratoriesApi.getDetail(labPublicId)
+      .then(r => setLabDetail({ priceItems: r.data.priceItems }))
+      .catch(() => setLabDetail(null));
+  }, [labPublicId]);
+
+  const selectedLab = labs.find(l => l.publicId === labPublicId);
+
+  const addPriceItem = (pi: LaboratoryPriceItem) => {
+    setOrderItems(prev => {
+      const exists = prev.find(x => x.labPriceItemPublicId === pi.publicId);
+      if (exists) return prev.map(x => x.labPriceItemPublicId === pi.publicId ? { ...x, quantity: x.quantity + 1 } : x);
+      return [...prev, { labPriceItemPublicId: pi.publicId, itemName: pi.itemName, quantity: 1, unitPrice: pi.price, currency: pi.currency }];
+    });
+  };
+
+  const addManualItem = () => {
+    setOrderItems(prev => [...prev, { labPriceItemPublicId: null, itemName: '', quantity: 1, unitPrice: 0, currency: 'TRY' }]);
+  };
+
+  const updateOrderItem = (idx: number, patch: Partial<LabWorkItemInput>) => {
+    setOrderItems(prev => prev.map((x, i) => i === idx ? { ...x, ...patch } : x));
+  };
+
+  const removeOrderItem = (idx: number) => {
+    setOrderItems(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const filteredPriceItems = labDetail?.priceItems.filter(pi =>
+    pi.isActive && (!labSearch || pi.itemName.toLowerCase().includes(labSearch.toLowerCase()))
+  ) ?? [];
+
+  const canConfirm = !!labPublicId && orderItems.length > 0 && orderItems.every(x => x.itemName.trim());
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onSkip(); }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FlaskConical className="size-4 text-purple-600" />
+            Laboratuvar İş Emri
+            {treatmentName && <span className="text-muted-foreground font-normal text-sm">— {treatmentName}</span>}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-1">
+          {/* Laboratuvar seçimi */}
+          <div className="space-y-1.5">
+            <Label className="text-xs">Laboratuvar <span className="text-destructive">*</span></Label>
+            <select value={labPublicId} onChange={e => setLabPublicId(e.target.value)} className={SELECT_CLS}>
+              <option value="">Laboratuvar seçin…</option>
+              {labs.map(l => (
+                <option key={l.publicId} value={l.publicId}>
+                  {l.name}{l.city ? ` — ${l.city}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* İş türü + Teslimat */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">İş Türü</Label>
+              <select value={workType} onChange={e => setWorkType(e.target.value)} className={SELECT_CLS}>
+                {WORK_TYPES.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Teslimat Türü</Label>
+              <select value={deliveryType} onChange={e => setDeliveryType(e.target.value)} className={SELECT_CLS}>
+                {DELIVERY_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Ton rengi + Hekim notu */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Ton / Renk</Label>
+              <Input className="h-8 text-sm" placeholder="ör. A2, B1…" value={shadeColor} onChange={e => setShadeColor(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Hekim Notu</Label>
+              <Input className="h-8 text-sm" placeholder="Opsiyonel not…" value={doctorNotes} onChange={e => setDoctorNotes(e.target.value)} />
+            </div>
+          </div>
+
+          {/* İşlemler */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">İşlemler <span className="text-destructive">*</span></Label>
+              <button type="button" onClick={addManualItem} className="text-[10px] text-primary hover:underline">+ Manuel ekle</button>
+            </div>
+
+            {/* Lab fiyat listesinden seç */}
+            {labPublicId && (
+              <div className="rounded-md border bg-muted/20 p-2 space-y-1.5">
+                <Input
+                  className="h-7 text-xs"
+                  placeholder="Fiyat listesinde ara…"
+                  value={labSearch}
+                  onChange={e => setLabSearch(e.target.value)}
+                />
+                {filteredPriceItems.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-1 text-center">
+                    {labDetail ? 'Fiyat listesi boş' : 'Yükleniyor…'}
+                  </p>
+                ) : (
+                  <div className="max-h-36 overflow-y-auto space-y-1">
+                    {filteredPriceItems.map(pi => (
+                      <button
+                        key={pi.publicId}
+                        type="button"
+                        onClick={() => addPriceItem(pi)}
+                        className="w-full flex items-center justify-between text-xs px-2 py-1 rounded hover:bg-background hover:shadow-sm text-left gap-2"
+                      >
+                        <span className="font-medium truncate">{pi.itemName}</span>
+                        <span className="shrink-0 text-muted-foreground tabular-nums">
+                          {pi.price.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {pi.currency}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Seçili / Manuel işlemler */}
+            {orderItems.length > 0 && (
+              <div className="space-y-1">
+                {orderItems.map((oi, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <Input
+                      className="h-7 text-xs flex-1"
+                      placeholder="İşlem adı"
+                      value={oi.itemName}
+                      readOnly={!!oi.labPriceItemPublicId}
+                      onChange={e => updateOrderItem(idx, { itemName: e.target.value })}
+                    />
+                    <Input
+                      type="number"
+                      className="h-7 text-xs w-14 text-center"
+                      placeholder="Adet"
+                      min={1}
+                      value={oi.quantity}
+                      onChange={e => updateOrderItem(idx, { quantity: parseInt(e.target.value) || 1 })}
+                    />
+                    <Input
+                      type="number"
+                      className="h-7 text-xs w-24 text-right"
+                      placeholder="Fiyat"
+                      min={0}
+                      value={oi.unitPrice || ''}
+                      onChange={e => updateOrderItem(idx, { unitPrice: parseFloat(e.target.value) || 0 })}
+                    />
+                    <span className="text-xs text-muted-foreground w-8 shrink-0">{oi.currency}</span>
+                    <button type="button" onClick={() => removeOrderItem(idx)} className="text-muted-foreground hover:text-destructive shrink-0">
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button variant="ghost" size="sm" onClick={onSkip}>Sonra Ekle</Button>
+          <Button
+            size="sm"
+            disabled={!canConfirm}
+            onClick={() => onConfirm({
+              laboratoryPublicId: labPublicId,
+              laboratoryName:     selectedLab?.name ?? '',
+              workType, deliveryType, shadeColor, doctorNotes,
+              items: orderItems,
+            })}
+          >
+            <FlaskConical className="size-3.5 mr-1.5" />
+            İş Emri Ekle
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 // ─── Plan Builder — desteklenen para birimleri ───────────────────────────────
@@ -1371,6 +1675,7 @@ function PlanBuilderPanel({
   const [mode,           setMode]           = useState<'permanent' | 'primary'>('permanent');
   const [showDiagnosis,  setShowDiagnosis]  = useState(true);
 
+
   // Açılınca başlat / kapanınca sıfırla
   useEffect(() => {
     if (open && editPlan) {
@@ -1392,7 +1697,9 @@ function PlanBuilderPanel({
         currency: item.priceCurrency ?? 'TRY',
         chartSymbolCode: null,
         requiresSurfaceSelection: false,
+        requiresLaboratory: false,
         surfaces: item.toothSurfaces ?? '',
+        note: item.notes ?? '',
       })));
     } else if (!open) {
       setPlanName('Yeni Tedavi Planı');
@@ -1412,7 +1719,7 @@ function PlanBuilderPanel({
       if (!item.existingItemId) return item;
       const cat = catalog.find(c => c.publicId === item.treatmentPublicId);
       if (!cat) return item;
-      return { ...item, chartSymbolCode: cat.chartSymbolCode ?? null, requiresSurfaceSelection: cat.requiresSurfaceSelection };
+      return { ...item, chartSymbolCode: cat.chartSymbolCode ?? null, requiresSurfaceSelection: cat.requiresSurfaceSelection, requiresLaboratory: cat.requiresLaboratory };
     }));
   }, [catalog.length, editPlan?.publicId]);
 
@@ -1528,7 +1835,9 @@ function PlanBuilderPanel({
       currency:                 listCurrency,
       chartSymbolCode:          t.chartSymbolCode ?? null,
       requiresSurfaceSelection: t.requiresSurfaceSelection,
+      requiresLaboratory:       t.requiresLaboratory,
       surfaces:                 '',
+      note:                     '',
     }));
     setDraftItems(prev => [...prev, ...placeholders]);
 
@@ -1647,11 +1956,12 @@ function PlanBuilderPanel({
         for (const item of draftItems.filter(i => i.existingItemId)) {
           const orig = editPlan.items.find(i => i.publicId === item.existingItemId);
           if (!orig) continue;
-          if (item.unitPrice !== orig.unitPrice || item.discountRate !== orig.discountRate || (item.toothNumber || '') !== (orig.toothNumber || '')) {
+          if (item.unitPrice !== orig.unitPrice || item.discountRate !== orig.discountRate || (item.toothNumber || '') !== (orig.toothNumber || '') || (item.note || '') !== (orig.notes || '')) {
             await treatmentPlansApi.updateItem(planId, item.existingItemId!, {
               unitPrice: item.unitPrice,
               discountRate: item.discountRate,
               toothNumber: item.toothNumber || null,
+              notes: item.note || null,
             });
           }
         }
@@ -1663,6 +1973,7 @@ function PlanBuilderPanel({
             unitPrice:         item.unitPrice,
             discountRate:      item.discountRate,
             toothNumber:       item.toothNumber || undefined,
+            notes:             item.note || undefined,
             priceCurrency:     item.currency,
             priceExchangeRate: toExchangeRate(item.currency),
             listPrice:         item.listPrice ?? undefined,
@@ -1684,6 +1995,7 @@ function PlanBuilderPanel({
             unitPrice:         item.unitPrice,
             discountRate:      item.discountRate,
             toothNumber:       item.toothNumber || undefined,
+            notes:             item.note || undefined,
             priceCurrency:     item.currency,
             priceExchangeRate: toExchangeRate(item.currency),
             listPrice:         item.listPrice ?? undefined,
@@ -2071,8 +2383,17 @@ function PlanBuilderPanel({
               {draftItems.map(item => (
                 <tr key={item.localId} className="hover:bg-muted/20">
                   <td className="px-3 py-1.5">
-                    <span className="font-medium">{item.treatmentName}</span>
-                    <span className="ml-1.5 text-xs text-muted-foreground font-mono">{item.treatmentCode}</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-medium">{item.treatmentName}</span>
+                      <span className="text-xs text-muted-foreground font-mono">{item.treatmentCode}</span>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Not ekle…"
+                      value={item.note}
+                      onChange={e => updateItem(item.localId, { note: e.target.value })}
+                      className="mt-1 w-full text-xs text-muted-foreground bg-transparent border-0 border-b border-dashed border-border focus:border-primary focus:outline-none placeholder:text-muted-foreground/50 px-0 py-0.5"
+                    />
                     {item.requiresSurfaceSelection && (
                       <div className="flex items-center gap-1 mt-1">
                         {(['M','D','O','V','L'] as const).map(surf => {
@@ -2293,6 +2614,44 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
         </div>
       )}
 
+      {/* Seçili kalemler için onay çubuğu — plan listesinin üstünde */}
+      {!panelOpen && selectedItemKeys.size > 0 && (
+        <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-2.5 bg-primary text-primary-foreground shadow-lg rounded-lg">
+          <CheckCircle2 className="size-4 shrink-0" />
+          <span className="text-sm flex-1">{selectedItemKeys.size} kalem seçildi</span>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-7 text-xs"
+            onClick={() => {
+              const byPlan = new Map<string, string[]>();
+              for (const key of selectedItemKeys) {
+                const [planId, itemId] = key.split(':');
+                if (!byPlan.has(planId)) byPlan.set(planId, []);
+                byPlan.get(planId)!.push(itemId);
+              }
+              Promise.all([...byPlan.entries()].map(([planId, itemIds]) =>
+                treatmentPlansApi.approveItems(planId, itemIds)
+              ))
+                .then(() => {
+                  toast.success('Seçili tedaviler onaylandı.');
+                  setSelectedItemKeys(new Set());
+                  invalidate();
+                })
+                .catch(() => toast.error('Onaylama sırasında hata oluştu.'));
+            }}
+          >
+            Seçilenleri Onayla
+          </Button>
+          <button
+            className="p-1 rounded hover:bg-primary-foreground/20"
+            onClick={() => setSelectedItemKeys(new Set())}
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
+
       {!panelOpen && plans.map((plan) => {
         const isExpanded  = expandedPlan === plan.publicId;
         const isDraft     = plan.status === 'Draft';
@@ -2431,8 +2790,8 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
                             </td>
                             <td className="px-2 py-2 max-w-[200px]">
                               <span className="font-medium truncate block">{item.treatmentName ?? 'Bilinmeyen tedavi'}</span>
-                              {item.treatmentCode && (
-                                <span className="text-muted-foreground font-mono">[{item.treatmentCode}]</span>
+                              {item.notes && (
+                                <span className="text-[11px] text-muted-foreground italic block truncate">{item.notes}</span>
                               )}
                             </td>
                             <td className="px-2 py-2 text-muted-foreground whitespace-nowrap">
@@ -2497,45 +2856,6 @@ function TedaviPlaniTab({ patientPublicId }: { patientPublicId: string }) {
           </div>
         );
       })}
-
-      {/* Seçili kalemler için onay çubuğu */}
-      {selectedItemKeys.size > 0 && (
-        <div className="sticky bottom-0 z-10 flex items-center gap-3 px-4 py-2.5 bg-primary text-primary-foreground shadow-lg">
-          <CheckCircle2 className="size-4 shrink-0" />
-          <span className="text-sm flex-1">{selectedItemKeys.size} kalem seçildi</span>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="h-7 text-xs"
-            onClick={() => {
-              // Group by planPublicId → [itemPublicId, ...]
-              const byPlan = new Map<string, string[]>();
-              for (const key of selectedItemKeys) {
-                const [planId, itemId] = key.split(':');
-                if (!byPlan.has(planId)) byPlan.set(planId, []);
-                byPlan.get(planId)!.push(itemId);
-              }
-              Promise.all([...byPlan.entries()].map(([planId, itemIds]) =>
-                treatmentPlansApi.approveItems(planId, itemIds)
-              ))
-                .then(() => {
-                  toast.success('Seçili tedaviler onaylandı.');
-                  setSelectedItemKeys(new Set());
-                  invalidate();
-                })
-                .catch(() => toast.error('Onaylama sırasında hata oluştu.'));
-            }}
-          >
-            Seçilenleri Onayla
-          </Button>
-          <button
-            className="p-1 rounded hover:bg-primary-foreground/20"
-            onClick={() => setSelectedItemKeys(new Set())}
-          >
-            <X className="size-3.5" />
-          </button>
-        </div>
-      )}
 
       {/* Plan silme / iptal onayı */}
       <AlertDialog open={!!deletingPlan} onOpenChange={(o) => !o && setDeletingPlan(null)}>
@@ -2941,6 +3261,9 @@ function OnaylananTedavilerTab({ patientPublicId }: { patientPublicId: string })
                   {/* İşlem */}
                   <td className="px-3 py-2 font-medium text-foreground max-w-[180px]">
                     <span className="truncate block">{item.treatmentName ?? 'Bilinmeyen'}</span>
+                    {item.notes && (
+                      <span className="text-[11px] text-muted-foreground italic truncate block">{item.notes}</span>
+                    )}
                   </td>
 
                   {/* Diş */}
@@ -3277,11 +3600,51 @@ function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
   const qc = useQueryClient();
   const { hasPermission } = usePermissions();
   const canRevert = hasPermission('treatment_plan.revert_completed');
+  const currentUser = useAuthStore((s) => s.user);
 
   const { data: plans = [], isLoading } = useQuery<TreatmentPlan[]>({
     queryKey: ['treatment-plans', patientPublicId],
     queryFn: () => treatmentPlansApi.getByPatient(patientPublicId).then((r) => r.data),
     enabled: !!patientPublicId,
+  });
+
+  // Katalog — requiresLaboratory bayrağını öğrenmek için
+  const { data: catalogData } = useQuery({
+    queryKey: ['treatments-catalog'],
+    queryFn: () => treatmentsApi.list({ pageSize: 100, activeOnly: true }).then(r => r.data),
+    staleTime: 60_000,
+  });
+  const requiresLabByTreatment = useMemo<Set<string>>(() => {
+    const s = new Set<string>();
+    catalogData?.items?.forEach(c => { if (c.requiresLaboratory) s.add(c.publicId); });
+    return s;
+  }, [catalogData]);
+
+  // Mevcut lab işleri — zaten emri olan kalemleri bul
+  const { data: labWorksData } = useQuery({
+    queryKey: ['lab-works-patient', patientPublicId],
+    queryFn: () => laboratoriesApi.listWorks({ patientPublicId, pageSize: 200 }).then(r => r.data),
+    staleTime: 30_000,
+    enabled: !!patientPublicId,
+  });
+  const existingLabByItem = useMemo<Set<string>>(() => {
+    const s = new Set<string>();
+    labWorksData?.items?.forEach(w => {
+      if (w.treatmentPlanItemPublicId) s.add(w.treatmentPlanItemPublicId);
+    });
+    return s;
+  }, [labWorksData]);
+
+  // Lab emri oluşturma
+  const [labOrderForItem, setLabOrderForItem] = useState<{ publicId: string; treatmentName: string; toothNumber?: string } | null>(null);
+  const labCreateMutation = useMutation({
+    mutationFn: (payload: Parameters<typeof laboratoriesApi.createWork>[0]) => laboratoriesApi.createWork(payload),
+    onSuccess: () => {
+      toast.success('Lab iş emri oluşturuldu.');
+      qc.invalidateQueries({ queryKey: ['lab-works-patient', patientPublicId] });
+      setLabOrderForItem(null);
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Lab emri oluşturulamadı.'),
   });
 
   // Ödeme durumu — hasta cari hesabından item bazlı
@@ -3442,7 +3805,6 @@ function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
               ))}
               {hasProvisionRows && <th className="px-3 py-2 text-right font-medium whitespace-nowrap text-muted-foreground w-[80px]">Kurum Payı</th>}
               {hasProvisionRows && <th className="px-3 py-2 text-right font-medium whitespace-nowrap text-muted-foreground w-[80px]">Hasta Payı</th>}
-              <th className="px-3 py-2 text-right font-medium whitespace-nowrap text-muted-foreground w-[90px]">Ödeme</th>
               <th className="px-2 py-2 w-[90px]" />
               <th className="px-3 py-2 text-center font-medium w-8">
                 <TooltipProvider>
@@ -3491,6 +3853,9 @@ function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
                   {/* İşlem */}
                   <td className="px-3 py-2 font-medium text-foreground max-w-[180px]">
                     <span className="truncate block">{item.treatmentName ?? 'Bilinmeyen'}</span>
+                    {item.notes && (
+                      <span className="text-[11px] text-muted-foreground italic truncate block">{item.notes}</span>
+                    )}
                   </td>
 
                   {/* Diş */}
@@ -3536,47 +3901,6 @@ function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
                     </td>
                   )}
 
-                  {/* Ödeme durumu */}
-                  {(() => {
-                    const pay = paymentByItem[item.publicId];
-                    if (!pay) return <td className="px-3 py-2 text-right"><span className="text-muted-foreground text-[10px]">—</span></td>;
-                    if (pay.remaining <= 0) {
-                      return (
-                        <td className="px-3 py-2 text-right">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <span className="inline-flex items-center gap-1 text-emerald-600 text-[11px] font-medium">
-                                  <Check className="size-3" />Ödendi
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                {pay.allocated.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL tahsil edildi
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </td>
-                      );
-                    }
-                    return (
-                      <td className="px-3 py-2 text-right whitespace-nowrap">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <span className="text-amber-600 text-[11px] font-medium tabular-nums">
-                                {pay.remaining.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺ kalan
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {pay.allocated > 0
-                                ? `${pay.allocated.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL ödendi`
-                                : 'Henüz ödeme yapılmadı'}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </td>
-                    );
-                  })()}
 
                   {/* Aksiyonlar */}
                   <td className="px-2 py-2 w-[90px]">
@@ -3586,7 +3910,7 @@ function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
                         {hasConsent && (
                           <TooltipProvider>
                             <Tooltip>
-                              <TooltipTrigger render={<button className="w-7 h-7 flex items-center justify-center rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-600 transition-colors" onClick={() => setViewingConsent(signedConsent)} />}>
+                              <TooltipTrigger render={<button className="w-7 h-7 flex items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50 transition-colors" onClick={() => setViewingConsent(signedConsent)} />}>
                                 <ClipboardCheck className="size-3.5" />
                               </TooltipTrigger>
                               <TooltipContent>Onam alındı — {signedConsent.consentCode}</TooltipContent>
@@ -3596,7 +3920,7 @@ function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
                         {activeConsent && (
                           <TooltipProvider>
                             <Tooltip>
-                              <TooltipTrigger render={<button className="w-7 h-7 flex items-center justify-center rounded-full bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors" onClick={() => { const url = `${window.location.origin}/consent/${activeConsent.qrToken ?? activeConsent.smsToken}`; navigator.clipboard.writeText(url); toast.success("Link kopyalandı."); }} />}>
+                              <TooltipTrigger render={<button className="w-7 h-7 flex items-center justify-center rounded-full text-blue-600 hover:bg-blue-50 transition-colors" onClick={() => { const url = `${window.location.origin}/consent/${activeConsent.qrToken ?? activeConsent.smsToken}`; navigator.clipboard.writeText(url); toast.success("Link kopyalandı."); }} />}>
                                 <QrCode className="size-3.5" />
                               </TooltipTrigger>
                               <TooltipContent>Geçerli onam — {activeConsent.consentCode}</TooltipContent>
@@ -3615,8 +3939,28 @@ function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
                         )}
                       </div>
 
-                      {/* Sağ: kurum + geri al */}
+                      {/* Sağ: lab + kurum + geri al */}
                       <div className="flex items-center gap-0.5">
+                        {item.treatmentPublicId && requiresLabByTreatment.has(item.treatmentPublicId) && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger render={<button
+                                className={cn(
+                                  'w-7 h-7 flex items-center justify-center rounded-full transition-colors',
+                                  existingLabByItem.has(item.publicId)
+                                    ? 'text-purple-600 hover:bg-purple-50'
+                                    : 'text-amber-500 hover:bg-amber-50',
+                                )}
+                                onClick={() => setLabOrderForItem({ publicId: item.publicId, treatmentName: item.treatmentName ?? '', toothNumber: item.toothNumber ?? undefined })}
+                              />}>
+                                <FlaskConical className="size-3.5" />
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                {existingLabByItem.has(item.publicId) ? 'Lab emri mevcut' : 'Lab emri oluştur'}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                         {institutionName && (
                           <TooltipProvider>
                             <Tooltip>
@@ -3776,6 +4120,190 @@ function YapilanTedavilerTab({ patientPublicId }: { patientPublicId: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Lab iş emri oluştur */}
+      <LabOrderDialog
+        open={!!labOrderForItem}
+        treatmentName={labOrderForItem?.treatmentName ?? ''}
+        initial={null}
+        onConfirm={(order) => {
+          if (!labOrderForItem) return;
+          labCreateMutation.mutate({
+            patientPublicId,
+            laboratoryPublicId: order.laboratoryPublicId,
+            treatmentPlanItemPublicId: labOrderForItem.publicId,
+            doctorPublicId: currentUser?.publicId ?? undefined,
+            workType: order.workType,
+            deliveryType: order.deliveryType,
+            toothNumbers: labOrderForItem.toothNumber || undefined,
+            shadeColor: order.shadeColor || undefined,
+            doctorNotes: order.doctorNotes || undefined,
+            items: order.items,
+          });
+        }}
+        onSkip={() => setLabOrderForItem(null)}
+      />
+    </div>
+  );
+}
+
+// ─── Tab: Laboratuvar ─────────────────────────────────────────────────────────
+
+const NEXT_ACTION: Partial<Record<LabWorkStatus, { action: LabWorkTransitionAction; label: string }>> = {
+  pending:    { action: 'send',       label: 'Gönderildi' },
+  sent:       { action: 'in_progress',label: 'Üretime Girdi' },
+  in_progress:{ action: 'ready',      label: 'Hazır' },
+  ready:      { action: 'receive',    label: 'Teslim Alındı' },
+  received:   { action: 'fit',        label: 'Denendi' },
+  fitted:     { action: 'complete',   label: 'Tamamlandı' },
+  completed:  { action: 'approve',    label: 'Onayla' },
+};
+
+function LaboratuvarTab({ patientPublicId }: { patientPublicId: string }) {
+  const qc = useQueryClient();
+  const [showAll, setShowAll] = useState(false);
+  const [transitionTarget, setTransitionTarget] = useState<{ publicId: string; action: LabWorkTransitionAction; label: string } | null>(null);
+  const [transitionNote, setTransitionNote] = useState('');
+
+  const { data: labWorksData, isLoading } = useQuery({
+    queryKey: ['lab-works-patient', patientPublicId],
+    queryFn: () => laboratoriesApi.listWorks({ patientPublicId, pageSize: 200 }).then(r => r.data),
+    staleTime: 30_000,
+    enabled: !!patientPublicId,
+  });
+
+  const transitionMut = useMutation({
+    mutationFn: ({ publicId, action, notes }: { publicId: string; action: LabWorkTransitionAction; notes?: string }) =>
+      laboratoriesApi.transitionWork(publicId, { action, notes }),
+    onSuccess: () => {
+      toast.success('Durum güncellendi.');
+      qc.invalidateQueries({ queryKey: ['lab-works-patient', patientPublicId] });
+      setTransitionTarget(null);
+      setTransitionNote('');
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Durum güncellenemedi.'),
+  });
+
+  const allWorks = labWorksData?.items ?? [];
+  const activeWorks = allWorks.filter(w => !LAB_TERMINAL.includes(w.status));
+  const terminalWorks = allWorks.filter(w => LAB_TERMINAL.includes(w.status));
+  const displayed = showAll ? allWorks : activeWorks;
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          {activeWorks.length} aktif
+          {terminalWorks.length > 0 && `, ${terminalWorks.length} tamamlanan`}
+        </p>
+        {terminalWorks.length > 0 && (
+          <Button size="sm" variant="ghost" className="text-xs gap-1" onClick={() => setShowAll(v => !v)}>
+            {showAll ? 'Sadece Aktif' : 'Tümünü Göster'}
+          </Button>
+        )}
+      </div>
+
+      {displayed.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
+          <FlaskConical className="size-8 opacity-30" />
+          <p className="text-sm">Bekleyen lab işlemi yok</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {displayed.map(w => {
+            const next = NEXT_ACTION[w.status];
+            const isTerminal = LAB_TERMINAL.includes(w.status);
+            return (
+              <div
+                key={w.publicId}
+                className={cn(
+                  'rounded-lg border bg-background p-3 space-y-2',
+                  isTerminal && 'opacity-60',
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <FlaskConical className="size-4 text-muted-foreground mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0 space-y-0.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold">{w.laboratoryName}</span>
+                      <span className="text-xs text-muted-foreground font-mono">{w.workNo}</span>
+                      <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-auto', LAB_STATUS_COLOR[w.status])}>
+                        {LAB_STATUS_LABELS[w.status]}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                      {w.workType && <span>{w.workType}</span>}
+                      {w.toothNumbers && <span>Diş: {w.toothNumbers}</span>}
+                      {w.shadeColor && <span>Renk: {w.shadeColor}</span>}
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                      <span>Açıldı: {format(new Date(w.createdAt), 'd MMM yyyy', { locale: tr })}</span>
+                      {w.estimatedDeliveryDate && (
+                        <span>Tahmini: {format(new Date(w.estimatedDeliveryDate), 'd MMM yyyy', { locale: tr })}</span>
+                      )}
+                      {w.sentToLabAt && (
+                        <span>Gönderildi: {format(new Date(w.sentToLabAt), 'd MMM yyyy', { locale: tr })}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {!isTerminal && next && (
+                  <div className="flex justify-end">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-xs h-7 gap-1"
+                      onClick={() => setTransitionTarget({ publicId: w.publicId, action: next.action, label: next.label })}
+                    >
+                      <Check className="size-3" />
+                      {next.label}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Durum geçiş onay dialog */}
+      <AlertDialog open={!!transitionTarget} onOpenChange={open => { if (!open) { setTransitionTarget(null); setTransitionNote(''); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Durum Güncelle</AlertDialogTitle>
+            <AlertDialogDescription>
+              İş emrini <strong>{transitionTarget?.label}</strong> olarak işaretlemek istiyor musunuz?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Textarea
+            placeholder="Not ekle (opsiyonel)"
+            value={transitionNote}
+            onChange={e => setTransitionNote(e.target.value)}
+            className="min-h-[60px] text-sm resize-none"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={transitionMut.isPending}>İptal</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={transitionMut.isPending}
+              onClick={() => transitionTarget && transitionMut.mutate({
+                publicId: transitionTarget.publicId,
+                action: transitionTarget.action,
+                notes: transitionNote.trim() || undefined,
+              })}
+            >
+              Onayla
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -4234,11 +4762,13 @@ export function ExaminationPage() {
   const qc = useQueryClient();
   const [closeOpen, setCloseOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('hasta-bilgileri');
+  const [alertModalOpen, setAlertModalOpen] = useState(false);
+  const alertModalShown = useRef(false);
 
-  // Protocol info passed via query params for instant display
-  const patientName      = searchParams.get('patient') ?? 'Hasta';
-  const protocolNo       = searchParams.get('no') ?? '';
-  const patientPublicId  = searchParams.get('patientPublicId') ?? '';
+  // Protocol info passed via query params for instant display (may be absent when navigating from patient card)
+  const qpPatientName     = searchParams.get('patient');
+  const qpProtocolNo      = searchParams.get('no');
+  const qpPatientPublicId = searchParams.get('patientPublicId');
 
   // Fetch real protocol status so we can hide "Kapat" for already-closed protocols
   const { data: protocolDetail } = useQuery({
@@ -4249,20 +4779,63 @@ export function ExaminationPage() {
   });
   const isProtocolOpen = protocolDetail ? protocolDetail.status === 1 : true;
 
-  // Placeholder protocol object from URL params
+  // Build protocol object — prefer query params for instant display, fall back to fetched detail
+  const patientPublicId = qpPatientPublicId || protocolDetail?.patientPublicId || '';
+  const patientName     = qpPatientName     || protocolDetail?.patientName     || 'Hasta';
+  const protocolNo      = qpProtocolNo      || protocolDetail?.protocolNo      || '';
+
   const protocol: DoctorProtocol | null = patientPublicId ? {
     publicId: publicId ?? '',
-    protocolNo: protocolNo,
+    protocolNo,
     patientId: 0,
     patientPublicId,
     patientName,
     phone: null,
     protocolType: 1,
-    protocolTypeName: searchParams.get('type') ?? '',
-    status: 1,
-    statusName: 'Açık',
+    protocolTypeName: searchParams.get('type') ?? protocolDetail?.protocolTypeName ?? '',
+    status: protocolDetail?.status ?? 1,
+    statusName: protocolDetail?.statusName ?? 'Açık',
     startedAt: null,
   } : null;
+
+  // Anamnez — kritik badge'ler için (AnamnezTab ile aynı key, cache paylaşılır)
+  const { data: headerAnamnesis } = useQuery<PatientAnamnesis | null>({
+    queryKey: ['patient-anamnesis', patientPublicId],
+    queryFn: async () => {
+      try {
+        const r = await patientsApi.getAnamnesis(patientPublicId);
+        return r.data;
+      } catch (e: any) {
+        if (e?.response?.status === 204 || e?.response?.status === 404) return null;
+        throw e;
+      }
+    },
+    enabled: !!patientPublicId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const criticalBadges = headerAnamnesis
+    ? CRITICAL_FLAGS.filter(f => headerAnamnesis[f.key] === true)
+    : [];
+
+  // Fetch notes to detect alert notes and show warning modal on first load
+  const { data: patientNotes } = useQuery<PatientNote[]>({
+    queryKey: ['patient-notes', patientPublicId],
+    queryFn: () => patientsApi.getNotes(patientPublicId).then(r => r.data),
+    enabled: !!patientPublicId,
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    if (alertModalShown.current || !patientNotes) return;
+    const alertNotes = patientNotes.filter(n => n.isAlert);
+    if (alertNotes.length > 0) {
+      alertModalShown.current = true;
+      setAlertModalOpen(true);
+    }
+  }, [patientNotes]);
+
+  const alertNotes = (patientNotes ?? []).filter(n => n.isAlert);
 
   const completeMutation = useMutation({
     mutationFn: async ({ notify, message }: { notify: boolean; message: string }) => {
@@ -4305,12 +4878,14 @@ export function ExaminationPage() {
 
   const TAB_ITEMS = [
     { value: 'hasta-bilgileri',     label: 'Hasta Bilgileri', icon: User },
+    { value: 'notlar',              label: 'Notlar',          icon: StickyNote },
     { value: 'anamnez',             label: 'Anamnez',         icon: ClipboardList },
+    { value: 'protokol',            label: 'Protokol',        icon: FileText },
     { value: 'oral-diagnoz',        label: 'Oral Diagnoz',    icon: Heart },
     { value: 'tedavi-plani',        label: 'Tedavi Planı',    icon: Stethoscope },
     { value: 'onaylanan-tedaviler', label: 'Onaylanan',       icon: CheckCircle2 },
     { value: 'yapilan-tedaviler',   label: 'Yapılan',         icon: CheckCheck },
-    { value: 'protokol',            label: 'Protokol',        icon: FileText },
+    { value: 'laboratuvar',         label: 'Laboratuvar',     icon: FlaskConical },
   ];
 
   return (
@@ -4330,16 +4905,33 @@ export function ExaminationPage() {
         <Separator orientation="vertical" className="h-5" />
 
         {/* Protocol info */}
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2 flex-1 min-w-0 overflow-x-auto">
+          <div className="flex items-center gap-1.5 shrink-0">
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
             <Badge className="bg-emerald-500 hover:bg-emerald-500 text-white text-xs h-5 px-1.5">
               Odada
             </Badge>
           </div>
-          <span className="font-semibold truncate">{patientName}</span>
+          <span className="font-semibold shrink-0">{patientName}</span>
           {protocolNo && (
             <span className="text-xs text-muted-foreground font-mono shrink-0">{protocolNo}</span>
+          )}
+          {criticalBadges.length > 0 && (
+            <div className="flex items-center gap-1 shrink-0">
+              {criticalBadges.map(f => (
+                <TooltipProvider key={f.key} delayDuration={100}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200 cursor-default">
+                        <AlertTriangle className="size-2.5" />
+                        {f.label}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Kritik Anamnez</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ))}
+            </div>
           )}
         </div>
 
@@ -4363,37 +4955,34 @@ export function ExaminationPage() {
         )}
       </div>
 
-      {/* ── Tab bar ────────────────────────────────────────────── */}
-      <Tabs
-        value={activeTab}
-        onValueChange={setActiveTab}
-        className="flex flex-col flex-1 min-h-0"
-      >
-        <div className="border-b bg-background shrink-0 overflow-x-auto">
-          <TabsList className="h-10 bg-transparent gap-0 p-0 rounded-none w-max min-w-full">
-            {TAB_ITEMS.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <TabsTrigger
-                  key={tab.value}
-                  value={tab.value}
-                  className={cn(
-                    'gap-1.5 rounded-none border-b-2 border-transparent px-4 h-10 text-sm',
-                    'data-[state=active]:border-primary data-[state=active]:bg-transparent',
-                    'data-[state=active]:shadow-none',
-                  )}
-                >
-                  <Icon className="size-3.5" />
-                  {tab.label}
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
-        </div>
+      {/* ── Sol sidebar + içerik ───────────────────────────────── */}
+      <div className="flex flex-1 min-h-0">
+        {/* Sidebar nav */}
+        <nav className="w-44 shrink-0 border-r bg-muted/30 flex flex-col py-1 overflow-y-auto">
+          {TAB_ITEMS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.value;
+            return (
+              <button
+                key={tab.value}
+                onClick={() => setActiveTab(tab.value)}
+                className={cn(
+                  'flex items-center gap-2.5 px-3 py-2.5 text-sm w-full text-left transition-colors',
+                  isActive
+                    ? 'bg-background border-r-2 border-primary text-primary font-medium'
+                    : 'text-muted-foreground hover:bg-background hover:text-foreground',
+                )}
+              >
+                <Icon className="size-3.5 shrink-0" />
+                <span className="truncate">{tab.label}</span>
+              </button>
+            );
+          })}
+        </nav>
 
-        {/* ── Tab panels ─────────────────────────────────────── */}
+        {/* İçerik alanı */}
         <div className="flex-1 overflow-y-auto">
-          <TabsContent value="hasta-bilgileri" className="mt-0">
+          {activeTab === 'hasta-bilgileri' && (
             <div className="max-w-2xl mx-auto p-4">
               {protocol?.patientPublicId ? (
                 <PatientInfoTab patientPublicId={protocol.patientPublicId} />
@@ -4403,9 +4992,21 @@ export function ExaminationPage() {
                 </div>
               )}
             </div>
-          </TabsContent>
+          )}
 
-          <TabsContent value="anamnez" className="mt-0">
+          {activeTab === 'notlar' && (
+            <div className="max-w-2xl mx-auto p-4">
+              {protocol?.patientPublicId ? (
+                <NotesTab patientPublicId={protocol.patientPublicId} />
+              ) : (
+                <div className="space-y-3">
+                  {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'anamnez' && (
             <div className="max-w-5xl mx-auto p-4">
               {protocol?.patientPublicId ? (
                 <AnamnezTab patientPublicId={protocol.patientPublicId} protocolPublicId={protocol.publicId} />
@@ -4415,51 +5016,9 @@ export function ExaminationPage() {
                 </div>
               )}
             </div>
-          </TabsContent>
+          )}
 
-          <TabsContent value="oral-diagnoz" className="mt-0">
-            <div className="max-w-2xl mx-auto p-4">
-              {protocol?.patientPublicId ? (
-                <OralDiagnozTab patientPublicId={protocol.patientPublicId} />
-              ) : (
-                <div className="space-y-3">
-                  {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
-                </div>
-              )}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="tedavi-plani" className="mt-0">
-            {protocol?.patientPublicId ? (
-              <TedaviPlaniTab patientPublicId={protocol.patientPublicId} />
-            ) : (
-              <div className="space-y-3 p-4">
-                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="onaylanan-tedaviler" className="mt-0">
-            {protocol?.patientPublicId ? (
-              <OnaylananTedavilerTab patientPublicId={protocol.patientPublicId} />
-            ) : (
-              <div className="space-y-3 p-4">
-                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="yapilan-tedaviler" className="mt-0">
-            {protocol?.patientPublicId ? (
-              <YapilanTedavilerTab patientPublicId={protocol.patientPublicId} />
-            ) : (
-              <div className="space-y-3 p-4">
-                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="protokol" className="mt-0">
+          {activeTab === 'protokol' && (
             <div className="max-w-5xl mx-auto p-4">
               {protocol?.patientPublicId && publicId ? (
                 <ProtokolTab
@@ -4472,9 +5031,87 @@ export function ExaminationPage() {
                 </div>
               )}
             </div>
-          </TabsContent>
+          )}
+
+          {activeTab === 'oral-diagnoz' && (
+            <div className="max-w-2xl mx-auto p-4">
+              {protocol?.patientPublicId ? (
+                <OralDiagnozTab patientPublicId={protocol.patientPublicId} />
+              ) : (
+                <div className="space-y-3">
+                  {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'tedavi-plani' && (
+            protocol?.patientPublicId ? (
+              <TedaviPlaniTab patientPublicId={protocol.patientPublicId} />
+            ) : (
+              <div className="space-y-3 p-4">
+                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
+              </div>
+            )
+          )}
+
+          {activeTab === 'onaylanan-tedaviler' && (
+            protocol?.patientPublicId ? (
+              <OnaylananTedavilerTab patientPublicId={protocol.patientPublicId} />
+            ) : (
+              <div className="space-y-3 p-4">
+                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+              </div>
+            )
+          )}
+
+          {activeTab === 'yapilan-tedaviler' && (
+            protocol?.patientPublicId ? (
+              <YapilanTedavilerTab patientPublicId={protocol.patientPublicId} />
+            ) : (
+              <div className="space-y-3 p-4">
+                {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+              </div>
+            )
+          )}
+
+          {activeTab === 'laboratuvar' && (
+            <div className="max-w-2xl mx-auto p-4">
+              {protocol?.patientPublicId ? (
+                <LaboratuvarTab patientPublicId={protocol.patientPublicId} />
+              ) : (
+                <div className="space-y-3">
+                  {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-20 w-full" />)}
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      </Tabs>
+      </div>
+
+      {/* ── Alert notes modal ───────────────────────────────────── */}
+      <Dialog open={alertModalOpen} onOpenChange={setAlertModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-600">
+              <BellRing className="size-5" />
+              Hasta Uyarıları
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 max-h-72 overflow-y-auto">
+            {alertNotes.map(note => (
+              <div key={note.publicId} className="rounded-lg border border-orange-300 bg-orange-50 dark:bg-orange-950/30 p-3 space-y-1">
+                {note.title && <p className="text-sm font-semibold">{note.title}</p>}
+                <p className="text-sm whitespace-pre-wrap">{note.content}</p>
+                <p className="text-[11px] text-muted-foreground">{note.createdByName} · {format(new Date(note.createdAt), 'd MMM yyyy', { locale: tr })}</p>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setAlertModalOpen(false)}>Anladım</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Close dialog ────────────────────────────────────────── */}
       {closeOpen && protocol && (

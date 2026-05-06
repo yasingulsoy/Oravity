@@ -93,7 +93,8 @@ public record UpdateTreatmentPlanItemCommand(
     Guid    ItemPublicId,
     decimal UnitPrice,
     decimal DiscountRate,
-    string? ToothNumber
+    string? ToothNumber,
+    string? Notes = null
 ) : IRequest<TreatmentPlanItemResponse>;
 
 public class UpdateTreatmentPlanItemCommandHandler
@@ -120,6 +121,7 @@ public class UpdateTreatmentPlanItemCommandHandler
         }
 
         item.UpdateToothNumber(request.ToothNumber);
+        item.AddNote(request.Notes);
         await _db.SaveChangesAsync(cancellationToken);
 
         return TreatmentPlanMappings.ToResponse(item);

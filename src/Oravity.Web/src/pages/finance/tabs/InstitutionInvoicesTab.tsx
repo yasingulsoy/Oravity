@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Plus, CreditCard, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -49,6 +49,15 @@ const STATUS_OPTIONS: {
 
 function formatCurrency(n: number) {
   return `₺${n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// Kurum faturası değişince tüm ilgili cache'leri temizle:
+// hem global Finance listesi hem hasta bazlı Cari Hesap verileri
+function invalidateInvoiceQueries(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: ['institution-invoices'] });
+  qc.invalidateQueries({ queryKey: ['institution-invoices-for-patient'] });
+  qc.invalidateQueries({ queryKey: ['patient-account'] });
+  qc.invalidateQueries({ queryKey: ['billable-items'] });
 }
 
 function hasActiveFollowUp(inv: InstitutionInvoice) {
@@ -196,7 +205,7 @@ export function InstitutionInvoicesTab() {
           institutions={insts}
           onSuccess={() => {
             setCreateOpen(false);
-            qc.invalidateQueries({ queryKey: ['institution-invoices'] });
+            invalidateInvoiceQueries(qc);
           }}
         />
       )}
@@ -206,7 +215,7 @@ export function InstitutionInvoicesTab() {
           onClose={() => setPaymentTarget(null)}
           onSuccess={() => {
             setPaymentTarget(null);
-            qc.invalidateQueries({ queryKey: ['institution-invoices'] });
+            invalidateInvoiceQueries(qc);
           }}
         />
       )}
@@ -216,7 +225,7 @@ export function InstitutionInvoicesTab() {
           onClose={() => setCancelTarget(null)}
           onSuccess={() => {
             setCancelTarget(null);
-            qc.invalidateQueries({ queryKey: ['institution-invoices'] });
+            invalidateInvoiceQueries(qc);
           }}
         />
       )}

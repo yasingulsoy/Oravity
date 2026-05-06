@@ -25,7 +25,9 @@ public record AppointmentResponse(
     DateOnly? PatientBirthDate = null,
     string? PatientGender = null,
     bool HasOpenProtocol = false,
-    bool IsBeingCalled = false
+    bool IsBeingCalled = false,
+    Guid? PatientPublicId = null,
+    string? BranchName = null
 );
 
 /// <summary>SignalR broadcast için hafif DTO</summary>
